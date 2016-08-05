@@ -4,13 +4,15 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading.Tasks;
+using ServiceStack;
 
 namespace MediaBrowser.Server.Implementations.HttpServer
 {
     /// <summary>
     /// Class StreamWriter
     /// </summary>
-    public class StreamWriter : IStreamWriter, IHasOptions
+    public class StreamWriter : IStreamWriter, IAsyncStreamWriter, IHasOptions
     {
         private ILogger Logger { get; set; }
 
@@ -36,6 +38,7 @@ namespace MediaBrowser.Server.Implementations.HttpServer
         }
 
         public Action OnComplete { get; set; }
+        public Action OnError { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="StreamWriter" /> class.
@@ -72,24 +75,13 @@ namespace MediaBrowser.Server.Implementations.HttpServer
         {
         }
 
+        private const int BufferSize = 81920;
+
         /// <summary>
         /// Writes to.
         /// </summary>
         /// <param name="responseStream">The response stream.</param>
         public void WriteTo(Stream responseStream)
-        {
-            WriteToInternal(responseStream);
-        }
-
-        // 256k
-        private const int BufferSize = 262144;
-        
-        /// <summary>
-        /// Writes to async.
-        /// </summary>
-        /// <param name="responseStream">The response stream.</param>
-        /// <returns>Task.</returns>
-        private void WriteToInternal(Stream responseStream)
         {
             try
             {
@@ -101,6 +93,40 @@ namespace MediaBrowser.Server.Implementations.HttpServer
             catch (Exception ex)
             {
                 Logger.ErrorException("Error streaming data", ex);
+
+                if (OnError != null)
+                {
+                    OnError();
+                }
+
+                throw;
+            }
+            finally
+            {
+                if (OnComplete != null)
+                {
+                    OnComplete();
+                }
+            }
+        }
+
+        public async Task WriteToAsync(Stream responseStream)
+        {
+            try
+            {
+                using (var src = SourceStream)
+                {
+                    await src.CopyToAsync(responseStream, BufferSize).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.ErrorException("Error streaming data", ex);
+
+                if (OnError != null)
+                {
+                    OnError();
+                }
 
                 throw;
             }

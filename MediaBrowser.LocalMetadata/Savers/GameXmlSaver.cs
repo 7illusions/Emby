@@ -1,14 +1,13 @@
 ﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Model.Entities;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Security;
 using System.Text;
 using System.Threading;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.LocalMetadata.Savers
 {
@@ -76,20 +75,6 @@ namespace MediaBrowser.LocalMetadata.Savers
             if (!string.IsNullOrEmpty(game.GameSystem))
             {
                 builder.Append("<GameSystem>" + SecurityElement.Escape(game.GameSystem) + "</GameSystem>");
-            }
-
-            var val = game.GetProviderId(MetadataProviders.NesBox);
-
-            if (!string.IsNullOrEmpty(val))
-            {
-                builder.Append("<NesBox>" + SecurityElement.Escape(val) + "</NesBox>");
-            }
-
-            val = game.GetProviderId(MetadataProviders.NesBoxRom);
-
-            if (!string.IsNullOrEmpty(val))
-            {
-                builder.Append("<NesBoxRom>" + SecurityElement.Escape(val) + "</NesBoxRom>");
             }
 
             XmlSaverHelpers.AddCommonNodes(game, _libraryManager, builder);

@@ -1,4 +1,4 @@
-﻿(function ($, window, document) {
+﻿define(['dialogHelper', 'jQuery', 'emby-button'], function (dialogHelper, $) {
 
     var currentItemId;
     var currentFile;
@@ -11,12 +11,16 @@
 
         switch (evt.target.error.code) {
             case evt.target.error.NOT_FOUND_ERR:
-                Dashboard.showError(Globalize.translate('MessageFileNotFound'));
+                require(['toast'], function (toast) {
+                    toast(Globalize.translate('MessageFileNotFound'));
+                });
                 break;
             case evt.target.error.ABORT_ERR:
                 break; // noop
             default:
-                Dashboard.showError(Globalize.translate('MessageFileReadError'));
+                require(['toast'], function (toast) {
+                    toast(Globalize.translate('MessageFileReadError'));
+                });
                 break;
         };
     }
@@ -42,7 +46,7 @@
         };
         reader.onabort = function () {
             Dashboard.hideLoadingMsg();
-            Logger.log('File read cancelled');
+            console.log('File read cancelled');
         };
 
         // Closure to capture the file information.
@@ -81,11 +85,11 @@
 
         Dashboard.showLoadingMsg();
 
-        var page = $(this).parents('paper-dialog');
+        var page = $(this).parents('.dialog');
 
         var imageType = $('#selectImageType', page).val();
 
-        ApiClient.uploadItemImage(currentItemId, imageType, file).done(function () {
+        ApiClient.uploadItemImage(currentItemId, imageType, file).then(function () {
 
             $('#uploadImage', page).val('').trigger('change');
             Dashboard.hideLoadingMsg();
@@ -121,37 +125,31 @@
         });
     }
 
-    function showEditor(itemId) {
+    function showEditor(itemId, options) {
 
-        ApiClient.ajax({
+        options = options || {};
 
-            type: 'GET',
-            url: 'components/imageuploader/imageuploader.template.html'
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'components/imageuploader/imageuploader.template.html', true);
 
-        }).done(function (template) {
+        xhr.onload = function (e) {
 
+            var template = this.response;
             currentItemId = itemId;
 
-            var dlg = document.createElement('paper-dialog');
+            var dlg = dialogHelper.createDialog({
+                size: 'fullscreen-border'
+            });
 
-            dlg.setAttribute('with-backdrop', 'with-backdrop');
-            dlg.setAttribute('role', 'alertdialog');
+            var theme = options.theme || 'b';
 
-            // without this safari will scroll the background instead of the dialog contents
-            // but not needed here since this is already on top of an existing dialog
-            // dlg.setAttribute('modal', 'modal');
-
-            // seeing max call stack size exceeded in the debugger with this
-            dlg.setAttribute('noAutoFocus', 'noAutoFocus');
-            dlg.entryAnimation = 'scale-up-animation';
-            dlg.exitAnimation = 'fade-out-animation';
-            dlg.classList.add('fullscreen-editor-paper-dialog');
-            dlg.classList.add('ui-body-b');
-            dlg.classList.add('smoothScrollY');
+            dlg.classList.add('ui-body-' + theme);
+            dlg.classList.add('background-theme-' + theme);
+            dlg.classList.add('popupEditor');
 
             var html = '';
             html += '<h2 class="dialogHeader">';
-            html += '<paper-fab icon="arrow-back" class="mini btnCloseDialog"></paper-fab>';
+            html += '<button type="button" is="emby-button" icon="arrow-back" class="fab mini btnCloseDialog autoSize" tabindex="-1"><i class="md-icon">&#xE5C4;</i></button>';
             html += '<div style="display:inline-block;margin-left:.6em;vertical-align:middle;">' + Globalize.translate('HeaderUploadImage') + '</div>';
             html += '</h2>';
 
@@ -163,20 +161,22 @@
             document.body.appendChild(dlg);
 
             // Has to be assigned a z-index after the call to .open() 
-            $(dlg).on('iron-overlay-closed', onDialogClosed);
+            $(dlg).on('close', onDialogClosed);
 
-            PaperDialogHelper.openWithHash(dlg, 'imageuploader');
+            dialogHelper.open(dlg);
 
             var editorContent = dlg.querySelector('.editorContent');
             initEditor(editorContent);
 
-            $('.btnCloseDialog', dlg).on('click', closeDialog);
-        });
-    }
+            $('#selectImageType', dlg).val(options.imageType || 'Primary');
 
-    function closeDialog() {
+            $('.btnCloseDialog', dlg).on('click', function () {
 
-        history.back();
+                dialogHelper.close(dlg);
+            });
+        }
+
+        xhr.send();
     }
 
     function onDialogClosed() {
@@ -186,20 +186,16 @@
         currentDeferred.resolveWith(null, [hasChanges]);
     }
 
-    window.ImageUploader = {
-        show: function (itemId) {
+    return {
+        show: function (itemId, options) {
 
-            var deferred = DeferredBuilder.Deferred();
+            var deferred = jQuery.Deferred();
 
             currentDeferred = deferred;
             hasChanges = false;
 
-            require(['components/paperdialoghelper'], function () {
-
-                showEditor(itemId);
-            });
+            showEditor(itemId, options);
             return deferred.promise();
         }
     };
-
-})(jQuery, window, document);
+});

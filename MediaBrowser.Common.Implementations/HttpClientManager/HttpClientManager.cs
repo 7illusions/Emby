@@ -17,6 +17,7 @@ using System.Net.Cache;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Common.Implementations.HttpClientManager
 {
@@ -125,16 +126,45 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
             }
         }
 
-        private WebRequest GetRequest(HttpRequestOptions options, string method, bool enableHttpCompression)
+        private void AddIpv4Option(HttpWebRequest request, HttpRequestOptions options)
         {
-            var request = CreateWebRequest(options.Url);
+            request.ServicePoint.BindIPEndPointDelegate = (servicePount, remoteEndPoint, retryCount) =>
+            {
+                if (remoteEndPoint.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return new IPEndPoint(IPAddress.Any, 0);
+                }
+                throw new InvalidOperationException("no IPv4 address");
+            };
+        }
+
+        private WebRequest GetRequest(HttpRequestOptions options, string method)
+        {
+            var url = options.Url;
+
+            var uriAddress = new Uri(url);
+            var userInfo = uriAddress.UserInfo;
+            if (!string.IsNullOrWhiteSpace(userInfo))
+            {
+                _logger.Info("Found userInfo in url: {0} ... url: {1}", userInfo, url);
+                url = url.Replace(userInfo + "@", string.Empty);
+            }
+
+            var request = CreateWebRequest(url);
             var httpWebRequest = request as HttpWebRequest;
 
             if (httpWebRequest != null)
             {
+                if (options.PreferIpv4)
+                {
+                    AddIpv4Option(httpWebRequest, options);
+                }
+
                 AddRequestHeaders(httpWebRequest, options);
 
-                httpWebRequest.AutomaticDecompression = enableHttpCompression ? DecompressionMethods.Deflate : DecompressionMethods.None;
+                httpWebRequest.AutomaticDecompression = options.EnableHttpCompression ? 
+                    (options.DecompressionMethod ?? DecompressionMethods.Deflate) : 
+                    DecompressionMethods.None;
             }
 
             request.CachePolicy = new RequestCachePolicy(RequestCacheLevel.BypassCache);
@@ -149,7 +179,7 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
             request.Method = method;
             request.Timeout = options.TimeoutMs;
-
+            
             if (httpWebRequest != null)
             {
                 if (!string.IsNullOrEmpty(options.Host))
@@ -163,20 +193,25 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                 }
             }
 
-            //request.ServicePoint.BindIPEndPointDelegate = BindIPEndPointCallback;
+            if (!string.IsNullOrWhiteSpace(userInfo))
+            {
+                var parts = userInfo.Split(':');
+                if (parts.Length == 2)
+                {
+                    request.Credentials = GetCredential(url, parts[0], parts[1]);
+                    request.PreAuthenticate = true;
+                }
+            }
 
             return request;
         }
 
-        private static IPEndPoint BindIPEndPointCallback(ServicePoint servicePoint, IPEndPoint remoteEndPoint, int retryCount)
+        private CredentialCache GetCredential(string url, string username, string password)
         {
-            // Prefer local ipv4
-            if (remoteEndPoint.AddressFamily == AddressFamily.InterNetworkV6)
-            {
-                return new IPEndPoint(IPAddress.IPv6Any, 0);
-            }
-
-            return new IPEndPoint(IPAddress.Any, 0);
+            //ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3;
+            CredentialCache credentialCache = new CredentialCache();
+            credentialCache.Add(new Uri(url), "Basic", new NetworkCredential(username, password));
+            return credentialCache;
         }
 
         private void AddRequestHeaders(HttpWebRequest request, HttpRequestOptions options)
@@ -196,20 +231,6 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                     request.Headers.Set(header.Key, header.Value);
                 }
             }
-        }
-
-        /// <summary>
-        /// The _semaphoreLocks
-        /// </summary>
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _semaphoreLocks = new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
-        /// <summary>
-        /// Gets the lock.
-        /// </summary>
-        /// <param name="url">The filename.</param>
-        /// <returns>System.Object.</returns>
-        private SemaphoreSlim GetLock(string url)
-        {
-            return _semaphoreLocks.GetOrAdd(url, key => new SemaphoreSlim(1, 1));
         }
 
         /// <summary>
@@ -282,7 +303,6 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
             var url = options.Url;
             var urlHash = url.ToLower().GetMD5().ToString("N");
-            var semaphore = GetLock(url);
 
             var responseCachePath = Path.Combine(_appPaths.CachePath, "httpclient", urlHash);
 
@@ -292,33 +312,20 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                 return response;
             }
 
-            await semaphore.WaitAsync(options.CancellationToken).ConfigureAwait(false);
+            response = await SendAsyncInternal(options, httpMethod).ConfigureAwait(false);
 
-            try
+            if (response.StatusCode == HttpStatusCode.OK)
             {
-                response = await GetCachedResponse(responseCachePath, options.CacheLength, url).ConfigureAwait(false);
-                if (response != null)
-                {
-                    return response;
-                }
-
-                response = await SendAsyncInternal(options, httpMethod).ConfigureAwait(false);
-
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    await CacheResponse(response, responseCachePath).ConfigureAwait(false);
-                }
-
-                return response;
+                await CacheResponse(response, responseCachePath).ConfigureAwait(false);
             }
-            finally
-            {
-                semaphore.Release();
-            }
+
+            return response;
         }
 
         private async Task<HttpResponseInfo> GetCachedResponse(string responseCachePath, TimeSpan cacheLength, string url)
         {
+            _logger.Info("Checking for cache file {0}", responseCachePath);
+
             try
             {
                 if (_fileSystem.GetLastWriteTimeUtc(responseCachePath).Add(cacheLength) > DateTime.UtcNow)
@@ -355,17 +362,16 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
         private async Task CacheResponse(HttpResponseInfo response, string responseCachePath)
         {
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(responseCachePath));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(responseCachePath));
 
             using (var responseStream = response.Content)
             {
-                using (var fileStream = _fileSystem.GetFileStream(responseCachePath, FileMode.Create, FileAccess.Write, FileShare.Read, true))
+                var memoryStream = new MemoryStream();
+                await responseStream.CopyToAsync(memoryStream).ConfigureAwait(false);
+                memoryStream.Position = 0;
+
+                using (var fileStream = _fileSystem.GetFileStream(responseCachePath, FileMode.Create, FileAccess.Write, FileShare.None, true))
                 {
-                    var memoryStream = new MemoryStream();
-
-                    await responseStream.CopyToAsync(memoryStream).ConfigureAwait(false);
-
-                    memoryStream.Position = 0;
                     await memoryStream.CopyToAsync(fileStream).ConfigureAwait(false);
 
                     memoryStream.Position = 0;
@@ -390,7 +396,7 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                 };
             }
 
-            var httpWebRequest = GetRequest(options, httpMethod, options.EnableHttpCompression);
+            var httpWebRequest = GetRequest(options, httpMethod);
 
             if (options.RequestContentBytes != null ||
                 !string.IsNullOrEmpty(options.RequestContent) ||
@@ -464,20 +470,11 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
             }
             catch (OperationCanceledException ex)
             {
-                var exception = GetCancellationException(options.Url, options.CancellationToken, ex);
-
-                var httpException = exception as HttpException;
-
-                if (httpException != null && httpException.IsTimedOut)
-                {
-                    client.LastTimeout = DateTime.UtcNow;
-                }
-
-                throw exception;
+                throw GetCancellationException(options, client, options.CancellationToken, ex);
             }
             catch (Exception ex)
             {
-                throw GetException(ex, options);
+                throw GetException(ex, options, client);
             }
             finally
             {
@@ -486,27 +483,6 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                     options.ResourcePool.Release();
                 }
             }
-        }
-
-        /// <summary>
-        /// Gets the exception.
-        /// </summary>
-        /// <param name="ex">The ex.</param>
-        /// <param name="options">The options.</param>
-        /// <returns>HttpException.</returns>
-        private HttpException GetException(WebException ex, HttpRequestOptions options)
-        {
-            _logger.ErrorException("Error getting response from " + options.Url, ex);
-
-            var exception = new HttpException(ex.Message, ex);
-
-            var response = ex.Response as HttpWebResponse;
-            if (response != null)
-            {
-                exception.StatusCode = response.StatusCode;
-            }
-
-            return exception;
         }
 
         private HttpResponseInfo GetResponseInfo(HttpWebResponse httpResponse, Stream content, long? contentLength, IDisposable disposable)
@@ -599,7 +575,7 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
         {
             ValidateParams(options);
 
-			_fileSystem.CreateDirectory(_appPaths.TempDirectory);
+            _fileSystem.CreateDirectory(_appPaths.TempDirectory);
 
             var tempFile = Path.Combine(_appPaths.TempDirectory, Guid.NewGuid() + ".tmp");
 
@@ -610,7 +586,7 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
             options.CancellationToken.ThrowIfCancellationRequested();
 
-            var httpWebRequest = GetRequest(options, "GET", options.EnableHttpCompression);
+            var httpWebRequest = GetRequest(options, "GET");
 
             if (options.ResourcePool != null)
             {
@@ -624,6 +600,8 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                 _logger.Info("HttpClientManager.GetTempFileResponse url: {0}", options.Url);
             }
 
+            var client = GetHttpClient(GetHostFromUrl(options.Url), options.EnableHttpCompression);
+
             try
             {
                 options.CancellationToken.ThrowIfCancellationRequested();
@@ -632,7 +610,6 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
                 {
                     var httpResponse = (HttpWebResponse)response;
 
-                    var client = GetHttpClient(GetHostFromUrl(options.Url), options.EnableHttpCompression);
                     EnsureSuccessStatusCode(client, httpResponse, options);
 
                     options.CancellationToken.ThrowIfCancellationRequested();
@@ -669,7 +646,7 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
             catch (Exception ex)
             {
                 DeleteTempFile(tempFile);
-                throw GetException(ex, options);
+                throw GetException(ex, options, client);
             }
             finally
             {
@@ -694,14 +671,37 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
         protected static readonly CultureInfo UsCulture = new CultureInfo("en-US");
 
-        private Exception GetException(Exception ex, HttpRequestOptions options)
+        private Exception GetException(Exception ex, HttpRequestOptions options, HttpClientInfo client)
         {
+            if (ex is HttpException)
+            {
+                return ex;
+            }
+
             var webException = ex as WebException
                 ?? ex.InnerException as WebException;
 
             if (webException != null)
             {
-                return GetException(webException, options);
+                if (options.LogErrors)
+                {
+                    _logger.ErrorException("Error getting response from " + options.Url, ex);
+                }
+
+                var exception = new HttpException(ex.Message, ex);
+
+                var response = webException.Response as HttpWebResponse;
+                if (response != null)
+                {
+                    exception.StatusCode = response.StatusCode;
+
+                    if ((int)response.StatusCode == 429)
+                    {
+                        client.LastTimeout = DateTime.UtcNow;
+                    }
+                }
+
+                return exception;
             }
 
             var operationCanceledException = ex as OperationCanceledException
@@ -709,10 +709,13 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
             if (operationCanceledException != null)
             {
-                return GetCancellationException(options.Url, options.CancellationToken, operationCanceledException);
+                return GetCancellationException(options, client, options.CancellationToken, operationCanceledException);
             }
 
-            _logger.ErrorException("Error getting response from " + options.Url, ex);
+            if (options.LogErrors)
+            {
+                _logger.ErrorException("Error getting response from " + options.Url, ex);
+            }
 
             return ex;
         }
@@ -784,18 +787,24 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
         /// <summary>
         /// Throws the cancellation exception.
         /// </summary>
-        /// <param name="url">The URL.</param>
+        /// <param name="options">The options.</param>
+        /// <param name="client">The client.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <param name="exception">The exception.</param>
         /// <returns>Exception.</returns>
-        private Exception GetCancellationException(string url, CancellationToken cancellationToken, OperationCanceledException exception)
+        private Exception GetCancellationException(HttpRequestOptions options, HttpClientInfo client, CancellationToken cancellationToken, OperationCanceledException exception)
         {
             // If the HttpClient's timeout is reached, it will cancel the Task internally
             if (!cancellationToken.IsCancellationRequested)
             {
-                var msg = string.Format("Connection to {0} timed out", url);
+                var msg = string.Format("Connection to {0} timed out", options.Url);
 
-                _logger.Error(msg);
+                if (options.LogErrors)
+                {
+                    _logger.Error(msg);
+                }
+
+                client.LastTimeout = DateTime.UtcNow;
 
                 // Throw an HttpException so that the caller doesn't think it was cancelled by user code
                 return new HttpException(msg, exception)
@@ -815,12 +824,6 @@ namespace MediaBrowser.Common.Implementations.HttpClientManager
 
             if (!isSuccessful)
             {
-                if ((int) statusCode == 429)
-                {
-                    client.LastTimeout = DateTime.UtcNow;
-                }
-
-                if (statusCode == HttpStatusCode.RequestEntityTooLarge)
                 if (options.LogErrorResponseBody)
                 {
                     try

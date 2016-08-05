@@ -1,17 +1,21 @@
-﻿using MediaBrowser.Controller.Providers;
+﻿using System;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Users;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+using MediaBrowser.Controller.Library;
 
 namespace MediaBrowser.Controller.Entities.Audio
 {
     /// <summary>
     /// Class MusicAlbum
     /// </summary>
-    public class MusicAlbum : Folder, IHasAlbumArtist, IHasArtist, IHasMusicGenres, IHasLookupInfo<AlbumInfo>
+    public class MusicAlbum : Folder, IHasAlbumArtist, IHasArtist, IHasMusicGenres, IHasLookupInfo<AlbumInfo>, IMetadataContainer
     {
         public MusicAlbum()
         {
@@ -30,7 +34,26 @@ namespace MediaBrowser.Controller.Entities.Audio
         {
             get
             {
-                return Parents.OfType<MusicArtist>().FirstOrDefault();
+                var artist = GetParents().OfType<MusicArtist>().FirstOrDefault();
+
+                if (artist == null)
+                {
+                    var name = AlbumArtist;
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        artist = LibraryManager.GetArtist(name);
+                    }
+                }
+                return artist;
+            }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsCumulativeRunTimeTicks
+        {
+            get
+            {
+                return true;
             }
         }
 
@@ -82,32 +105,44 @@ namespace MediaBrowser.Controller.Entities.Audio
 
         public List<string> Artists { get; set; }
 
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
-            var id = this.GetProviderId(MetadataProviders.MusicBrainzReleaseGroup);
+            var list = base.GetUserDataKeys();
+
+            if (ConfigurationManager.Configuration.EnableStandaloneMusicKeys)
+            {
+                var albumArtist = AlbumArtist;
+                if (!string.IsNullOrWhiteSpace(albumArtist))
+                {
+                    list.Insert(0, albumArtist + "-" + Name);
+                }
+            }
+
+            var id = this.GetProviderId(MetadataProviders.MusicBrainzAlbum);
 
             if (!string.IsNullOrWhiteSpace(id))
             {
-                return "MusicAlbum-MusicBrainzReleaseGroup-" + id;
+                list.Insert(0, "MusicAlbum-Musicbrainz-" + id);
             }
 
-            id = this.GetProviderId(MetadataProviders.MusicBrainzAlbum);
+            id = this.GetProviderId(MetadataProviders.MusicBrainzReleaseGroup);
 
             if (!string.IsNullOrWhiteSpace(id))
             {
-                return "MusicAlbum-Musicbrainz-" + id;
+                list.Insert(0, "MusicAlbum-MusicBrainzReleaseGroup-" + id);
             }
 
-            return base.CreateUserDataKey();
+            return list;
         }
 
         protected override bool GetBlockUnratedValue(UserPolicy config)
         {
             return config.BlockUnratedItems.Contains(UnratedItem.Music);
+        }
+
+        public override UnratedItem GetBlockUnratedType()
+        {
+            return UnratedItem.Music;
         }
 
         public AlbumInfo GetLookupInfo()
@@ -116,7 +151,7 @@ namespace MediaBrowser.Controller.Entities.Audio
 
             id.AlbumArtists = AlbumArtists;
 
-            var artist = Parents.OfType<MusicArtist>().FirstOrDefault();
+            var artist = MusicArtist;
 
             if (artist != null)
             {
@@ -138,6 +173,42 @@ namespace MediaBrowser.Controller.Entities.Audio
             }
 
             return id;
+        }
+
+        public async Task RefreshAllMetadata(MetadataRefreshOptions refreshOptions, IProgress<double> progress, CancellationToken cancellationToken)
+        {
+            var items = GetRecursiveChildren().ToList();
+
+            var totalItems = items.Count;
+            var numComplete = 0;
+
+            var childUpdateType = ItemUpdateType.None;
+
+            // Refresh songs
+            foreach (var item in items)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var updateType = await item.RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
+                childUpdateType = childUpdateType | updateType;
+
+                numComplete++;
+                double percent = numComplete;
+                percent /= totalItems;
+                progress.Report(percent * 95);
+            }
+
+            var parentRefreshOptions = refreshOptions;
+            if (childUpdateType > ItemUpdateType.None)
+            {
+                parentRefreshOptions = new MetadataRefreshOptions(refreshOptions);
+                parentRefreshOptions.MetadataRefreshMode = MetadataRefreshMode.FullRefresh;
+            }
+
+            // Refresh current item
+            await RefreshMetadata(parentRefreshOptions, cancellationToken).ConfigureAwait(false);
+
+            progress.Report(100);
         }
     }
 }

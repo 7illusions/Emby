@@ -1,57 +1,51 @@
 ﻿using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.LiveTv;
-using MediaBrowser.Model.Users;
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Runtime.Serialization;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Providers;
 
 namespace MediaBrowser.Controller.LiveTv
 {
-    public class LiveTvProgram : BaseItem, ILiveTvItem, IHasLookupInfo<LiveTvProgramLookupInfo>, IHasStartDate, IHasProgramAttributes
+    public class LiveTvProgram : BaseItem, IHasLookupInfo<LiveTvProgramLookupInfo>, IHasStartDate, IHasProgramAttributes
     {
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
-            if (IsMovie)
-            {
-                var key = Movie.GetMovieUserDataKey(this);
+            var list = base.GetUserDataKeys();
 
+            if (!IsSeries)
+            {
+                var key = this.GetProviderId(MetadataProviders.Imdb);
                 if (!string.IsNullOrWhiteSpace(key))
                 {
-                    return key;
+                    list.Insert(0, key);
+                }
+
+                key = this.GetProviderId(MetadataProviders.Tmdb);
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    list.Insert(0, key);
                 }
             }
-            return GetClientTypeName() + "-" + Name;
+            else if (!string.IsNullOrWhiteSpace(EpisodeTitle))
+            {
+                var name = GetClientTypeName();
+
+                list.Insert(0, name + "-" + Name + (EpisodeTitle ?? string.Empty));
+            }
+
+            return list;
         }
 
-        /// <summary>
-        /// Gets or sets the etag.
-        /// </summary>
-        /// <value>The etag.</value>
-        public string Etag { get; set; }
-        
-        /// <summary>
-        /// Id of the program.
-        /// </summary>
-        public string ExternalId { get; set; }
-
-        /// <summary>
-        /// Gets or sets the original air date.
-        /// </summary>
-        /// <value>The original air date.</value>
-        public DateTime? OriginalAirDate { get; set; }
-        
-        /// <summary>
-        /// Gets or sets the type of the channel.
-        /// </summary>
-        /// <value>The type of the channel.</value>
-        public ChannelType ChannelType { get; set; }
+        [IgnoreDataMember]
+        public override SourceType SourceType
+        {
+            get { return SourceType.LiveTV; }
+            set { }
+        }
 
         /// <summary>
         /// The start date of the program, in UTC.
@@ -60,52 +54,18 @@ namespace MediaBrowser.Controller.LiveTv
         public DateTime StartDate { get; set; }
 
         /// <summary>
-        /// Gets or sets a value indicating whether this instance is hd.
-        /// </summary>
-        /// <value><c>true</c> if this instance is hd; otherwise, <c>false</c>.</value>
-        public bool? IsHD { get; set; }
-
-        /// <summary>
-        /// Gets or sets the audio.
-        /// </summary>
-        /// <value>The audio.</value>
-        public ProgramAudio? Audio { get; set; }
-
-        /// <summary>
         /// Gets or sets a value indicating whether this instance is repeat.
         /// </summary>
         /// <value><c>true</c> if this instance is repeat; otherwise, <c>false</c>.</value>
+        [IgnoreDataMember]
         public bool IsRepeat { get; set; }
 
         /// <summary>
         /// Gets or sets the episode title.
         /// </summary>
         /// <value>The episode title.</value>
+        [IgnoreDataMember]
         public string EpisodeTitle { get; set; }
-
-        /// <summary>
-        /// Gets or sets the name of the service.
-        /// </summary>
-        /// <value>The name of the service.</value>
-        public string ServiceName { get; set; }
-
-        /// <summary>
-        /// Supply the image path if it can be accessed directly from the file system
-        /// </summary>
-        /// <value>The image path.</value>
-        public string ProviderImagePath { get; set; }
-
-        /// <summary>
-        /// Supply the image url if it can be downloaded
-        /// </summary>
-        /// <value>The image URL.</value>
-        public string ProviderImageUrl { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether this instance has image.
-        /// </summary>
-        /// <value><c>null</c> if [has image] contains no value, <c>true</c> if [has image]; otherwise, <c>false</c>.</value>
-        public bool? HasProviderImage { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether this instance is movie.
@@ -183,14 +143,14 @@ namespace MediaBrowser.Controller.LiveTv
             }
         }
 
-        [IgnoreDataMember]
-        public override string MediaType
-        {
-            get
-            {
-                return ChannelType == ChannelType.TV ? Model.Entities.MediaType.Video : Model.Entities.MediaType.Audio;
-            }
-        }
+        //[IgnoreDataMember]
+        //public override string MediaType
+        //{
+        //    get
+        //    {
+        //        return ChannelType == ChannelType.TV ? Model.Entities.MediaType.Video : Model.Entities.MediaType.Audio;
+        //    }
+        //}
 
         [IgnoreDataMember]
         public bool IsAiring
@@ -219,9 +179,9 @@ namespace MediaBrowser.Controller.LiveTv
             return "Program";
         }
 
-        protected override bool GetBlockUnratedValue(UserPolicy config)
+        public override UnratedItem GetBlockUnratedType()
         {
-            return config.BlockUnratedItems.Contains(UnratedItem.LiveTvProgram);
+            return UnratedItem.LiveTvProgram;
         }
 
         protected override string GetInternalMetadataPath(string basePath)
@@ -265,6 +225,35 @@ namespace MediaBrowser.Controller.LiveTv
 
                 return base.SupportsPeople;
             }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsAncestors
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        public override List<ExternalUrl> GetRelatedUrls()
+        {
+            var list = base.GetRelatedUrls();
+
+            var imdbId = this.GetProviderId(MetadataProviders.Imdb);
+            if (!string.IsNullOrWhiteSpace(imdbId))
+            {
+                if (IsMovie)
+                {
+                    list.Add(new ExternalUrl
+                    {
+                        Name = "Trakt",
+                        Url = string.Format("https://trakt.tv/movies/{0}", imdbId)
+                    });
+                }
+            }
+
+            return list;
         }
     }
 }

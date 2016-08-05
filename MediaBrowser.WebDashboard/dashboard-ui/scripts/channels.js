@@ -1,4 +1,4 @@
-﻿(function ($, document) {
+﻿define(['libraryBrowser', 'cardBuilder', 'emby-itemscontainer'], function (libraryBrowser, cardBuilder) {
 
     // The base query options
     var query = {
@@ -12,7 +12,7 @@
 
         query.UserId = Dashboard.getCurrentUserId();
 
-        ApiClient.getJSON(ApiClient.getUrl("Channels", query)).done(function (result) {
+        ApiClient.getJSON(ApiClient.getUrl("Channels", query)).then(function (result) {
 
             // Scroll back up so they can see the results from the beginning
             window.scrollTo(0, 0);
@@ -23,7 +23,7 @@
 
             if (view == "Thumb") {
 
-                html = LibraryBrowser.getPosterViewHtml({
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
                     shape: "backdrop",
                     context: 'channels',
@@ -36,7 +36,7 @@
             }
             else if (view == "ThumbCard") {
 
-                html = LibraryBrowser.getPosterViewHtml({
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
                     shape: "backdrop",
                     preferThumb: true,
@@ -51,7 +51,7 @@
             elem.innerHTML = html;
             ImageLoader.lazyChildren(elem);
 
-            LibraryBrowser.saveQueryValues('channels', query);
+            libraryBrowser.saveQueryValues('channels', query);
 
             Dashboard.hideLoadingMsg();
         });
@@ -62,7 +62,7 @@
         switch (index) {
 
             case 1:
-                LibraryBrowser.loadSavedQueryValues('channels', query);
+                libraryBrowser.loadSavedQueryValues('channels', query);
                 reloadItems(page);
                 break;
             default:
@@ -70,19 +70,18 @@
         }
     }
 
-    $(document).on('pageinit', "#channelsPage", function () {
+    pageIdOn('pageinit', "channelsPage", function () {
 
         var page = this;
 
-        var tabs = page.querySelector('paper-tabs');
-        var pages = page.querySelector('neon-animated-pages');
+        var mdlTabs = page.querySelector('.libraryViewNav');
 
-        LibraryBrowser.configurePaperLibraryTabs(page, tabs, pages, 'channels.html');
+        libraryBrowser.configurePaperLibraryTabs(page, mdlTabs, page.querySelectorAll('.pageTabContent'), [0, 1]);
 
-        $(pages).on('tabchange', function () {
-            loadTab(page, parseInt(this.selected));
+        mdlTabs.addEventListener('tabchange', function (e) {
+            loadTab(page, parseInt(e.detail.selectedTabIndex));
         });
 
     });
 
-})(jQuery, document);
+});

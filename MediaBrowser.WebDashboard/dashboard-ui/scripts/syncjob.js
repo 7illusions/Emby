@@ -1,42 +1,39 @@
-﻿(function () {
+﻿define(['jQuery', 'datetime', 'listViewStyle', 'paper-icon-button-light', 'emby-button'], function ($, datetime) {
 
     function renderJob(page, job, dialogOptions) {
-
-        require(['paperbuttonstyle']);
 
         var html = '';
 
         html += '<div>';
-        html += Globalize.translate('ValueDateCreated', parseISO8601Date(job.DateCreated, { toLocal: true }).toLocaleString());
+        html += Globalize.translate('ValueDateCreated', datetime.parseISO8601Date(job.DateCreated, true).toLocaleString());
         html += '</div>';
         html += '<br/>';
         html += '<div class="formFields"></div>';
 
         html += '<br/>';
         html += '<br/>';
-        html += '<button type="submit" data-role="none" class="clearButton">';
-        html += '<paper-button raised class="submit block"><iron-icon icon="check"></iron-icon><span>' + Globalize.translate('ButtonSave') + '</span></paper-button>';
-        html += '</button>';
+        html += '<button is="emby-button" type="submit" class="raised submit block"><span>' + Globalize.translate('ButtonSave') + '</span></button>';
 
-        $('.syncJobForm', page).html(html).trigger('create');
-        SyncManager.renderForm({
-            elem: $('.formFields', page),
-            dialogOptions: dialogOptions,
-            dialogOptionsFn: getTargetDialogOptionsFn(dialogOptions),
-            showName: true,
-            readOnlySyncTarget: true
+        page.querySelector('.syncJobForm').innerHTML = html;
+
+        require(['syncDialog'], function (syncDialog) {
+            syncDialog.renderForm({
+                elem: $('.formFields', page),
+                dialogOptions: dialogOptions,
+                dialogOptionsFn: getTargetDialogOptionsFn(dialogOptions),
+                showName: true,
+                readOnlySyncTarget: true
+            }).then(function () {
+                fillJobValues(page, job, dialogOptions);
+            });
         });
-        fillJobValues(page, job, dialogOptions);
     }
 
     function getTargetDialogOptionsFn(dialogOptions) {
 
         return function (targetId) {
 
-            var deferred = $.Deferred();
-
-            deferred.resolveWith(null, [dialogOptions]);
-            return deferred.promise();
+            return Promise.resolve(dialogOptions);
         };
     }
 
@@ -44,7 +41,7 @@
 
         var html = '';
 
-        html += '<paper-icon-item data-itemid="' + jobItem.Id + '" data-status="' + jobItem.Status + '" data-remove="' + jobItem.IsMarkedForRemoval + '">';
+        html += '<div class="listItem" data-itemid="' + jobItem.Id + '" data-status="' + jobItem.Status + '" data-remove="' + jobItem.IsMarkedForRemoval + '">';
 
         var hasActions = ['Queued', 'Cancelled', 'Failed', 'ReadyToTransfer', 'Transferring', 'Converting', 'Synced'].indexOf(jobItem.Status) != -1;
 
@@ -61,22 +58,22 @@
         }
 
         if (imgUrl) {
-            html += '<paper-fab class="listAvatar blue" style="background-image:url(\'' + imgUrl + '\');background-repeat:no-repeat;background-position:center center;background-size: cover;" item-icon></paper-fab>';
+            html += '<button type="button" is="emby-button" class="blue mini fab autoSize" icon="sync" style="background-image:url(\'' + imgUrl + '\');background-repeat:no-repeat;background-position:center center;background-size: cover;"><i style="visibility:hidden;" class="md-icon">sync</i></button>';
         }
         else {
-            html += '<paper-fab class="listAvatar blue" icon="sync" item-icon></paper-fab>';
+            html += '<button type="button" is="emby-button" class="blue mini fab autoSize" icon="sync"><i class="md-icon">sync</i></button>';
         }
 
-        html += '<paper-item-body three-line>';
+        html += '<div class="listItemBody three-line">';
 
         html += '<div>';
         html += jobItem.ItemName;
         html += '</div>';
 
         if (jobItem.Status == 'Failed') {
-            html += '<div secondary style="color:red;">';
+            html += '<div class="secondary" style="color:red;">';
         } else {
-            html += '<div secondary>';
+            html += '<div class="secondary">';
         }
         html += Globalize.translate('SyncJobItemStatus' + jobItem.Status);
         if (jobItem.Status == 'Synced' && jobItem.IsMarkedForRemoval) {
@@ -85,20 +82,20 @@
         }
         html += '</div>';
 
-        html += '<div secondary style="padding-top:5px;">';
-        html += '<paper-progress class="mini" style="width:100%;" value="' + (jobItem.Progress || 0) + '"></paper-progress>';
+        html += '<div class="secondary" style="padding-top:5px;">';
+        html += '<div style="background:#e0e0e0;height:4px;"><div style="background:#52B54B;width:' + (jobItem.Progress || 0) + '%;height:100%;"></div></div>';
         html += '</div>';
 
-        html += '</paper-item-body>';
+        html += '</div>';
 
         if (hasActions) {
 
-            html += '<paper-icon-button icon="' + AppInfo.moreIcon + '" class="btnJobItemMenu"></paper-icon-button>';
+            html += '<button type="button" is="paper-icon-button-light" class="btnJobItemMenu autoSize"><i class="md-icon">' + AppInfo.moreIcon.replace('-', '_') + '</i></button>';
         } else {
-            html += '<paper-icon-button icon="' + AppInfo.moreIcon + '" class="btnJobItemMenu" disabled></paper-icon-button>';
+            html += '<button type="button" is="paper-icon-button-light" class="btnJobItemMenu autoSize" disabled><i class="md-icon">' + AppInfo.moreIcon.replace('-', '_') + '</i></button>';
         }
 
-        html += '</paper-icon-item>';
+        html += '</div>';
         return html;
     }
 
@@ -119,62 +116,72 @@
 
         html += '</div>';
 
-        var elem = $('.jobItems', page).html(html).trigger('create').lazyChildren();
+        var elem = page.querySelector('.jobItems');
+        elem.innerHTML = html;
+        ImageLoader.lazyChildren(elem);
 
         $('.btnJobItemMenu', elem).on('click', function () {
             showJobItemMenu(this);
         });
     }
 
+    function parentWithClass(elem, className) {
+
+        while (!elem.classList || !elem.classList.contains(className)) {
+            elem = elem.parentNode;
+
+            if (!elem) {
+                return null;
+            }
+        }
+
+        return elem;
+    }
+
     function showJobItemMenu(elem) {
 
-        var page = $(elem).parents('.page');
-        var listItem = $(elem).parents('paper-icon-item');
-        var jobItemId = listItem.attr('data-itemid');
-        var status = listItem.attr('data-status');
-        var remove = listItem.attr('data-remove').toLowerCase() == 'true';
+        var page = parentWithClass(elem, 'page');
+        var listItem = parentWithClass(elem, 'listItem');
+        var jobItemId = listItem.getAttribute('data-itemid');
+        var status = listItem.getAttribute('data-status');
+        var remove = listItem.getAttribute('data-remove').toLowerCase() == 'true';
 
         var menuItems = [];
 
         if (status == 'Failed') {
             menuItems.push({
                 name: Globalize.translate('ButtonQueueForRetry'),
-                id: 'retry',
-                ironIcon: 'check'
+                id: 'retry'
             });
         }
         else if (status == 'Cancelled') {
             menuItems.push({
                 name: Globalize.translate('ButtonReenable'),
-                id: 'retry',
-                ironIcon: 'check'
+                id: 'retry'
             });
         }
         else if (status == 'Queued' || status == 'Transferring' || status == 'Converting' || status == 'ReadyToTransfer') {
             menuItems.push({
                 name: Globalize.translate('ButtonCancelItem'),
-                id: 'cancel',
-                ironIcon: 'delete'
+                id: 'cancel'
             });
         }
         else if (status == 'Synced' && remove) {
             menuItems.push({
                 name: Globalize.translate('ButtonUnmarkForRemoval'),
-                id: 'unmarkforremoval',
-                ironIcon: 'check'
+                id: 'unmarkforremoval'
             });
         }
         else if (status == 'Synced') {
             menuItems.push({
                 name: Globalize.translate('ButtonMarkForRemoval'),
-                id: 'markforremoval',
-                ironIcon: 'delete'
+                id: 'markforremoval'
             });
         }
 
-        require(['actionsheet'], function () {
+        require(['actionsheet'], function (actionsheet) {
 
-            ActionSheetElement.show({
+            actionsheet.show({
                 items: menuItems,
                 positionTo: elem,
                 callback: function (id) {
@@ -213,7 +220,7 @@
             type: "DELETE",
             url: ApiClient.getUrl('Sync/JobItems/' + jobItemId)
 
-        }).done(function () {
+        }).then(function () {
 
             loadJob(page);
         });
@@ -227,7 +234,7 @@
             type: "POST",
             url: ApiClient.getUrl('Sync/JobItems/' + jobItemId + '/MarkForRemoval')
 
-        }).done(function () {
+        }).then(function () {
 
             loadJob(page);
         });
@@ -240,7 +247,7 @@
             type: "POST",
             url: ApiClient.getUrl('Sync/JobItems/' + jobItemId + '/UnmarkForRemoval')
 
-        }).done(function () {
+        }).then(function () {
 
             loadJob(page);
         });
@@ -253,7 +260,7 @@
             type: "POST",
             url: ApiClient.getUrl('Sync/JobItems/' + jobItemId + '/Enable')
 
-        }).done(function () {
+        }).then(function () {
 
             loadJob(page);
         });
@@ -261,7 +268,11 @@
 
     function fillJobValues(page, job, editOptions) {
 
-        $('#txtSyncJobName', page).val(job.Name);
+        var txtSyncJobName = page.querySelector('#txtSyncJobName');
+        if (txtSyncJobName) {
+            txtSyncJobName.value = job.Name;
+        }
+
         $('#selectProfile', page).val(job.Profile || '').trigger('change');
         $('#selectQuality', page).val(job.Quality || '').trigger('change');
         $('#chkUnwatchedOnly', page).checked(job.UnwatchedOnly);
@@ -288,7 +299,7 @@
         Dashboard.showLoadingMsg();
         var id = getParameterByName('id');
 
-        ApiClient.getJSON(ApiClient.getUrl('Sync/Jobs/' + id)).done(function (job) {
+        ApiClient.getJSON(ApiClient.getUrl('Sync/Jobs/' + id)).then(function (job) {
 
             ApiClient.getJSON(ApiClient.getUrl('Sync/Options', {
 
@@ -299,7 +310,7 @@
                 Category: job.Category,
                 TargetId: job.TargetId
 
-            })).done(function (options) {
+            })).then(function (options) {
 
                 _jobOptions = options;
                 renderJob(page, job, options);
@@ -312,7 +323,7 @@
             JobId: id,
             AddMetadata: true
 
-        })).done(function (result) {
+        })).then(function (result) {
 
             renderJobItems(page, result.Items);
             Dashboard.hideLoadingMsg();
@@ -321,7 +332,7 @@
 
     function loadJobInfo(page, job, jobItems) {
 
-        renderJob(page, job, _jobOptions);
+        //renderJob(page, job, _jobOptions);
         renderJobItems(page, jobItems);
         Dashboard.hideLoadingMsg();
     }
@@ -331,83 +342,78 @@
         Dashboard.showLoadingMsg();
         var id = getParameterByName('id');
 
-        ApiClient.getJSON(ApiClient.getUrl('Sync/Jobs/' + id)).done(function (job) {
+        ApiClient.getJSON(ApiClient.getUrl('Sync/Jobs/' + id)).then(function (job) {
 
-            SyncManager.setJobValues(job, page);
+            require(['syncDialog'], function (syncDialog) {
+                syncDialog.setJobValues(job, page);
 
-            ApiClient.ajax({
+                ApiClient.ajax({
 
-                url: ApiClient.getUrl('Sync/Jobs/' + id),
-                type: 'POST',
-                data: JSON.stringify(job),
-                contentType: "application/json"
+                    url: ApiClient.getUrl('Sync/Jobs/' + id),
+                    type: 'POST',
+                    data: JSON.stringify(job),
+                    contentType: "application/json"
 
-            }).done(function () {
+                }).then(function () {
 
-                Dashboard.hideLoadingMsg();
-                Dashboard.alert(Globalize.translate('SettingsSaved'));
+                    Dashboard.hideLoadingMsg();
+                    require(['toast'], function (toast) {
+                        toast(Globalize.translate('SettingsSaved'));
+                    });
+                });
             });
         });
 
     }
 
-    function onWebSocketMessage(e, msg) {
+    return function (view, params) {
 
-        var page = $.mobile.activePage;
+        view.querySelector('.syncJobForm').addEventListener('submit', function (e) {
 
-        if (msg.MessageType == "SyncJob") {
-            loadJobInfo(page, msg.Data.Job, msg.Data.JobItems);
-        }
-    }
+            saveJob(view);
+            e.preventDefault();
+            return false;
+        });
 
-    function startListening(page) {
+        function onWebSocketMessage(e, msg) {
 
-        var startParams = "0,1500";
-
-        startParams += "," + getParameterByName('id');
-
-        if (ApiClient.isWebSocketOpen()) {
-            ApiClient.sendWebSocketMessage("SyncJobStart", startParams);
+            if (msg.MessageType == "SyncJob") {
+                loadJobInfo(view, msg.Data.Job, msg.Data.JobItems);
+            }
         }
 
-    }
+        function startListening(page) {
 
-    function stopListening() {
+            var startParams = "0,1500";
 
-        if (ApiClient.isWebSocketOpen()) {
-            ApiClient.sendWebSocketMessage("SyncJobStop", "");
+            startParams += "," + getParameterByName('id');
+
+            if (ApiClient.isWebSocketOpen()) {
+                ApiClient.sendWebSocketMessage("SyncJobStart", startParams);
+            }
         }
 
-    }
+        function stopListening() {
 
-    function onSubmit() {
-        var form = this;
+            if (ApiClient.isWebSocketOpen()) {
+                ApiClient.sendWebSocketMessage("SyncJobStop", "");
+            }
 
-        var page = $(form).parents('.page');
+        }
 
-        saveJob(page);
+        view.addEventListener('viewshow', function () {
+            var page = this;
+            loadJob(page);
 
-        return false;
-    }
+            startListening(page);
+            Events.on(ApiClient, "websocketmessage", onWebSocketMessage);
+        });
 
-    $(document).on('pageinit', ".syncJobPage", function () {
+        view.addEventListener('viewbeforehide', function () {
 
-        $('.syncJobForm').off('submit', onSubmit).on('submit', onSubmit);
+            stopListening();
+            Events.off(ApiClient, "websocketmessage", onWebSocketMessage);
+        });
+    };
 
-    }).on('pageshowready', ".syncJobPage", function () {
-
-        var page = this;
-        loadJob(page);
-
-        startListening(page);
-        $(ApiClient).on("websocketmessage", onWebSocketMessage);
-
-    }).on('pagebeforehide', ".syncJobPage", function () {
-
-        var page = this;
-
-        stopListening();
-        $(ApiClient).off("websocketmessage", onWebSocketMessage);
-    });
-
-})();
+});

@@ -1,4 +1,4 @@
-﻿(function ($, document, LibraryBrowser) {
+﻿define(['listView', 'cardBuilder', 'emby-itemscontainer'], function (listView, cardBuilder) {
 
     function renderItems(page, item) {
 
@@ -29,7 +29,6 @@
         }
 
         if (item.TrailerCount) {
-
             sections.push({
                 name: Globalize.translate('TabTrailers'),
                 type: 'Trailer'
@@ -80,10 +79,10 @@
             html += '<h1 class="listHeader" style="display:inline-block;vertical-align:middle;">';
             html += section.name;
             html += '</h1>';
-            html += '<a href="#" class="clearLink hide" style="margin-left:1em;vertical-align:middle;"><paper-button raised class="more mini noIcon">' + Globalize.translate('ButtonMore') + '</paper-button></a>';
+            html += '<a href="#" class="clearLink hide" style="margin-left:1em;vertical-align:middle;"><button is="emby-button" type="button" class="raised more mini noIcon">' + Globalize.translate('ButtonMore') + '</button></a>';
             html += '</div>';
 
-            html += '<div class="itemsContainer">';
+            html += '<div is="emby-itemscontainer" class="itemsContainer">';
             html += '</div>';
 
             html += '</div>';
@@ -110,7 +109,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayMoreButton: true
@@ -125,7 +124,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayPlayButton: true
@@ -140,7 +139,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayMoreButton: true
@@ -155,7 +154,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayPlayButton: true
@@ -170,7 +169,7 @@
                     ArtistIds: "",
                     Limit: 10
                 }, {
-                    shape: "detailPagePortrait",
+                    shape: "portrait",
                     showTitle: true,
                     centerText: true,
                     overlayMoreButton: true
@@ -185,7 +184,7 @@
                     ArtistIds: "",
                     Limit: 8
                 }, {
-                    shape: "detailPageSquare",
+                    shape: "square",
                     playFromHere: true,
                     showTitle: true,
                     showParentTitle: true,
@@ -202,7 +201,7 @@
                     ArtistIds: "",
                     Limit: 6
                 }, {
-                    shape: "detailPage169",
+                    shape: "backdrop",
                     showTitle: true,
                     showParentTitle: true,
                     centerText: true,
@@ -219,7 +218,7 @@
                     Limit: 30
                 }, {
                     playFromHere: true,
-                    defaultAction: 'playallfromhere',
+                    action: 'playallfromhere',
                     smallIcon: true
                 });
                 break;
@@ -233,7 +232,7 @@
 
         query = getQuery(query, item);
 
-        getItemsFunction(query, item)(query.StartIndex, query.Limit, query.Fields).done(function (result) {
+        getItemsFunction(query, item)(query.StartIndex, query.Limit, query.Fields).then(function (result) {
 
             var html = '';
 
@@ -247,24 +246,27 @@
             }
 
             listOptions.items = result.Items;
+            var itemsContainer = element.querySelector('.itemsContainer');
 
             if (type == 'Audio') {
-                html = LibraryBrowser.getListViewHtml(listOptions);
+                html = listView.getListViewHtml(listOptions);
+                itemsContainer.classList.remove('vertical-wrap');
+                itemsContainer.classList.add('vertical-list');
             } else {
-                html = LibraryBrowser.getPosterViewHtml(listOptions);
+                html = cardBuilder.getCardsHtml(listOptions);
+                itemsContainer.classList.add('vertical-wrap');
+                itemsContainer.classList.remove('vertical-list');
             }
 
-            var itemsContainer = element.querySelector('.itemsContainer');
             itemsContainer.innerHTML = html;
 
-            $(itemsContainer).createCardMenus();
             ImageLoader.lazyChildren(itemsContainer);
         });
     }
 
     function getMoreItemsHref(item, type) {
 
-        return 'secondaryitems.html?type=' + type + '&parentid=' + item.Id;
+        return 'secondaryitems.html?type=' + type + '&parentId=' + item.Id;
     }
 
     function addCurrentItemToQuery(query, item) {
@@ -297,13 +299,13 @@
             SortOrder: "Ascending",
             IncludeItemTypes: "",
             Recursive: true,
-            Fields: "AudioInfo,SeriesInfo,ParentId,PrimaryImageAspectRatio,SyncInfo",
+            Fields: "AudioInfo,SeriesInfo,ParentId,PrimaryImageAspectRatio,BasicSyncInfo",
             Limit: LibraryBrowser.getDefaultPageSize(),
             StartIndex: 0,
             CollapseBoxSetItems: false
         };
 
-        query = $.extend(query, options || {});
+        query = Object.assign(query, options || {});
 
         if (query.IncludeItemTypes == "Audio") {
             query.SortBy = "AlbumArtist,Album,SortName";
@@ -337,4 +339,4 @@
         renderItems: renderItems
     };
 
-})(jQuery, document, LibraryBrowser);
+});

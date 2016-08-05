@@ -304,11 +304,7 @@ namespace MediaBrowser.Controller.Providers
                     {
                         var val = reader.ReadElementContentAsString();
 
-                        var hasLanguage = item as IHasPreferredMetadataLanguage;
-                        if (hasLanguage != null)
-                        {
-                            hasLanguage.PreferredMetadataLanguage = val;
-                        }
+                        item.PreferredMetadataLanguage = val;
 
                         break;
                     }
@@ -317,11 +313,7 @@ namespace MediaBrowser.Controller.Providers
                     {
                         var val = reader.ReadElementContentAsString();
 
-                        var hasLanguage = item as IHasPreferredMetadataLanguage;
-                        if (hasLanguage != null)
-                        {
-                            hasLanguage.PreferredMetadataCountryCode = val;
-                        }
+                        item.PreferredMetadataCountryCode = val;
 
                         break;
                     }
@@ -811,11 +803,7 @@ namespace MediaBrowser.Controller.Providers
                     {
                         using (var subtree = reader.ReadSubtree())
                         {
-                            var hasTags = item as IHasTags;
-                            if (hasTags != null)
-                            {
-                                FetchFromTagsNode(subtree, hasTags);
-                            }
+                            FetchFromTagsNode(subtree, item);
                         }
                         break;
                     }
@@ -824,11 +812,7 @@ namespace MediaBrowser.Controller.Providers
                     {
                         using (var subtree = reader.ReadSubtree())
                         {
-                            var hasTags = item as IHasKeywords;
-                            if (hasTags != null)
-                            {
-                                FetchFromKeywordsNode(subtree, hasTags);
-                            }
+                            FetchFromKeywordsNode(subtree, item);
                         }
                         break;
                     }
@@ -887,6 +871,10 @@ namespace MediaBrowser.Controller.Providers
                             else if (string.Equals("FSBS", val, StringComparison.OrdinalIgnoreCase))
                             {
                                 video.Video3DFormat = Video3DFormat.FullSideBySide;
+                            }
+                            else if (string.Equals("MVC", val, StringComparison.OrdinalIgnoreCase))
+                            {
+                                video.Video3DFormat = Video3DFormat.MVC;
                             }
                         }
                         break;
@@ -1074,7 +1062,7 @@ namespace MediaBrowser.Controller.Providers
             }
         }
 
-        private void FetchFromTagsNode(XmlReader reader, IHasTags item)
+        private void FetchFromTagsNode(XmlReader reader, BaseItem item)
         {
             reader.MoveToContent();
 
@@ -1103,7 +1091,7 @@ namespace MediaBrowser.Controller.Providers
             }
         }
 
-        private void FetchFromKeywordsNode(XmlReader reader, IHasKeywords item)
+        private void FetchFromKeywordsNode(XmlReader reader, BaseItem item)
         {
             reader.MoveToContent();
 

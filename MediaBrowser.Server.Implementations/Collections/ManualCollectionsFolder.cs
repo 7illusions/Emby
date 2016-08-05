@@ -1,19 +1,13 @@
 ﻿using MediaBrowser.Controller.Entities;
-using System.Linq;
 
 namespace MediaBrowser.Server.Implementations.Collections
 {
-    public class ManualCollectionsFolder : BasePluginFolder
+    public class ManualCollectionsFolder : BasePluginFolder, IHiddenFromDisplay
     {
         public ManualCollectionsFolder()
         {
             Name = "Collections";
             DisplayMediaType = "CollectionFolder";
-        }
-
-        public override bool IsVisible(User user)
-        {
-            return base.IsVisible(user) && GetChildren(user, false).Any();
         }
 
         public override bool IsHidden
@@ -24,9 +18,9 @@ namespace MediaBrowser.Server.Implementations.Collections
             }
         }
 
-        public override bool IsHiddenFromUser(User user)
+        public bool IsHiddenFromUser(User user)
         {
-            return !user.Configuration.DisplayCollectionsView;
+            return !ConfigurationManager.Configuration.DisplayCollectionsView;
         }
 
         public override string CollectionType
@@ -36,7 +30,7 @@ namespace MediaBrowser.Server.Implementations.Collections
 
         public override string GetClientTypeName()
         {
-            return typeof (CollectionFolder).Name;
+            return typeof(CollectionFolder).Name;
         }
     }
 }

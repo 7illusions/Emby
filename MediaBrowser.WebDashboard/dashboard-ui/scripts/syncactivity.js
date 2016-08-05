@@ -1,12 +1,13 @@
-﻿(function () {
+﻿define(['jQuery', 'paper-icon-button-light', 'cardStyle'], function ($) {
 
     function cancelJob(page, id) {
 
         var msg = Globalize.translate('CancelSyncJobConfirmation');
 
-        Dashboard.confirm(msg, Globalize.translate('HeaderCancelSyncJob'), function (result) {
+        require(['confirm'], function (confirm) {
 
-            if (result) {
+            confirm(msg, Globalize.translate('HeaderCancelSyncJob')).then(function () {
+
                 Dashboard.showLoadingMsg();
 
                 ApiClient.ajax({
@@ -14,11 +15,11 @@
                     url: ApiClient.getUrl('Sync/Jobs/' + id),
                     type: 'DELETE'
 
-                }).done(function () {
+                }).then(function () {
 
                     reloadData(page);
                 });
-            }
+            });
         });
     }
 
@@ -59,7 +60,7 @@
 
         var html = '';
 
-        html += "<div class='card squareCard' data-id='" + job.Id + "' data-status='" + job.Status + "'>";
+        html += "<div class='card squareCard scalableCard' data-id='" + job.Id + "' data-status='" + job.Status + "'>";
 
         html += '<div class="' + cardBoxCssClass + '">';
         html += '<div class="cardScalable">';
@@ -132,7 +133,7 @@
         }
 
         html += '<div class="cardText" style="text-align:right; float:right;padding:0;">';
-        html += '<paper-icon-button icon="' + AppInfo.moreIcon + '" class="btnJobMenu"></paper-icon-button>';
+        html += '<button type="button" is="paper-icon-button-light" class="btnJobMenu autoSize"><i class="md-icon">' + AppInfo.moreIcon.replace('-', '_') + '</i></button>';
         html += "</div>";
 
         for (var i = 0, length = textLines.length; i < length; i++) {
@@ -178,6 +179,8 @@
             showTargetName = !hasLocalSync();
         }
 
+        var hasOpenSection = false;
+
         for (var i = 0, length = jobs.length; i < length; i++) {
 
             var job = jobs[i];
@@ -187,9 +190,11 @@
                 if (targetName != lastTargetName) {
 
                     if (lastTargetName) {
+                        html += '</div>';
                         html += '<br/>';
                         html += '<br/>';
                         html += '<br/>';
+                        hasOpenSection = false;
                     }
 
                     lastTargetName = targetName;
@@ -199,14 +204,19 @@
                     html += '<div>' + targetName + '</div>';
 
                     html += '</div>';
+                    html += '<div class="itemsContainer vertical-wrap">';
+                    hasOpenSection = true;
                 }
             }
 
             html += getSyncJobHtml(page, job, cardBoxCssClass, syncJobPage);
         }
 
+        if (hasOpenSection) {
+            html += '</div>';
+        }
+
         var elem = $('.syncActivity', page).html(html).lazyChildren();
-        Events.trigger(elem[0], 'create');
 
         $('.btnJobMenu', elem).on('click', function () {
             showJobMenu(page, this);
@@ -217,6 +227,14 @@
             elem.html('<div style="padding:1em .25em;">' + Globalize.translate('MessageNoSyncJobsFound') + '</div>');
         }
     }
+
+    $.fn.lazyChildren = function () {
+
+        for (var i = 0, length = this.length; i < length; i++) {
+            ImageLoader.lazyChildren(this[i]);
+        }
+        return this;
+    };
 
     function refreshData(page, jobs) {
 
@@ -269,20 +287,18 @@
         if (status == 'Cancelled') {
             menuItems.push({
                 name: Globalize.translate('ButtonDelete'),
-                id: 'delete',
-                ironIcon: 'delete'
+                id: 'delete'
             });
         } else {
             menuItems.push({
                 name: Globalize.translate('ButtonCancelSyncJob'),
-                id: 'cancel',
-                ironIcon: 'delete'
+                id: 'cancel'
             });
         }
 
-        require(['actionsheet'], function () {
+        require(['actionsheet'], function (actionsheet) {
 
-            ActionSheetElement.show({
+            actionsheet.show({
                 items: menuItems,
                 positionTo: elem,
                 callback: function (id) {
@@ -310,11 +326,12 @@
 
     function reloadData(page) {
 
+        lastDataLoad = 0;
         Dashboard.showLoadingMsg();
 
         var options = {};
 
-        Dashboard.getCurrentUser().done(function (user) {
+        Dashboard.getCurrentUser().then(function (user) {
 
             if ($(page).hasClass('mySyncPage')) {
                 options.UserId = Dashboard.getCurrentUserId();
@@ -324,13 +341,9 @@
                 }
             }
 
-            ApiClient.getJSON(ApiClient.getUrl('Sync/Jobs', options)).done(function (response) {
+            ApiClient.getJSON(ApiClient.getUrl('Sync/Jobs', options)).then(function (response) {
 
                 loadData(page, response.Items);
-
-                setTimeout(function () {
-                    loadData(page, response.Items);
-                }, 2000);
                 Dashboard.hideLoadingMsg();
 
             });
@@ -377,27 +390,51 @@
 
     }
 
-    $(document).on('pageshowready', ".syncActivityPage", function () {
+    function getTabs() {
+        return [
+        {
+            href: 'syncactivity.html',
+            name: Globalize.translate('TabSyncJobs')
+        },
+         {
+             href: 'devicesupload.html',
+             name: Globalize.translate('TabCameraUpload')
+         },
+        {
+            href: 'appservices.html?context=sync',
+            name: Globalize.translate('TabServices')
+        },
+         {
+             href: 'syncsettings.html',
+             name: Globalize.translate('TabSettings')
+         }];
+    }
+
+    $(document).on('pageinit', ".syncActivityPage", function () {
 
         var page = this;
-        lastDataLoad = 0;
 
-        Dashboard.getPluginSecurityInfo().done(function (pluginSecurityInfo) {
+        $('.btnSyncSupporter', page).on('click', function () {
+
+            requirejs(["registrationservices"], function () {
+                RegistrationServices.validateFeature('sync');
+            });
+        });
+        $('.supporterPromotion .mainText', page).html(Globalize.translate('HeaderSyncRequiresSupporterMembership'));
+
+    }).on('pageshow', ".syncActivityPage", function () {
+
+        if (this.id == 'syncActivityPage') {
+            LibraryMenu.setTabs('syncadmin', 0, getTabs);
+        }
+        var page = this;
+
+        Dashboard.getPluginSecurityInfo().then(function (pluginSecurityInfo) {
 
             if (pluginSecurityInfo.IsMBSupporter) {
                 $('.supporterPromotionContainer', page).hide();
             } else {
                 $('.supporterPromotionContainer', page).show();
-
-                if (AppInfo.enableSupporterMembership) {
-                    $('.supporterPromotion a', page).attr('href', 'http://emby.media/donate');
-                    $('.supporterPromotion .btnLearnMore', page).show();
-                    $('.supporterPromotion .mainText', page).html(Globalize.translate('HeaderSyncRequiresSupporterMembership'));
-                } else {
-                    $('.supporterPromotion a', page).attr('href', '#');
-                    $('.supporterPromotion .btnLearnMore', page).hide();
-                    $('.supporterPromotion .mainText', page).html(Globalize.translate('HeaderSyncRequiresSupporterMembershipAppVersion'));
-                }
             }
         });
 
@@ -411,7 +448,7 @@
         });
 
         startListening(page);
-        $(ApiClient).on("websocketmessage", onWebSocketMessage);
+        Events.on(ApiClient, "websocketmessage", onWebSocketMessage);
 
     }).on('pagebeforehide', ".syncActivityPage", function () {
 
@@ -423,7 +460,7 @@
         });
 
         stopListening();
-        $(ApiClient).off("websocketmessage", onWebSocketMessage);
+        Events.off(ApiClient, "websocketmessage", onWebSocketMessage);
     });
 
-})();
+});

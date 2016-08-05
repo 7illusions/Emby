@@ -1,4 +1,5 @@
 {
+    "DbUpgradeMessage": "Please wait while your Emby Server database is upgraded. {0}% complete.",
     "AppDeviceValues": "App: {0}, Dispositivo: {1}",
     "UserDownloadingItemWithValues": "{0} sta scaricando {1}",
     "FolderTypeMixed": "contenuto misto",
@@ -132,7 +133,7 @@
     "HeaderUser": "Utente",
     "HeaderName": "Nome",
     "HeaderDate": "Data",
-    "HeaderPremiereDate": "Premiere Date",
+    "HeaderPremiereDate": "Data della prima",
     "HeaderDateAdded": "Aggiunto il",
     "HeaderReleaseDate": "Data Rilascio",
     "HeaderRuntime": "Durata",
@@ -162,7 +163,7 @@
     "HeaderCountries": "Paesi",
     "HeaderStatus": "Stato",
     "HeaderTracks": "Traccia",
-    "HeaderMusicArtist": "Music artist",
+    "HeaderMusicArtist": "Musica artisti",
     "HeaderLocked": "Bloccato",
     "HeaderStudios": "Studios",
     "HeaderActor": "Attori",
@@ -172,6 +173,6 @@
     "HeaderProducer": "Produttori",
     "HeaderWriter": "Sceneggiatori",
     "HeaderParentalRatings": "Valutazioni genitori",
-    "HeaderCommunityRatings": "Community ratings",
-    "StartupEmbyServerIsLoading": "Emby Server is loading. Please try again shortly."
+    "HeaderCommunityRatings": "Valutazione Comunity",
+    "StartupEmbyServerIsLoading": "Emby server si sta avviando. Riprova tra un po"
 }

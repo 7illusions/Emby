@@ -13,7 +13,7 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.Providers.Movies
 {
@@ -86,22 +86,28 @@ namespace MediaBrowser.Providers.Movies
             if (string.IsNullOrEmpty(tmdbId))
             {
                 movieInfo = await MovieDbProvider.Current.FetchMainResult(imdbId, false, language, cancellationToken).ConfigureAwait(false);
-                if (movieInfo == null) return item;
+                if (movieInfo != null)
+                {
+                    tmdbId = movieInfo.id.ToString(_usCulture);
 
-                tmdbId = movieInfo.id.ToString(_usCulture);
-
-                dataFilePath = MovieDbProvider.Current.GetDataFilePath(tmdbId, language);
-				_fileSystem.CreateDirectory(Path.GetDirectoryName(dataFilePath));
-                _jsonSerializer.SerializeToFile(movieInfo, dataFilePath);
+                    dataFilePath = MovieDbProvider.Current.GetDataFilePath(tmdbId, language);
+                    _fileSystem.CreateDirectory(Path.GetDirectoryName(dataFilePath));
+                    _jsonSerializer.SerializeToFile(movieInfo, dataFilePath);
+                }
             }
 
-            await MovieDbProvider.Current.EnsureMovieInfo(tmdbId, language, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(tmdbId))
+            {
+                await MovieDbProvider.Current.EnsureMovieInfo(tmdbId, language, cancellationToken).ConfigureAwait(false);
 
-            dataFilePath = dataFilePath ?? MovieDbProvider.Current.GetDataFilePath(tmdbId, language);
-            movieInfo = movieInfo ?? _jsonSerializer.DeserializeFromFile<MovieDbProvider.CompleteMovieData>(dataFilePath);
+                dataFilePath = dataFilePath ?? MovieDbProvider.Current.GetDataFilePath(tmdbId, language);
+                movieInfo = movieInfo ?? _jsonSerializer.DeserializeFromFile<MovieDbProvider.CompleteMovieData>(dataFilePath);
 
-            ProcessMainInfo(item, preferredCountryCode, movieInfo);
-            item.HasMetadata = true;
+                var settings = await MovieDbProvider.Current.GetTmdbSettings(cancellationToken).ConfigureAwait(false);
+
+                ProcessMainInfo(item, settings, preferredCountryCode, movieInfo);
+                item.HasMetadata = true;
+            }
 
             return item;
         }
@@ -110,9 +116,10 @@ namespace MediaBrowser.Providers.Movies
         /// Processes the main info.
         /// </summary>
         /// <param name="resultItem">The result item.</param>
+        /// <param name="settings">The settings.</param>
         /// <param name="preferredCountryCode">The preferred country code.</param>
         /// <param name="movieData">The movie data.</param>
-        private void ProcessMainInfo(MetadataResult<T> resultItem, string preferredCountryCode, MovieDbProvider.CompleteMovieData movieData)
+        private void ProcessMainInfo(MetadataResult<T> resultItem, TmdbSettingsResult settings, string preferredCountryCode, MovieDbProvider.CompleteMovieData movieData)
         {
             var movie = resultItem.Item;
 
@@ -171,7 +178,7 @@ namespace MediaBrowser.Providers.Movies
 
                 if (movieItem != null)
                 {
-                    movieItem.TmdbCollectionName = movieData.belongs_to_collection.name;
+                    movieItem.CollectionName = movieData.belongs_to_collection.name;
                 }
             }
 
@@ -192,7 +199,6 @@ namespace MediaBrowser.Providers.Movies
 
                 var ourRelease = releases.FirstOrDefault(c => c.iso_3166_1.Equals(preferredCountryCode, StringComparison.OrdinalIgnoreCase));
                 var usRelease = releases.FirstOrDefault(c => c.iso_3166_1.Equals("US", StringComparison.OrdinalIgnoreCase));
-                var minimunRelease = releases.OrderBy(c => c.release_date).FirstOrDefault();
 
                 if (ourRelease != null)
                 {
@@ -202,10 +208,6 @@ namespace MediaBrowser.Providers.Movies
                 else if (usRelease != null)
                 {
                     movie.OfficialRating = usRelease.certification;
-                }
-                else if (minimunRelease != null)
-                {
-                    movie.OfficialRating = minimunRelease.iso_3166_1 + "-" + minimunRelease.certification;
                 }
             }
 
@@ -242,6 +244,7 @@ namespace MediaBrowser.Providers.Movies
             }
 
             resultItem.ResetPeople();
+            var tmdbImageUrl = settings.images.secure_base_url + "original";
 
             //Actors, Directors, Writers - all in People
             //actors come from cast
@@ -249,7 +252,25 @@ namespace MediaBrowser.Providers.Movies
             {
                 foreach (var actor in movieData.casts.cast.OrderBy(a => a.order))
                 {
-                    resultItem.AddPerson(new PersonInfo { Name = actor.name.Trim(), Role = actor.character, Type = PersonType.Actor, SortOrder = actor.order });
+                    var personInfo = new PersonInfo
+                    {
+                        Name = actor.name.Trim(),
+                        Role = actor.character,
+                        Type = PersonType.Actor,
+                        SortOrder = actor.order
+                    };
+
+                    if (!string.IsNullOrWhiteSpace(actor.profile_path))
+                    {
+                        personInfo.ImageUrl = tmdbImageUrl + actor.profile_path;
+                    }
+
+                    if (actor.id > 0)
+                    {
+                        personInfo.SetProviderId(MetadataProviders.Tmdb, actor.id.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    resultItem.AddPerson(personInfo);
                 }
             }
 
@@ -258,17 +279,37 @@ namespace MediaBrowser.Providers.Movies
             {
                 foreach (var person in movieData.casts.crew)
                 {
-                    resultItem.AddPerson(new PersonInfo { Name = person.name.Trim(), Role = person.job, Type = person.department });
+                    // Normalize this
+                    var type = person.department;
+                    if (string.Equals(type, "writing", StringComparison.OrdinalIgnoreCase))
+                    {
+                        type = PersonType.Writer;
+                    }
+
+                    var personInfo = new PersonInfo
+                    {
+                        Name = person.name.Trim(),
+                        Role = person.job,
+                        Type = type
+                    };
+
+                    if (!string.IsNullOrWhiteSpace(person.profile_path))
+                    {
+                        personInfo.ImageUrl = tmdbImageUrl + person.profile_path;
+                    }
+
+                    if (person.id > 0)
+                    {
+                        personInfo.SetProviderId(MetadataProviders.Tmdb, person.id.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    resultItem.AddPerson(personInfo);
                 }
             }
 
             if (movieData.keywords != null && movieData.keywords.keywords != null)
             {
-                var hasTags = movie as IHasKeywords;
-                if (hasTags != null)
-                {
-                    hasTags.Keywords = movieData.keywords.keywords.Select(i => i.name).ToList();
-                }
+                movie.Keywords = movieData.keywords.keywords.Select(i => i.name).ToList();
             }
 
             if (movieData.trailers != null && movieData.trailers.youtube != null &&
@@ -279,9 +320,8 @@ namespace MediaBrowser.Providers.Movies
                 {
                     hasTrailers.RemoteTrailers = movieData.trailers.youtube.Select(i => new MediaUrl
                     {
-                        Url = string.Format("http://www.youtube.com/watch?v={0}", i.source),
-                        Name = i.name,
-                        VideoSize = string.Equals("hd", i.size, StringComparison.OrdinalIgnoreCase) ? VideoSize.HighDefinition : VideoSize.StandardDefinition
+                        Url = string.Format("https://www.youtube.com/watch?v={0}", i.source),
+                        Name = i.name
 
                     }).ToList();
                 }

@@ -7,7 +7,7 @@ using System.IO;
 using System.Security;
 using System.Text;
 using System.Threading;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.LocalMetadata.Savers
 {

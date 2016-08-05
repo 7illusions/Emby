@@ -17,6 +17,8 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.MediaEncoding;
 
 namespace MediaBrowser.Dlna.PlayTo
 {
@@ -33,15 +35,34 @@ namespace MediaBrowser.Dlna.PlayTo
         private readonly IUserDataManager _userDataManager;
         private readonly ILocalizationManager _localization;
         private readonly IMediaSourceManager _mediaSourceManager;
+        private readonly IConfigurationManager _config;
+        private readonly IMediaEncoder _mediaEncoder;
 
         private readonly IDeviceDiscovery _deviceDiscovery;
         private readonly string _serverAddress;
         private readonly string _accessToken;
+        private readonly DateTime _creationTime;
 
         public bool IsSessionActive
         {
             get
             {
+                var lastDateKnownActivity = new[] { _creationTime, _device.DateLastActivity }.Max();
+
+                if (DateTime.UtcNow >= lastDateKnownActivity.AddSeconds(120))
+                {
+                    try
+                    {
+                        // Session is inactive, mark it for Disposal and don't start the elapsed timer.
+                        _sessionManager.ReportSessionEnded(_session.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.ErrorException("Error in ReportSessionEnded", ex);
+                    }
+                    return false;
+                }
+
                 return _device != null;
             }
         }
@@ -55,9 +76,7 @@ namespace MediaBrowser.Dlna.PlayTo
             get { return IsSessionActive; }
         }
 
-        private Timer _updateTimer;
-
-        public PlayToController(SessionInfo session, ISessionManager sessionManager, ILibraryManager libraryManager, ILogger logger, IDlnaManager dlnaManager, IUserManager userManager, IImageProcessor imageProcessor, string serverAddress, string accessToken, IDeviceDiscovery deviceDiscovery, IUserDataManager userDataManager, ILocalizationManager localization, IMediaSourceManager mediaSourceManager)
+        public PlayToController(SessionInfo session, ISessionManager sessionManager, ILibraryManager libraryManager, ILogger logger, IDlnaManager dlnaManager, IUserManager userManager, IImageProcessor imageProcessor, string serverAddress, string accessToken, IDeviceDiscovery deviceDiscovery, IUserDataManager userDataManager, ILocalizationManager localization, IMediaSourceManager mediaSourceManager, IConfigurationManager config, IMediaEncoder mediaEncoder)
         {
             _session = session;
             _sessionManager = sessionManager;
@@ -70,8 +89,11 @@ namespace MediaBrowser.Dlna.PlayTo
             _userDataManager = userDataManager;
             _localization = localization;
             _mediaSourceManager = mediaSourceManager;
+            _config = config;
+            _mediaEncoder = mediaEncoder;
             _accessToken = accessToken;
             _logger = logger;
+            _creationTime = DateTime.UtcNow;
         }
 
         public void Init(Device device)
@@ -84,8 +106,6 @@ namespace MediaBrowser.Dlna.PlayTo
             _device.Start();
 
             _deviceDiscovery.DeviceLeft += _deviceDiscovery_DeviceLeft;
-
-            _updateTimer = new Timer(updateTimer_Elapsed, null, 60000, 60000);
         }
 
         void _deviceDiscovery_DeviceLeft(object sender, SsdpMessageEventArgs e)
@@ -99,7 +119,7 @@ namespace MediaBrowser.Dlna.PlayTo
             string nt;
             if (!e.Headers.TryGetValue("NT", out nt)) nt = String.Empty;
 
-            if ( usn.IndexOf(_device.Properties.UUID, StringComparison.OrdinalIgnoreCase) != -1 &&
+            if (usn.IndexOf(_device.Properties.UUID, StringComparison.OrdinalIgnoreCase) != -1 &&
                 !_disposed)
             {
                 if (usn.IndexOf("MediaRenderer:", StringComparison.OrdinalIgnoreCase) != -1 ||
@@ -117,27 +137,11 @@ namespace MediaBrowser.Dlna.PlayTo
             }
         }
 
-        private void updateTimer_Elapsed(object state)
-        {
-            if (DateTime.UtcNow >= _device.DateLastActivity.AddSeconds(120))
-            {
-                try
-                {
-                    // Session is inactive, mark it for Disposal and don't start the elapsed timer.
-                    _sessionManager.ReportSessionEnded(_session.Id);
-                }
-                catch (Exception ex)
-                {
-                    _logger.ErrorException("Error in ReportSessionEnded", ex);
-                }
-            }
-        }
-
         async void _device_MediaChanged(object sender, MediaChangedEventArgs e)
         {
             try
             {
-                var streamInfo = StreamParams.ParseFromUrl(e.OldMediaInfo.Url, _libraryManager, _mediaSourceManager);
+                var streamInfo = await StreamParams.ParseFromUrl(e.OldMediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
                 if (streamInfo.Item != null)
                 {
                     var progress = GetProgressInfo(e.OldMediaInfo, streamInfo);
@@ -147,9 +151,9 @@ namespace MediaBrowser.Dlna.PlayTo
                     ReportPlaybackStopped(e.OldMediaInfo, streamInfo, positionTicks);
                 }
 
-                streamInfo = StreamParams.ParseFromUrl(e.NewMediaInfo.Url, _libraryManager, _mediaSourceManager);
+                streamInfo = await StreamParams.ParseFromUrl(e.NewMediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
                 if (streamInfo.Item == null) return;
-                
+
                 var newItemProgress = GetProgressInfo(e.NewMediaInfo, streamInfo);
 
                 await _sessionManager.OnPlaybackStart(newItemProgress).ConfigureAwait(false);
@@ -164,7 +168,8 @@ namespace MediaBrowser.Dlna.PlayTo
         {
             try
             {
-                var streamInfo = StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager);
+                var streamInfo = await StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager)
+                            .ConfigureAwait(false);
 
                 if (streamInfo.Item == null) return;
 
@@ -226,7 +231,7 @@ namespace MediaBrowser.Dlna.PlayTo
         {
             try
             {
-                var info = StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager);
+                var info = await StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
 
                 if (info.Item != null)
                 {
@@ -245,7 +250,7 @@ namespace MediaBrowser.Dlna.PlayTo
         {
             try
             {
-                var info = StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager);
+                var info = await StreamParams.ParseFromUrl(e.MediaInfo.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
 
                 if (info.Item != null)
                 {
@@ -373,7 +378,7 @@ namespace MediaBrowser.Dlna.PlayTo
 
             if (media != null)
             {
-                var info = StreamParams.ParseFromUrl(media.Url, _libraryManager, _mediaSourceManager);
+                var info = await StreamParams.ParseFromUrl(media.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
 
                 if (info.Item != null && !EnableClientSideSeek(info))
                 {
@@ -466,7 +471,7 @@ namespace MediaBrowser.Dlna.PlayTo
 
             var profile = _dlnaManager.GetProfile(deviceInfo.ToDeviceIdentification()) ??
                 _dlnaManager.GetDefaultProfile();
-            
+
             var hasMediaSources = item as IHasMediaSources;
             var mediaSources = hasMediaSources != null
                 ? (_mediaSourceManager.GetStaticMediaSources(hasMediaSources, true, user)).ToList()
@@ -477,8 +482,8 @@ namespace MediaBrowser.Dlna.PlayTo
 
             playlistItem.StreamUrl = playlistItem.StreamInfo.ToDlnaUrl(_serverAddress, _accessToken);
 
-            var itemXml = new DidlBuilder(profile, user, _imageProcessor, _serverAddress, _accessToken, _userDataManager, _localization, _mediaSourceManager, _logger, _libraryManager)
-                .GetItemDidl(item, null, _session.DeviceId, new Filter(), playlistItem.StreamInfo);
+            var itemXml = new DidlBuilder(profile, user, _imageProcessor, _serverAddress, _accessToken, _userDataManager, _localization, _mediaSourceManager, _logger, _libraryManager, _mediaEncoder)
+                .GetItemDidl(_config.GetDlnaConfiguration(), item, null, _session.DeviceId, new Filter(), playlistItem.StreamInfo);
 
             playlistItem.Didl = itemXml;
 
@@ -494,7 +499,7 @@ namespace MediaBrowser.Dlna.PlayTo
             {
                 return new ContentFeatureBuilder(profile)
                     .BuildAudioHeader(streamInfo.Container,
-                    streamInfo.AudioCodec,
+                    streamInfo.TargetAudioCodec,
                     streamInfo.TargetAudioBitrate,
                     streamInfo.TargetAudioSampleRate,
                     streamInfo.TargetAudioChannels,
@@ -508,7 +513,7 @@ namespace MediaBrowser.Dlna.PlayTo
                 var list = new ContentFeatureBuilder(profile)
                     .BuildVideoHeader(streamInfo.Container,
                     streamInfo.VideoCodec,
-                    streamInfo.AudioCodec,
+                    streamInfo.TargetAudioCodec,
                     streamInfo.TargetWidth,
                     streamInfo.TargetHeight,
                     streamInfo.TargetVideoBitDepth,
@@ -522,15 +527,25 @@ namespace MediaBrowser.Dlna.PlayTo
                     streamInfo.TargetPacketLength,
                     streamInfo.TranscodeSeekInfo,
                     streamInfo.IsTargetAnamorphic,
-                    streamInfo.IsTargetCabac,
                     streamInfo.TargetRefFrames,
                     streamInfo.TargetVideoStreamCount,
-                    streamInfo.TargetAudioStreamCount);
+                    streamInfo.TargetAudioStreamCount,
+                    streamInfo.TargetVideoCodecTag);
 
                 return list.FirstOrDefault();
             }
 
             return null;
+        }
+
+        private ILogger GetStreamBuilderLogger()
+        {
+            if (_config.GetDlnaConfiguration().EnableDebugLog)
+            {
+                return _logger;
+            }
+
+            return new NullLogger();
         }
 
         private PlaylistItem GetPlaylistItem(BaseItem item, List<MediaSourceInfo> mediaSources, DeviceProfile profile, string deviceId, string mediaSourceId, int? audioStreamIndex, int? subtitleStreamIndex)
@@ -539,7 +554,7 @@ namespace MediaBrowser.Dlna.PlayTo
             {
                 return new PlaylistItem
                 {
-                    StreamInfo = new StreamBuilder(_logger).BuildVideoItem(new VideoOptions
+                    StreamInfo = new StreamBuilder(_mediaEncoder, GetStreamBuilderLogger()).BuildVideoItem(new VideoOptions
                     {
                         ItemId = item.Id.ToString("N"),
                         MediaSources = mediaSources,
@@ -559,7 +574,7 @@ namespace MediaBrowser.Dlna.PlayTo
             {
                 return new PlaylistItem
                 {
-                    StreamInfo = new StreamBuilder(_logger).BuildAudioItem(new AudioOptions
+                    StreamInfo = new StreamBuilder(_mediaEncoder, GetStreamBuilderLogger()).BuildAudioItem(new AudioOptions
                     {
                         ItemId = item.Id.ToString("N"),
                         MediaSources = mediaSources,
@@ -633,18 +648,7 @@ namespace MediaBrowser.Dlna.PlayTo
                 _device.MediaChanged -= _device_MediaChanged;
                 _deviceDiscovery.DeviceLeft -= _deviceDiscovery_DeviceLeft;
 
-                DisposeUpdateTimer();
-
                 _device.Dispose();
-            }
-        }
-
-        private void DisposeUpdateTimer()
-        {
-            if (_updateTimer != null)
-            {
-                _updateTimer.Dispose();
-                _updateTimer = null;
             }
         }
 
@@ -736,7 +740,7 @@ namespace MediaBrowser.Dlna.PlayTo
 
             if (media != null)
             {
-                var info = StreamParams.ParseFromUrl(media.Url, _libraryManager, _mediaSourceManager);
+                var info = await StreamParams.ParseFromUrl(media.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
 
                 if (info.Item != null)
                 {
@@ -762,7 +766,7 @@ namespace MediaBrowser.Dlna.PlayTo
 
             if (media != null)
             {
-                var info = StreamParams.ParseFromUrl(media.Url, _libraryManager, _mediaSourceManager);
+                var info = await StreamParams.ParseFromUrl(media.Url, _libraryManager, _mediaSourceManager).ConfigureAwait(false);
 
                 if (info.Item != null)
                 {
@@ -837,7 +841,7 @@ namespace MediaBrowser.Dlna.PlayTo
                 return null;
             }
 
-            public static StreamParams ParseFromUrl(string url, ILibraryManager libraryManager, IMediaSourceManager mediaSourceManager)
+            public static async Task<StreamParams> ParseFromUrl(string url, ILibraryManager libraryManager, IMediaSourceManager mediaSourceManager)
             {
                 var request = new StreamParams
                 {
@@ -903,11 +907,9 @@ namespace MediaBrowser.Dlna.PlayTo
 
                 var hasMediaSources = request.Item as IHasMediaSources;
 
-                request.MediaSource = hasMediaSources == null ?
-                    null :
-                    mediaSourceManager.GetMediaSource(hasMediaSources, request.MediaSourceId, false).Result;
-
-
+                request.MediaSource = hasMediaSources == null
+                    ? null
+                    : (await mediaSourceManager.GetMediaSource(hasMediaSources, request.MediaSourceId, false).ConfigureAwait(false));
 
                 return request;
             }

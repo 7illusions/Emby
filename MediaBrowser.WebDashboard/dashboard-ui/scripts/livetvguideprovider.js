@@ -1,13 +1,20 @@
-﻿(function ($, document, window) {
+﻿define(['events'], function (events) {
+
+    function onListingsSubmitted() {
+
+        Dashboard.navigate('livetvstatus.html');
+    }
 
     function init(page, type, providerId) {
 
-        var url = 'tvproviders/' + type + '.js';
+        var url = 'components/tvproviders/' + type + '.js';
 
         require([url], function (factory) {
 
             var instance = new factory(page, providerId, {
             });
+
+            events.on(instance, 'submitted', onListingsSubmitted);
 
             instance.init();
         });
@@ -15,22 +22,22 @@
 
     function loadTemplate(page, type, providerId) {
 
-        ApiClient.ajax({
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'components/tvproviders/' + type + '.template.html', true);
 
-            type: 'GET',
-            url: 'tvproviders/' + type + '.template.html'
+        xhr.onload = function (e) {
 
-        }).done(function (html) {
-
+            var html = this.response;
             var elem = page.querySelector('.providerTemplate');
             elem.innerHTML = Globalize.translateDocument(html);
-            $(elem).trigger('create');
 
             init(page, type, providerId);
-        });
+        }
+
+        xhr.send();
     }
 
-    $(document).on('pageshowready', "#liveTvGuideProviderPage", function () {
+    pageIdOn('pageshow', "liveTvGuideProviderPage", function () {
 
         Dashboard.showLoadingMsg();
 
@@ -40,4 +47,4 @@
         loadTemplate(page, type, providerId);
     });
 
-})(jQuery, document, window);
+});

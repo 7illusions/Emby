@@ -9,7 +9,6 @@ using MediaBrowser.Model.Logging;
 using ServiceStack.Text.Controller;
 using ServiceStack.Web;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -58,21 +57,6 @@ namespace MediaBrowser.Api
             return ResultFactory.GetOptimizedResult(Request, result);
         }
 
-        /// <summary>
-        /// To the optimized result using cache.
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="cacheKey">The cache key.</param>
-        /// <param name="lastDateModified">The last date modified.</param>
-        /// <param name="cacheDuration">Duration of the cache.</param>
-        /// <param name="factoryFn">The factory function.</param>
-        /// <returns>System.Object.</returns>
-        protected object ToOptimizedResultUsingCache<T>(Guid cacheKey, DateTime? lastDateModified, TimeSpan? cacheDuration, Func<T> factoryFn)
-           where T : class
-        {
-            return ResultFactory.GetOptimizedResultUsingCache(Request, cacheKey, lastDateModified, cacheDuration, factoryFn);
-        }
-
         protected void AssertCanUpdateUser(IUserManager userManager, string userId)
         {
             var auth = AuthorizationContext.GetAuthorizationInfo(Request);
@@ -95,7 +79,7 @@ namespace MediaBrowser.Api
                 }
             }
         }
-        
+
         /// <summary>
         /// To the optimized serialized result using cache.
         /// </summary>
@@ -131,11 +115,8 @@ namespace MediaBrowser.Api
         /// <returns>System.Object.</returns>
         protected object ToStaticFileResult(string path)
         {
-            return ResultFactory.GetStaticFileResult(Request, path);
+            return ResultFactory.GetStaticFileResult(Request, path).Result;
         }
-
-        private readonly char[] _dashReplaceChars = { '?', '/', '&' };
-        private const char SlugChar = '-';
 
         protected DtoOptions GetDtoOptions(object request)
         {
@@ -170,188 +151,122 @@ namespace MediaBrowser.Api
 
         protected MusicArtist GetArtist(string name, ILibraryManager libraryManager)
         {
-            return libraryManager.GetArtist(DeSlugArtistName(name, libraryManager));
+            if (name.IndexOf(BaseItem.SlugChar) != -1)
+            {
+                var result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    SlugName = name,
+                    IncludeItemTypes = new[] { typeof(MusicArtist).Name }
+
+                }).OfType<MusicArtist>().FirstOrDefault();
+
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return libraryManager.GetArtist(name);
         }
 
         protected Studio GetStudio(string name, ILibraryManager libraryManager)
         {
-            return libraryManager.GetStudio(DeSlugStudioName(name, libraryManager));
+            if (name.IndexOf(BaseItem.SlugChar) != -1)
+            {
+                var result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    SlugName = name,
+                    IncludeItemTypes = new[] { typeof(Studio).Name }
+
+                }).OfType<Studio>().FirstOrDefault();
+
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return libraryManager.GetStudio(name);
         }
 
         protected Genre GetGenre(string name, ILibraryManager libraryManager)
         {
-            return libraryManager.GetGenre(DeSlugGenreName(name, libraryManager));
+            if (name.IndexOf(BaseItem.SlugChar) != -1)
+            {
+                var result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    SlugName = name,
+                    IncludeItemTypes = new[] { typeof(Genre).Name }
+
+                }).OfType<Genre>().FirstOrDefault();
+
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return libraryManager.GetGenre(name);
         }
 
         protected MusicGenre GetMusicGenre(string name, ILibraryManager libraryManager)
         {
-            return libraryManager.GetMusicGenre(DeSlugGenreName(name, libraryManager));
+            if (name.IndexOf(BaseItem.SlugChar) != -1)
+            {
+                var result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    SlugName = name,
+                    IncludeItemTypes = new[] { typeof(MusicGenre).Name }
+
+                }).OfType<MusicGenre>().FirstOrDefault();
+
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return libraryManager.GetMusicGenre(name);
         }
 
         protected GameGenre GetGameGenre(string name, ILibraryManager libraryManager)
         {
-            return libraryManager.GetGameGenre(DeSlugGameGenreName(name, libraryManager));
+            if (name.IndexOf(BaseItem.SlugChar) != -1)
+            {
+                var result = libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    SlugName = name,
+                    IncludeItemTypes = new[] { typeof(GameGenre).Name }
+
+                }).OfType<GameGenre>().FirstOrDefault();
+
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return libraryManager.GetGameGenre(name);
         }
 
         protected Person GetPerson(string name, ILibraryManager libraryManager)
         {
-            return libraryManager.GetPerson(DeSlugPersonName(name, libraryManager));
-        }
-
-        protected IList<BaseItem> GetAllLibraryItems(string userId, IUserManager userManager, ILibraryManager libraryManager, string parentId, Func<BaseItem,bool> filter)
-        {
-            if (!string.IsNullOrEmpty(parentId))
+            if (name.IndexOf(BaseItem.SlugChar) != -1)
             {
-                var folder = (Folder)libraryManager.GetItemById(new Guid(parentId));
-
-                if (!string.IsNullOrWhiteSpace(userId))
+                var result = libraryManager.GetItemList(new InternalItemsQuery
                 {
-                    var user = userManager.GetUserById(userId);
+                    SlugName = name,
+                    IncludeItemTypes = new[] { typeof(Person).Name }
 
-                    if (user == null)
-                    {
-                        throw new ArgumentException("User not found");
-                    }
+                }).OfType<Person>().FirstOrDefault();
 
-                    return folder
-                        .GetRecursiveChildren(user, filter)
-                        .ToList();
+                if (result != null)
+                {
+                    return result;
                 }
-
-                return folder
-                    .GetRecursiveChildren(filter);
-            }
-            if (!string.IsNullOrWhiteSpace(userId))
-            {
-                var user = userManager.GetUserById(userId);
-
-                if (user == null)
-                {
-                    throw new ArgumentException("User not found");
-                }
-
-                return userManager
-                    .GetUserById(userId)
-                    .RootFolder
-                    .GetRecursiveChildren(user, filter)
-                    .ToList();
             }
 
-            return libraryManager
-                .RootFolder
-                .GetRecursiveChildren(filter);
-        }
-
-        /// <summary>
-        /// Deslugs an artist name by finding the correct entry in the library
-        /// </summary>
-        /// <param name="name"></param>
-        /// <param name="libraryManager"></param>
-        /// <returns></returns>
-        protected string DeSlugArtistName(string name, ILibraryManager libraryManager)
-        {
-            if (name.IndexOf(SlugChar) == -1)
-            {
-                return name;
-            }
-
-            return libraryManager.RootFolder
-                .GetRecursiveChildren(i => i is IHasArtist)
-                .Cast<IHasArtist>()
-                .SelectMany(i => i.AllArtists)
-                .DistinctNames()
-                .FirstOrDefault(i =>
-                {
-                    i = _dashReplaceChars.Aggregate(i, (current, c) => current.Replace(c, SlugChar));
-
-                    return string.Equals(i, name, StringComparison.OrdinalIgnoreCase);
-
-                }) ?? name;
-        }
-
-        /// <summary>
-        /// Deslugs a genre name by finding the correct entry in the library
-        /// </summary>
-        protected string DeSlugGenreName(string name, ILibraryManager libraryManager)
-        {
-            if (name.IndexOf(SlugChar) == -1)
-            {
-                return name;
-            }
-
-            return libraryManager.RootFolder.GetRecursiveChildren()
-                .SelectMany(i => i.Genres)
-                .DistinctNames()
-                .FirstOrDefault(i =>
-                {
-                    i = _dashReplaceChars.Aggregate(i, (current, c) => current.Replace(c, SlugChar));
-
-                    return string.Equals(i, name, StringComparison.OrdinalIgnoreCase);
-
-                }) ?? name;
-        }
-
-        protected string DeSlugGameGenreName(string name, ILibraryManager libraryManager)
-        {
-            if (name.IndexOf(SlugChar) == -1)
-            {
-                return name;
-            }
-
-            return libraryManager.RootFolder
-                .GetRecursiveChildren(i => i is Game)
-                .SelectMany(i => i.Genres)
-                .DistinctNames()
-                .FirstOrDefault(i =>
-                {
-                    i = _dashReplaceChars.Aggregate(i, (current, c) => current.Replace(c, SlugChar));
-
-                    return string.Equals(i, name, StringComparison.OrdinalIgnoreCase);
-
-                }) ?? name;
-        }
-
-        /// <summary>
-        /// Deslugs a studio name by finding the correct entry in the library
-        /// </summary>
-        protected string DeSlugStudioName(string name, ILibraryManager libraryManager)
-        {
-            if (name.IndexOf(SlugChar) == -1)
-            {
-                return name;
-            }
-
-            return libraryManager.RootFolder
-                .GetRecursiveChildren()
-                .SelectMany(i => i.Studios)
-                .DistinctNames()
-                .FirstOrDefault(i =>
-                {
-                    i = _dashReplaceChars.Aggregate(i, (current, c) => current.Replace(c, SlugChar));
-
-                    return string.Equals(i, name, StringComparison.OrdinalIgnoreCase);
-
-                }) ?? name;
-        }
-
-        /// <summary>
-        /// Deslugs a person name by finding the correct entry in the library
-        /// </summary>
-        protected string DeSlugPersonName(string name, ILibraryManager libraryManager)
-        {
-            if (name.IndexOf(SlugChar) == -1)
-            {
-                return name;
-            }
-
-            return libraryManager.GetPeopleNames(new InternalPeopleQuery())
-                .FirstOrDefault(i =>
-                {
-                    i = _dashReplaceChars.Aggregate(i, (current, c) => current.Replace(c, SlugChar));
-
-                    return string.Equals(i, name, StringComparison.OrdinalIgnoreCase);
-
-                }) ?? name;
+            return libraryManager.GetPerson(name);
         }
 
         protected string GetPathValue(int index)

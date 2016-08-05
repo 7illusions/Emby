@@ -1,12 +1,82 @@
-﻿/* Now playing bar */
+﻿.nowPlayingText {
+    display: inline-block;
+    position: relative;
+    top: -7px;
+    margin: 0 0 0 3px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    text-align: left;
+    max-width: 130px;
+}
+
+.mediaButton.infoButton {
+    width: 34px;
+    height: 34px;
+}
+
+.mediaButton.active {
+    color: #52B54B;
+}
+
+@media (min-width: 500px) {
+    .nowPlayingText {
+        max-width: 180px;
+    }
+}
+
+@media (min-width: 600px) {
+    .nowPlayingText {
+        max-width: 200px;
+    }
+}
+
+@media (min-width: 800px) {
+    .nowPlayingText {
+        margin-right: 30px;
+    }
+}
+
+.mediaButton img {
+    height: 24px;
+}
+
+.currentTime {
+    display: inline-block;
+    vertical-align: middle;
+    max-width: 110px;
+    margin-right: 2em;
+    font-weight: normal;
+}
+
+/* Now playing bar */
 .nowPlayingBar {
-    border-top: 1px solid #444;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top : 100%;
+    /* Above everything, except for the video player and popup overlays */
+    z-index: 1097;
+    color: #fff;
+    background-color: #1C1C1F;
     text-align: center;
-    /*box-shadow: 0 0 8px rgba(255,255,255,.4);*/
+    box-shadow: 0 -2px 2px 0 rgba(0,0,0,.14),-1px 5px 1px rgba(0,0,0,.12);
+    will-change: transform;
+    contain: layout style;
+    height: 100%;
+    transform: translateY(-64px);
 }
 
 .hiddenNowPlayingBar .nowPlayingBar {
     display: none !important;
+}
+
+.nowPlayingBarTop {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
 }
 
 .mediaButton, .nowPlayingBarUserDataButtons .btnUserItemRating {
@@ -16,25 +86,17 @@
     text-align: center;
 }
 
-    .mediaButton iron-icon {
-        height: 40px;
-        width: 40px;
+    .mediaButton i {
+        height: auto;
+        width: auto;
+        font-size: 36px;
     }
 
-    .mediaButton.remoteControlButton iron-icon, .mediaButton.muteButton iron-icon, .mediaButton.unmuteButton iron-icon {
-        height: 26px;
+    .mediaButton.remoteControlButton i, .mediaButton.muteButton i, .mediaButton.unmuteButton i, .mediaButton.castButton i, .mediaButton.infoButton i {
+        height: auto;
+        width: auto;
+        font-size: 24px;
     }
-
-.nowPlayingDoubleText {
-    top: -3px;
-}
-
-.nowPlayingBarInfoContainer {
-    vertical-align: middle;
-    position: absolute;
-    left: 0;
-    bottom: 0;
-}
 
 .nowPlayingImage {
     display: inline-block;
@@ -46,28 +108,30 @@
         vertical-align: bottom;
     }
 
-    .nowPlayingBar, .nowPlayingImage img {
-        height: 80px;
+     .nowPlayingImage img {
+        height: 64px;
     }
+
+        .nowPlayingBar .nowPlayingImage {
+            width: 64px;
+            height: 64px;
+            background-position: center center;
+            background-repeat: no-repeat;
+            background-size: contain;
+        }
 
 .nowPlayingBarText {
     display: inline-block;
-    font-weight: normal;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
     vertical-align: middle;
     text-align: left;
-    font-size: 15px;
     max-width: 130px;
 }
 
-.toggleRepeatButton iron-icon {
-    height: 32px;
-}
-
 .repeatActive {
-    color: #3367d6;
+    color: #52B54B;
 }
 
 @media (min-width: 500px) {
@@ -104,61 +168,38 @@
 .nowPlayingBarCenter {
     vertical-align: middle;
     text-align: center;
-    margin-top: 12px;
-    position: relative;
+    margin-top: 6px;
     /* Need this to make sure it's on top of nowPlayingBarPositionContainer so that buttons are fully clickable */
     z-index: 2;
+    position: absolute;
+    left: 200px;
+    right: 200px;
+    top: 0;
 }
 
 .nowPlayingBarPositionContainer {
-    position: absolute;
-    left: 80px;
-    top: 0;
+    position: absolute !important;
+    left: 64px;
+    top: -8px;
     right: 0;
     z-index: 1;
 }
+
+    .nowPlayingBarPositionContainer .mdl-slider__background-upper {
+        background: #333;
+    }
 
 .noMediaProgress .nowPlayingBarPositionContainer {
     display: none;
 }
 
-.nowPlayingBarPositionSlider paper-progress {
-    height: 3px !important;
-}
-
-.nowPlayingBarPositionSlider #sliderBar {
-    top: 0;
-}
-
-.nowPlayingBarPositionSlider #sliderContainer {
-    width: 100%;
-    margin-left: -15px;
-}
-
-.nowPlayingBarPositionSlider #sliderKnob {
-    top: -15px !important;
-}
-
-.nowPlayingBarPositionSlider #progressContainer {
-    background-color: transparent !important;
-}
-
-.nowPlayingBarPositionSlider #sliderKnobInner {
-    width: 16px;
-    height: 16px;
-}
-
 .nowPlayingBarRight {
-    position: absolute;
-    bottom: 12px;
-    right: 10px;
-    vertical-align: middle;
+    position: relative;
+    margin: 0 1em 0 auto;
     /* Need this to make sure it's on top of nowPlayingBarPositionContainer so that buttons are fully clickable */
     z-index: 2;
-}
-
-.mediaButton img {
-    height: 24px;
+    display: flex;
+    align-items: center;
 }
 
 .nowPlayingBarCurrentTime {
@@ -170,8 +211,8 @@
     padding-left: 50px;
 }
 
-.nowPlayingBarVolumeSlider {
-    margin-left: -1em;
+.nowPlayingBarVolumeSliderContainer {
+    margin-right: 2em;
 }
 
 .nowPlayingBarUserDataButtons {
@@ -181,25 +222,24 @@
 }
 
 
-@media all and (max-width: 1300px) {
+@media all and (max-width: 1400px) {
 
     .nowPlayingBarUserDataButtons {
         display: none;
     }
 }
 
-@media all and (max-width: 1000px) {
+@media all and (max-width: 1100px) {
 
-    .nowPlayingBarVolumeSlider, .nowPlayingBar .muteButton, .nowPlayingBar .unmuteButton {
+    .nowPlayingBarVolumeSliderContainer, .nowPlayingBar .muteButton, .nowPlayingBar .unmuteButton {
         display: none !important;
     }
+}
+
+@media all and (max-width: 1000px) {
 
     .nowPlayingBar .playlistButton {
         display: none !important;
-    }
-
-    .nowPlayingBarRight {
-        bottom: 18px;
     }
 }
 
@@ -207,33 +247,13 @@
 
     .nowPlayingBarCurrentTime {
         padding-left: 0;
-        top: 12px;
-        right: 130px;
+        top: 22px;
+        right: 140px;
         position: absolute;
     }
 
     .nowPlayingBarCenter > *:not(.nowPlayingBarCurrentTime) {
         display: none !important;
-    }
-
-    .nowPlayingBarRight {
-        bottom: 10px;
-    }
-
-    .nowPlayingBar, .nowPlayingImage img {
-        height: 70px;
-    }
-
-    .nowPlayingBarPositionContainer {
-        left: 70px;
-    }
-
-    .nowPlayingBarPositionSlider paper-progress {
-        height: 3px !important;
-    }
-
-    .nowPlayingBarPositionSlider #sliderKnob {
-        top: -15px !important;
     }
 
     .toggleRepeatButton {

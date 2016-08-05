@@ -1,17 +1,16 @@
 ﻿using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Devices;
 using MediaBrowser.Model.Devices;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Session;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Devices
 {
@@ -24,7 +23,7 @@ namespace MediaBrowser.Server.Implementations.Devices
         private readonly ILogger _logger;
         private readonly IFileSystem _fileSystem;
 
-        private ConcurrentBag<DeviceInfo> _devices;
+        private Dictionary<string, DeviceInfo> _devices;
 
         public DeviceRepository(IApplicationPaths appPaths, IJsonSerializer json, ILogger logger, IFileSystem fileSystem)
         {
@@ -47,12 +46,12 @@ namespace MediaBrowser.Server.Implementations.Devices
         public Task SaveDevice(DeviceInfo device)
         {
             var path = Path.Combine(GetDevicePath(device.Id), "device.json");
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
 
             lock (_syncLock)
             {
                 _json.SerializeToFile(device, path);
-                _devices = null;
+                _devices[device.Id] = device;
             }
             return Task.FromResult(true);
         }
@@ -92,17 +91,20 @@ namespace MediaBrowser.Server.Implementations.Devices
 
         public IEnumerable<DeviceInfo> GetDevices()
         {
-            if (_devices == null)
+            lock (_syncLock)
             {
-                lock (_syncLock)
+                if (_devices == null)
                 {
-                    if (_devices == null)
+                    _devices = new Dictionary<string, DeviceInfo>(StringComparer.OrdinalIgnoreCase);
+
+                    var devices = LoadDevices().ToList();
+                    foreach (var device in devices)
                     {
-                        _devices = new ConcurrentBag<DeviceInfo>(LoadDevices());
+                        _devices[device.Id] = device;
                     }
                 }
+                return _devices.Values.ToList();
             }
-            return _devices.ToList();
         }
 
         private IEnumerable<DeviceInfo> LoadDevices()
@@ -111,8 +113,8 @@ namespace MediaBrowser.Server.Implementations.Devices
 
             try
             {
-                return Directory
-                    .EnumerateFiles(path, "*", SearchOption.AllDirectories)
+                return _fileSystem
+                    .GetFilePaths(path, true)
                     .Where(i => string.Equals(Path.GetFileName(i), "device.json", StringComparison.OrdinalIgnoreCase))
                     .ToList()
                     .Select(i =>
@@ -148,7 +150,7 @@ namespace MediaBrowser.Server.Implementations.Devices
                 catch (DirectoryNotFoundException)
                 {
                 }
-                
+
                 _devices = null;
             }
 
@@ -178,7 +180,7 @@ namespace MediaBrowser.Server.Implementations.Devices
         public void AddCameraUpload(string deviceId, LocalFileInfo file)
         {
             var path = Path.Combine(GetDevicePath(deviceId), "camerauploads.json");
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
 
             lock (_syncLock)
             {

@@ -3,11 +3,12 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MoreLinq;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -20,19 +21,6 @@ namespace MediaBrowser.Controller.Entities
         public CollectionFolder()
         {
             PhysicalLocationsList = new List<string>();
-        }
-
-        /// <summary>
-        /// Gets a value indicating whether this instance is virtual folder.
-        /// </summary>
-        /// <value><c>true</c> if this instance is virtual folder; otherwise, <c>false</c>.</value>
-        [IgnoreDataMember]
-        public override bool IsVirtualFolder
-        {
-            get
-            {
-                return true;
-            }
         }
 
         [IgnoreDataMember]
@@ -80,9 +68,36 @@ namespace MediaBrowser.Controller.Entities
 
         public List<string> PhysicalLocationsList { get; set; }
 
-        protected override IEnumerable<FileSystemInfo> GetFileSystemChildren(IDirectoryService directoryService)
+        protected override IEnumerable<FileSystemMetadata> GetFileSystemChildren(IDirectoryService directoryService)
         {
-            return CreateResolveArgs(directoryService).FileSystemChildren;
+            return CreateResolveArgs(directoryService, true).FileSystemChildren;
+        }
+
+        private bool _requiresRefresh;
+        public override bool RequiresRefresh()
+        {
+            var changed = base.RequiresRefresh() || _requiresRefresh;
+
+            if (!changed)
+            {
+                var locations = PhysicalLocations.ToList();
+
+                var newLocations = CreateResolveArgs(new DirectoryService(BaseItem.FileSystem), false).PhysicalLocations.ToList();
+
+                if (!locations.SequenceEqual(newLocations))
+                {
+                    changed = true;
+                }
+            }
+
+            return changed;
+        }
+
+        public override bool BeforeMetadataRefresh()
+        {
+            var changed = base.BeforeMetadataRefresh() || _requiresRefresh;
+            _requiresRefresh = false;
+            return changed;
         }
 
         internal override bool IsValidFromResolver(BaseItem newItem)
@@ -97,17 +112,16 @@ namespace MediaBrowser.Controller.Entities
                 }
             }
 
-
             return base.IsValidFromResolver(newItem);
         }
 
-        private ItemResolveArgs CreateResolveArgs(IDirectoryService directoryService)
+        private ItemResolveArgs CreateResolveArgs(IDirectoryService directoryService, bool setPhysicalLocations)
         {
             var path = ContainingFolderPath;
 
             var args = new ItemResolveArgs(ConfigurationManager.ApplicationPaths, directoryService)
             {
-                FileInfo = new DirectoryInfo(path),
+                FileInfo = FileSystem.GetDirectoryInfo(path),
                 Path = path,
                 Parent = Parent,
                 CollectionType = CollectionType
@@ -127,15 +141,19 @@ namespace MediaBrowser.Controller.Entities
                 // Example: if \\server\movies exists, then strip out \\server\movies\action
                 if (isPhysicalRoot)
                 {
-                    var paths = LibraryManager.NormalizeRootPathList(fileSystemDictionary.Keys);
+                    var paths = LibraryManager.NormalizeRootPathList(fileSystemDictionary.Values);
 
-                    fileSystemDictionary = paths.Select(i => (FileSystemInfo)new DirectoryInfo(i)).ToDictionary(i => i.FullName);
+                    fileSystemDictionary = paths.ToDictionary(i => i.FullName);
                 }
 
                 args.FileSystemDictionary = fileSystemDictionary;
             }
 
-            PhysicalLocationsList = args.PhysicalLocations.ToList();
+            _requiresRefresh = _requiresRefresh || !args.PhysicalLocations.SequenceEqual(PhysicalLocations);
+            if (setPhysicalLocations)
+            {
+                PhysicalLocationsList = args.PhysicalLocations.ToList();
+            }
 
             return args;
         }
@@ -153,15 +171,6 @@ namespace MediaBrowser.Controller.Entities
         /// <returns>Task.</returns>
         protected override Task ValidateChildrenInternal(IProgress<double> progress, CancellationToken cancellationToken, bool recursive, bool refreshChildMetadata, MetadataRefreshOptions refreshOptions, IDirectoryService directoryService)
         {
-            var list = PhysicalLocationsList.ToList();
-
-            CreateResolveArgs(directoryService);
-
-            if (!list.SequenceEqual(PhysicalLocationsList))
-            {
-                return UpdateToRepository(ItemUpdateType.MetadataImport, cancellationToken);
-            }
-
             return Task.FromResult(true);
         }
 
@@ -179,9 +188,7 @@ namespace MediaBrowser.Controller.Entities
         }
         private List<LinkedChild> GetLinkedChildrenInternal()
         {
-            return LibraryManager.RootFolder.Children
-                .OfType<Folder>()
-                .Where(i => i.Path != null && PhysicalLocations.Contains(i.Path, StringComparer.OrdinalIgnoreCase))
+            return GetPhysicalParents()
                 .SelectMany(c => c.LinkedChildren)
                 .ToList();
         }
@@ -190,6 +197,7 @@ namespace MediaBrowser.Controller.Entities
         /// Our children are actually just references to the ones in the physical root...
         /// </summary>
         /// <value>The actual children.</value>
+        [IgnoreDataMember]
         protected override IEnumerable<BaseItem> ActualChildren
         {
             get { return GetActualChildren(); }
@@ -197,11 +205,35 @@ namespace MediaBrowser.Controller.Entities
 
         private IEnumerable<BaseItem> GetActualChildren()
         {
-            return
-                LibraryManager.RootFolder.Children
+            return GetPhysicalParents().SelectMany(c => c.Children);
+        }
+
+        public IEnumerable<Folder> GetPhysicalParents()
+        {
+            var rootChildren = LibraryManager.RootFolder.Children
                 .OfType<Folder>()
-                .Where(i => i.Path != null && PhysicalLocations.Contains(i.Path, StringComparer.OrdinalIgnoreCase))
-                .SelectMany(c => c.Children);
+                .ToList();
+
+            return PhysicalLocations.Where(i => !string.Equals(i, Path, StringComparison.OrdinalIgnoreCase)).SelectMany(i => GetPhysicalParents(i, rootChildren)).DistinctBy(i => i.Id);
+        }
+
+        private IEnumerable<Folder> GetPhysicalParents(string path, List<Folder> rootChildren)
+        {
+            var result = rootChildren
+                .Where(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (result.Count == 0)
+            {
+                var folder = LibraryManager.FindByPath(path, true) as Folder;
+
+                if (folder != null)
+                {
+                    result.Add(folder);
+                }
+            }
+
+            return result;
         }
 
         [IgnoreDataMember]

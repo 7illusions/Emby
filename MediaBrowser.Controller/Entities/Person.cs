@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
+using MediaBrowser.Common.Extensions;
+using MediaBrowser.Model.Entities;
 
 namespace MediaBrowser.Controller.Entities
 {
@@ -17,18 +19,32 @@ namespace MediaBrowser.Controller.Entities
         /// <value>The place of birth.</value>
         public string PlaceOfBirth { get; set; }
 
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
-            return "Person-" + Name;
+            var list = base.GetUserDataKeys();
+
+            list.Insert(0, GetType().Name + "-" + (Name ?? string.Empty).RemoveDiacritics());
+            return list;
+        }
+
+        public override string PresentationUniqueKey
+        {
+            get
+            {
+                return GetUserDataKeys()[0];
+            }
         }
 
         public PersonLookupInfo GetLookupInfo()
         {
             return GetItemLookupInfo<PersonLookupInfo>();
+        }
+
+        public IEnumerable<BaseItem> GetTaggedItems(InternalItemsQuery query)
+        {
+            query.Person = Name;
+
+            return LibraryManager.GetItemList(query);
         }
 
         /// <summary>
@@ -101,13 +117,27 @@ namespace MediaBrowser.Controller.Entities
                 return false;
             }
         }
+
+        [IgnoreDataMember]
+        public override bool SupportsAncestors
+        {
+            get
+            {
+                return false;
+            }
+        }
     }
 
     /// <summary>
     /// This is the small Person stub that is attached to BaseItems
     /// </summary>
-    public class PersonInfo
+    public class PersonInfo : IHasProviderIds
     {
+        public PersonInfo()
+        {
+            ProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
         public Guid ItemId { get; set; }
 
         /// <summary>
@@ -131,6 +161,10 @@ namespace MediaBrowser.Controller.Entities
         /// </summary>
         /// <value>The sort order.</value>
         public int? SortOrder { get; set; }
+
+        public string ImageUrl { get; set; }
+
+        public Dictionary<string, string> ProviderIds { get; set; }
 
         /// <summary>
         /// Returns a <see cref="System.String" /> that represents this instance.

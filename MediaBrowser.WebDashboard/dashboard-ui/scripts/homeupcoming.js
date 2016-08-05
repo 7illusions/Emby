@@ -1,22 +1,25 @@
-﻿(function ($, document) {
+﻿define(['datetime', 'cardBuilder', 'emby-itemscontainer', 'scrollStyles'], function (datetime, cardBuilder) {
 
-    function loadUpcoming(page) {
+    function getUpcomingPromise() {
+
         Dashboard.showLoadingMsg();
-
-        var limit = AppInfo.hasLowImageBandwidth ?
-         24 :
-         40;
 
         var query = {
 
-            Limit: limit,
-            Fields: "AirTime,UserData,SeriesStudio,SyncInfo",
+            Limit: 40,
+            Fields: "AirTime,UserData",
             UserId: Dashboard.getCurrentUserId(),
             ImageTypeLimit: 1,
-            EnableImageTypes: "Primary,Backdrop,Banner,Thumb"
+            EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
+            EnableTotalRecordCount: false
         };
 
-        ApiClient.getJSON(ApiClient.getUrl("Shows/Upcoming", query)).done(function (result) {
+        return ApiClient.getJSON(ApiClient.getUrl("Shows/Upcoming", query));
+    }
+
+    function loadUpcoming(page, promise) {
+
+        promise.then(function (result) {
 
             var items = result.Items;
 
@@ -30,13 +33,11 @@
             renderUpcoming(elem, items);
 
             Dashboard.hideLoadingMsg();
-
-            LibraryBrowser.setLastRefreshed(page);
         });
     }
 
     function enableScrollX() {
-        return $.browser.mobile && AppInfo.enableAppLayouts;
+        return browserInfo.mobile && AppInfo.enableAppLayouts;
     }
 
     function getThumbShape() {
@@ -61,7 +62,13 @@
             if (item.PremiereDate) {
                 try {
 
-                    dateText = LibraryBrowser.getFutureDateText(parseISO8601Date(item.PremiereDate, { toLocal: true }), true);
+                    var premiereDate = datetime.parseISO8601Date(item.PremiereDate, true);
+
+                    if (premiereDate.getDate() == new Date().getDate() - 1) {
+                        dateText = Globalize.translate('Yesterday');
+                    } else {
+                        dateText = LibraryBrowser.getFutureDateText(premiereDate, true);
+                    }
 
                 } catch (err) {
                 }
@@ -93,22 +100,23 @@
             html += '<h1 class="listHeader">' + group.name + '</h1>';
 
             if (enableScrollX()) {
-                html += '<div class="itemsContainer hiddenScrollX">';
+                html += '<div is="emby-itemscontainer" class="itemsContainer hiddenScrollX">';
             } else {
-                html += '<div class="itemsContainer">';
+                html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
             }
 
-            html += LibraryBrowser.getPosterViewHtml({
+            html += cardBuilder.getCardsHtml({
                 items: group.items,
                 showLocationTypeIndicator: false,
                 shape: getThumbShape(),
                 showTitle: true,
-                showPremiereDate: true,
                 preferThumb: true,
                 lazy: true,
                 showDetailsMenu: true,
                 centerText: true,
-                context: 'home-upcoming'
+                context: 'home-upcoming',
+                overlayMoreButton: true,
+                showParentTitle: true
 
             });
             html += '</div>';
@@ -119,11 +127,20 @@
         elem.innerHTML = html;
         ImageLoader.lazyChildren(elem);
     }
+    return function (view, params, tabContent) {
 
-    window.HomePage.renderUpcoming = function (page, tabContent) {
-        if (LibraryBrowser.needsRefresh(tabContent)) {
-            loadUpcoming(tabContent);
-        }
+        var self = this;
+        var upcomingPromise;
+
+        self.preRender = function () {
+            upcomingPromise = getUpcomingPromise();
+        };
+
+        self.renderTab = function () {
+
+            Dashboard.showLoadingMsg();
+            loadUpcoming(view, upcomingPromise);
+        };
     };
 
-})(jQuery, document);
+});

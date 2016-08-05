@@ -1,6 +1,5 @@
 ﻿using System.Runtime.Serialization;
 using MediaBrowser.Controller.Providers;
-using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Library;
 using MediaBrowser.Model.Querying;
 using System;
@@ -17,24 +16,29 @@ namespace MediaBrowser.Controller.Entities
     /// </summary>
     public class UserRootFolder : Folder
     {
-        public override async Task<QueryResult<BaseItem>> GetItems(InternalItemsQuery query)
+        protected override async Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
         {
-            var user = query.User;
-            Func<BaseItem, bool> filter = i => UserViewBuilder.Filter(i, user, query, UserDataManager, LibraryManager);
-            
             if (query.Recursive)
             {
-                var items = query.User.RootFolder.GetRecursiveChildren(query.User, filter);
-                return PostFilterAndSort(items, query);
+                return QueryRecursive(query);
             }
 
             var result = await UserViewManager.GetUserViews(new UserViewQuery
             {
-                UserId = query.User.Id.ToString("N")
+                UserId = query.User.Id.ToString("N"),
+                PresetViews = query.PresetViews
 
             }, CancellationToken.None).ConfigureAwait(false);
 
+            var user = query.User;
+            Func<BaseItem, bool> filter = i => UserViewBuilder.Filter(i, user, query, UserDataManager, LibraryManager);
+            
             return PostFilterAndSort(result.Where(filter), query);
+        }
+
+        public override int GetChildCount(User user)
+        {
+            return GetChildren(user, true).Count();
         }
 
         [IgnoreDataMember]
@@ -55,13 +59,12 @@ namespace MediaBrowser.Controller.Entities
             }
         }
 
-        /// <summary>
-        /// Get the children of this folder from the actual file system
-        /// </summary>
-        /// <returns>IEnumerable{BaseItem}.</returns>
-        protected override IEnumerable<BaseItem> GetNonCachedChildren(IDirectoryService directoryService)
+        protected override IEnumerable<BaseItem> GetEligibleChildrenForRecursiveChildren(User user)
         {
-            return base.GetNonCachedChildren(directoryService).Concat(LibraryManager.RootFolder.VirtualChildren);
+            var list = base.GetEligibleChildrenForRecursiveChildren(user).ToList();
+            list.AddRange(LibraryManager.RootFolder.VirtualChildren);
+
+            return list;
         }
 
         public override bool BeforeMetadataRefresh()
@@ -92,11 +95,6 @@ namespace MediaBrowser.Controller.Entities
             {
                 LibraryManager.RegisterItem(item);
             }
-        }
-
-        public override void FillUserDataDtoValues(UserItemDataDto dto, UserItemData userData, User user)
-        {
-            // Nothing meaninful here and will only waste resources
         }
     }
 }

@@ -3,11 +3,15 @@ using MediaBrowser.Controller.Entities;
 using System;
 using System.IO;
 using System.Linq;
-using MediaBrowser.Common.IO;
+using System.Runtime.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Controller.Providers;
 
 namespace MediaBrowser.Server.Implementations.Devices
 {
-    public class CameraUploadsFolder : BasePluginFolder
+    public class CameraUploadsFolder : BasePluginFolder, ISupportsUserSpecificView
     {
         public CameraUploadsFolder()
         {
@@ -20,24 +24,11 @@ namespace MediaBrowser.Server.Implementations.Devices
             {
                 return false;
             }
-            
-            return GetChildren(user, true).Any() &&
-                base.IsVisible(user);
+
+            return base.IsVisible(user) && HasChildren();
         }
 
-        public override bool IsHidden
-        {
-            get
-            {
-                return base.IsHidden || !Children.Any();
-            }
-        }
-
-        public override bool IsHiddenFromUser(User user)
-        {
-            return false;
-        }
-
+        [IgnoreDataMember]
         public override string CollectionType
         {
             get { return Model.Entities.CollectionType.Photos; }
@@ -46,6 +37,29 @@ namespace MediaBrowser.Server.Implementations.Devices
         public override string GetClientTypeName()
         {
             return typeof(CollectionFolder).Name;
+        }
+
+        private bool? _hasChildren;
+        private bool HasChildren()
+        {
+            if (!_hasChildren.HasValue)
+            {
+                _hasChildren = LibraryManager.GetItemIds(new InternalItemsQuery { ParentId = Id }).Count > 0;
+            }
+
+            return _hasChildren.Value;
+        }
+
+        protected override Task ValidateChildrenInternal(IProgress<double> progress, CancellationToken cancellationToken, bool recursive, bool refreshChildMetadata, MetadataRefreshOptions refreshOptions, IDirectoryService directoryService)
+        {
+            _hasChildren = null;
+            return base.ValidateChildrenInternal(progress, cancellationToken, recursive, refreshChildMetadata, refreshOptions, directoryService);
+        }
+
+        [IgnoreDataMember]
+        public bool EnableUserSpecificView
+        {
+            get { return true; }
         }
     }
 
@@ -64,7 +78,7 @@ namespace MediaBrowser.Server.Implementations.Devices
         {
             var path = Path.Combine(_appPaths.DataPath, "camerauploads");
 
-			_fileSystem.CreateDirectory(path);
+            _fileSystem.CreateDirectory(path);
 
             return new CameraUploadsFolder
             {

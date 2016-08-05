@@ -7,7 +7,6 @@ using MediaBrowser.Model.Providers;
 using MediaBrowser.Model.Sync;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.Serialization;
 
@@ -18,13 +17,15 @@ namespace MediaBrowser.Model.Dto
     /// This holds information about a BaseItem in a format that is convenient for the client.
     /// </summary>
     [DebuggerDisplay("Name = {Name}, ID = {Id}, Type = {Type}")]
-    public class BaseItemDto : IHasProviderIds, IHasPropertyChangedEvent, IItemDto, IHasServerId, IHasSyncInfo
+    public class BaseItemDto : IHasProviderIds, IItemDto, IHasServerId, IHasSyncInfo
     {
         /// <summary>
         /// Gets or sets the name.
         /// </summary>
         /// <value>The name.</value>
         public string Name { get; set; }
+
+        public string OriginalTitle { get; set; }
 
         /// <summary>
         /// Gets or sets the server identifier.
@@ -43,6 +44,12 @@ namespace MediaBrowser.Model.Dto
         /// </summary>
         /// <value>The etag.</value>
         public string Etag { get; set; }
+
+        /// <summary>
+        /// Gets or sets the type of the source.
+        /// </summary>
+        /// <value>The type of the source.</value>
+        public string SourceType { get; set; }
         
         /// <summary>
         /// Gets or sets the playlist item identifier.
@@ -67,6 +74,8 @@ namespace MediaBrowser.Model.Dto
         public bool? CanDelete { get; set; }
         public bool? CanDownload { get; set; }
 
+        public bool? HasSubtitles { get; set; }
+        
         public string PreferredMetadataLanguage { get; set; }
         public string PreferredMetadataCountryCode { get; set; }
 
@@ -103,6 +112,8 @@ namespace MediaBrowser.Model.Dto
         /// </summary>
         /// <value>The synchronize percent.</value>
         public double? SyncPercent { get; set; }
+
+        public string Container { get; set; }
 
         /// <summary>
         /// Gets or sets the DVD season number.
@@ -190,6 +201,7 @@ namespace MediaBrowser.Model.Dto
         /// <value>The channel identifier.</value>
         public string ChannelId { get; set; }
         public string ChannelName { get; set; }
+        public string ServiceName { get; set; }
 
         /// <summary>
         /// Gets or sets the overview.
@@ -202,12 +214,6 @@ namespace MediaBrowser.Model.Dto
         /// </summary>
         /// <value>The short overview.</value>
         public string ShortOverview { get; set; }
-
-        /// <summary>
-        /// Gets or sets the name of the TMDB collection.
-        /// </summary>
-        /// <value>The name of the TMDB collection.</value>
-        public string TmdbCollectionName { get; set; }
 
         /// <summary>
         /// Gets or sets the taglines.
@@ -276,12 +282,6 @@ namespace MediaBrowser.Model.Dto
         public int? ProductionYear { get; set; }
 
         /// <summary>
-        /// Gets or sets the season count.
-        /// </summary>
-        /// <value>The season count.</value>
-        public int? SeasonCount { get; set; }
-
-        /// <summary>
         /// Gets or sets the players supported by a game.
         /// </summary>
         /// <value>The players.</value>
@@ -292,6 +292,13 @@ namespace MediaBrowser.Model.Dto
         /// </summary>
         /// <value><c>null</c> if [is place holder] contains no value, <c>true</c> if [is place holder]; otherwise, <c>false</c>.</value>
         public bool? IsPlaceHolder { get; set; }
+
+        /// <summary>
+        /// Gets or sets the number.
+        /// </summary>
+        /// <value>The number.</value>
+        public string Number { get; set; }
+        public string ChannelNumber { get; set; }
 
         /// <summary>
         /// Gets or sets the index number.
@@ -535,12 +542,6 @@ namespace MediaBrowser.Model.Dto
         public double? PrimaryImageAspectRatio { get; set; }
 
         /// <summary>
-        /// Gets or sets the primary image aspect ratio, before image enhancements.
-        /// </summary>
-        /// <value>The original primary image aspect ratio.</value>
-        public double? OriginalPrimaryImageAspectRatio { get; set; }
-
-        /// <summary>
         /// Gets or sets the artists.
         /// </summary>
         /// <value>The artists.</value>
@@ -564,6 +565,12 @@ namespace MediaBrowser.Model.Dto
         /// <value>The type of the collection.</value>
         public string CollectionType { get; set; }
 
+        /// <summary>
+        /// Gets or sets the type of the original collection.
+        /// </summary>
+        /// <value>The type of the original collection.</value>
+        public string OriginalCollectionType { get; set; }
+        
         /// <summary>
         /// Gets or sets the display order.
         /// </summary>
@@ -796,6 +803,11 @@ namespace MediaBrowser.Model.Dto
         public List<MetadataFields> LockedFields { get; set; }
 
         /// <summary>
+        /// Gets or sets the trailer count.
+        /// </summary>
+        /// <value>The trailer count.</value>
+        public int? TrailerCount { get; set; }
+        /// <summary>
         /// Gets or sets the movie count.
         /// </summary>
         /// <value>The movie count.</value>
@@ -944,6 +956,16 @@ namespace MediaBrowser.Model.Dto
         }
 
         /// <summary>
+        /// Gets a value indicating whether this instance has thumb.
+        /// </summary>
+        /// <value><c>true</c> if this instance has thumb; otherwise, <c>false</c>.</value>
+        [IgnoreDataMember]
+        public bool HasBackdrop
+        {
+            get { return (BackdropImageTags != null && BackdropImageTags.Count > 0) || (ParentBackdropImageTags != null && ParentBackdropImageTags.Count > 0); }
+        }
+
+        /// <summary>
         /// Gets a value indicating whether this instance has primary image.
         /// </summary>
         /// <value><c>true</c> if this instance has primary image; otherwise, <c>false</c>.</value>
@@ -1089,11 +1111,6 @@ namespace MediaBrowser.Model.Dto
         }
 
         /// <summary>
-        /// Occurs when [property changed].
-        /// </summary>
-        public event PropertyChangedEventHandler PropertyChanged;
-
-        /// <summary>
         /// Gets or sets the program identifier.
         /// </summary>
         /// <value>The program identifier.</value>
@@ -1109,12 +1126,6 @@ namespace MediaBrowser.Model.Dto
         /// The start date of the recording, in UTC.
         /// </summary>
         public DateTime? StartDate { get; set; }
-
-        /// <summary>
-        /// Gets or sets the original air date.
-        /// </summary>
-        /// <value>The original air date.</value>
-        public DateTime? OriginalAirDate { get; set; }
 
         /// <summary>
         /// Gets or sets the completion percentage.

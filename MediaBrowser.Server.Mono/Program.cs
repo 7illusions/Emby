@@ -1,4 +1,3 @@
-using MediaBrowser.Common.Implementations.IO;
 using MediaBrowser.Common.Implementations.Logging;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Server.Implementations;
@@ -14,6 +13,8 @@ using System.Net.Security;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Server.Implementations.Logging;
 
 namespace MediaBrowser.Server.Mono
 {
@@ -75,11 +76,12 @@ namespace MediaBrowser.Server.Mono
             // Allow all https requests
             ServicePointManager.ServerCertificateValidationCallback = new RemoteCertificateValidationCallback(delegate { return true; });
 
-            var fileSystem = new CommonFileSystem(logManager.GetLogger("FileSystem"), false, true);
+            var fileSystem = new ManagedFileSystem(new PatternsLogger(logManager.GetLogger("FileSystem")), false, false);
+            fileSystem.AddShortcutHandler(new MbLinkShortcutHandler(fileSystem));
 
-            var nativeApp = new NativeApp();
+            var nativeApp = new NativeApp(options, logManager.GetLogger("App"));
 
-            _appHost = new ApplicationHost(appPaths, logManager, options, fileSystem, "MBServer.Mono", nativeApp);
+            _appHost = new ApplicationHost(appPaths, logManager, options, fileSystem, "emby.mono.zip", nativeApp);
 
             if (options.ContainsOption("-v"))
             {

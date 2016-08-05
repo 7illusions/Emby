@@ -12,11 +12,16 @@ using System.Configuration.Install;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Management;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using CommonIO.Windows;
+using ImageMagickSharp;
+using MediaBrowser.Common.Net;
+using MediaBrowser.Server.Implementations.Logging;
 
 namespace MediaBrowser.ServerApplication
 {
@@ -27,6 +32,10 @@ namespace MediaBrowser.ServerApplication
         private static ILogger _logger;
 
         private static bool _isRunningAsService = false;
+        private static bool _appHostDisposed;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool SetDllDirectory(string lpPathName);
 
         /// <summary>
         /// Defines the entry point of the application.
@@ -39,6 +48,11 @@ namespace MediaBrowser.ServerApplication
             var currentProcess = Process.GetCurrentProcess();
 
             var applicationPath = currentProcess.MainModule.FileName;
+            var architecturePath = Path.Combine(Path.GetDirectoryName(applicationPath), Environment.Is64BitProcess ? "x64" : "x86");
+
+            Wand.SetMagickCoderModulePath(architecturePath);
+
+            var success = SetDllDirectory(architecturePath);
 
             var appPaths = CreateApplicationPaths(applicationPath, _isRunningAsService);
 
@@ -88,7 +102,7 @@ namespace MediaBrowser.ServerApplication
 
             if (IsAlreadyRunning(applicationPath, currentProcess))
             {
-                logger.Info("Shutting down because another instance of Media Browser Server is already running.");
+                logger.Info("Shutting down because another instance of Emby Server is already running.");
                 return;
             }
 
@@ -116,13 +130,28 @@ namespace MediaBrowser.ServerApplication
         /// <returns><c>true</c> if [is already running] [the specified current process]; otherwise, <c>false</c>.</returns>
         private static bool IsAlreadyRunning(string applicationPath, Process currentProcess)
         {
-            var filename = Path.GetFileName(applicationPath);
-
             var duplicate = Process.GetProcesses().FirstOrDefault(i =>
             {
                 try
                 {
-                    return string.Equals(filename, Path.GetFileName(i.MainModule.FileName)) && currentProcess.Id != i.Id;
+                    if (currentProcess.Id == i.Id)
+                    {
+                        return false;
+                    }
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    //_logger.Info("Module: {0}", i.MainModule.FileName);
+                    if (string.Equals(applicationPath, i.MainModule.FileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                    return false;
                 }
                 catch (Exception)
                 {
@@ -134,9 +163,44 @@ namespace MediaBrowser.ServerApplication
             {
                 _logger.Info("Found a duplicate process. Giving it time to exit.");
 
-                if (!duplicate.WaitForExit(10000))
+                if (!duplicate.WaitForExit(15000))
                 {
                     _logger.Info("The duplicate process did not exit.");
+                    return true;
+                }
+            }
+
+            if (!_isRunningAsService)
+            {
+                return IsAlreadyRunningAsService(applicationPath);
+            }
+
+            return false;
+        }
+
+        private static bool IsAlreadyRunningAsService(string applicationPath)
+        {
+            var serviceName = BackgroundService.GetExistingServiceName();
+
+            WqlObjectQuery wqlObjectQuery = new WqlObjectQuery(string.Format("SELECT * FROM Win32_Service WHERE State = 'Running' AND Name = '{0}'", serviceName));
+            ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(wqlObjectQuery);
+            ManagementObjectCollection managementObjectCollection = managementObjectSearcher.Get();
+
+            foreach (ManagementObject managementObject in managementObjectCollection)
+            {
+                var obj = managementObject.GetPropertyValue("PathName");
+                if (obj == null)
+                {
+                    continue;
+                }
+                var path = obj.ToString();
+
+                _logger.Info("Service path: {0}", path);
+                // Need to use indexOf instead of equality because the path will have the full service command line
+                if (path.IndexOf(applicationPath, StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    _logger.Info("The windows service is already running");
+                    MessageBox.Show("Emby Server is already running as a Windows Service. Only one instance is allowed at a time. To run as a tray icon, shut down the Windows Service.");
                     return true;
                 }
             }
@@ -201,9 +265,11 @@ namespace MediaBrowser.ServerApplication
         /// <param name="options">The options.</param>
         private static void RunApplication(ServerApplicationPaths appPaths, ILogManager logManager, bool runService, StartupOptions options)
         {
-            var fileSystem = new NativeFileSystem(logManager.GetLogger("FileSystem"), false);
+            var fileSystem = new WindowsFileSystem(new PatternsLogger(logManager.GetLogger("FileSystem")));
+            fileSystem.AddShortcutHandler(new MbLinkShortcutHandler(fileSystem));
+            //fileSystem.AddShortcutHandler(new LnkShortcutHandler(fileSystem));
 
-            var nativeApp = new WindowsApp(fileSystem)
+            var nativeApp = new WindowsApp(fileSystem, _logger)
             {
                 IsRunningAsService = runService
             };
@@ -212,9 +278,9 @@ namespace MediaBrowser.ServerApplication
                 logManager,
                 options,
                 fileSystem,
-                "MBServer",
+                "emby.windows.zip",
                 nativeApp);
-            
+
             var initProgress = new Progress<double>();
 
             if (!runService)
@@ -228,7 +294,9 @@ namespace MediaBrowser.ServerApplication
 
 
             var task = _appHost.Init(initProgress);
-            task = task.ContinueWith(new Action<Task>(a => _appHost.RunStartupTasks()));
+            Task.WaitAll(task);
+
+            task = task.ContinueWith(new Action<Task>(a => _appHost.RunStartupTasks()), TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.AttachedToParent);
 
             if (runService)
             {
@@ -236,6 +304,9 @@ namespace MediaBrowser.ServerApplication
             }
             else
             {
+                Task.WaitAll(task);
+
+                task = InstallVcredist2013IfNeeded(_appHost, _logger);
                 Task.WaitAll(task);
 
                 SystemEvents.SessionEnding += SystemEvents_SessionEnding;
@@ -251,11 +322,13 @@ namespace MediaBrowser.ServerApplication
         }
 
         private static ServerNotifyIcon _serverNotifyIcon;
+        private static TaskScheduler _mainTaskScheduler;
         private static void ShowTrayIcon()
         {
             //Application.EnableVisualStyles();
             //Application.SetCompatibleTextRenderingDefault(false);
             _serverNotifyIcon = new ServerNotifyIcon(_appHost.LogManager, _appHost, _appHost.ServerConfigurationManager, _appHost.LocalizationManager);
+            _mainTaskScheduler = TaskScheduler.FromCurrentSynchronizationContext();
             Application.Run();
         }
 
@@ -295,7 +368,19 @@ namespace MediaBrowser.ServerApplication
         {
             if (e.Reason == SessionSwitchReason.SessionLogon)
             {
-                BrowserLauncher.OpenDashboard(_appHost, _logger);
+                BrowserLauncher.OpenDashboard(_appHost);
+            }
+        }
+
+        public static void Invoke(Action action)
+        {
+            if (_isRunningAsService)
+            {
+                action();
+            }
+            else
+            {
+                Task.Factory.StartNew(action, CancellationToken.None, TaskCreationOptions.None, _mainTaskScheduler ?? TaskScheduler.Current);
             }
         }
 
@@ -326,12 +411,7 @@ namespace MediaBrowser.ServerApplication
         {
             _logger.Info("Shutting down");
 
-            _appHost.Dispose();
-
-            if (!_isRunningAsService)
-            {
-                SetErrorMode(ErrorModes.SYSTEM_DEFAULT);
-            }
+            DisposeAppHost();
         }
 
         /// <summary>
@@ -502,14 +582,15 @@ namespace MediaBrowser.ServerApplication
             }
             else
             {
+                DisposeAppHost();
+
                 ShutdownWindowsApplication();
             }
         }
 
         public static void Restart()
         {
-            _logger.Info("Disposing app host");
-            _appHost.Dispose();
+            DisposeAppHost();
 
             if (!_isRunningAsService)
             {
@@ -524,10 +605,30 @@ namespace MediaBrowser.ServerApplication
             }
         }
 
+        private static void DisposeAppHost()
+        {
+            if (!_appHostDisposed)
+            {
+                _logger.Info("Disposing app host");
+
+                _appHostDisposed = true;
+                _appHost.Dispose();
+            }
+        }
+
         private static void ShutdownWindowsApplication()
         {
-            _logger.Info("Calling Application.Exit");
-            Application.Exit();
+            if (_serverNotifyIcon != null)
+            {
+                _serverNotifyIcon.Dispose();
+                _serverNotifyIcon = null;
+            }
+
+            //_logger.Info("Calling Application.Exit");
+            //Application.Exit();
+
+            _logger.Info("Calling Environment.Exit");
+            Environment.Exit(0);
 
             _logger.Info("Calling ApplicationTaskCompletionSource.SetResult");
             ApplicationTaskCompletionSource.SetResult(true);
@@ -544,6 +645,90 @@ namespace MediaBrowser.ServerApplication
             {
                 service.Stop();
             }
+        }
+
+        private static async Task InstallVcredist2013IfNeeded(ApplicationHost appHost, ILogger logger)
+        {
+            // Reference 
+            // http://stackoverflow.com/questions/12206314/detect-if-visual-c-redistributable-for-visual-studio-2012-is-installed
+
+            try
+            {
+                var subkey = Environment.Is64BitProcess
+                    ? "SOFTWARE\\WOW6432Node\\Microsoft\\VisualStudio\\12.0\\VC\\Runtimes\\x64"
+                    : "SOFTWARE\\Microsoft\\VisualStudio\\12.0\\VC\\Runtimes\\x86";
+
+                using (RegistryKey ndpKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default)
+                    .OpenSubKey(subkey))
+                {
+                    if (ndpKey != null && ndpKey.GetValue("Version") != null)
+                    {
+                        var installedVersion = ((string)ndpKey.GetValue("Version")).TrimStart('v');
+                        if (installedVersion.StartsWith("12", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.ErrorException("Error getting .NET Framework version", ex);
+                return;
+            }
+
+            try
+            {
+                await InstallVcredist2013().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.ErrorException("Error installing Visual Studio C++ runtime", ex);
+            }
+        }
+
+        private async static Task InstallVcredist2013()
+        {
+            var httpClient = _appHost.HttpClient;
+
+            var tmp = await httpClient.GetTempFile(new HttpRequestOptions
+            {
+                Url = GetVcredist2013Url(),
+                Progress = new Progress<double>()
+
+            }).ConfigureAwait(false);
+
+            var exePath = Path.ChangeExtension(tmp, ".exe");
+            File.Copy(tmp, exePath);
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = exePath,
+
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                Verb = "runas",
+                ErrorDialog = false
+            };
+
+            _logger.Info("Running {0}", startInfo.FileName);
+
+            using (var process = Process.Start(startInfo))
+            {
+                process.WaitForExit();
+            }
+        }
+
+        private static string GetVcredist2013Url()
+        {
+            if (Environment.Is64BitProcess)
+            {
+                return "https://github.com/MediaBrowser/Emby.Resources/raw/master/vcredist2013/vcredist_x64.exe";
+            }
+
+            // TODO: ARM url - https://github.com/MediaBrowser/Emby.Resources/raw/master/vcredist2013/vcredist_arm.exe
+
+            return "https://github.com/MediaBrowser/Emby.Resources/raw/master/vcredist2013/vcredist_x86.exe";
         }
 
         /// <summary>

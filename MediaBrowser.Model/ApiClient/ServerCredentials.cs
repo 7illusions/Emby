@@ -41,7 +41,7 @@ namespace MediaBrowser.Model.ApiClient
                 {
                     existing.DateLastAccessed = server.DateLastAccessed;
                 }
-
+                
                 existing.UserLinkType = server.UserLinkType;
 
                 if (!string.IsNullOrEmpty(server.AccessToken))
@@ -56,6 +56,10 @@ namespace MediaBrowser.Model.ApiClient
                 if (!string.IsNullOrEmpty(server.RemoteAddress))
                 {
                     existing.RemoteAddress = server.RemoteAddress;
+                }
+                if (!string.IsNullOrEmpty(server.ConnectServerId))
+                {
+                    existing.ConnectServerId = server.ConnectServerId;
                 }
                 if (!string.IsNullOrEmpty(server.LocalAddress))
                 {

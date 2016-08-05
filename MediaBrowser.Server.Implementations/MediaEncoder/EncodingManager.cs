@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Chapters;
+﻿using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -14,6 +13,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.MediaEncoder
 {
@@ -123,8 +123,7 @@ namespace MediaBrowser.Server.Implementations.MediaEncoder
                 {
                     if (extractImages)
                     {
-                        if (video.VideoType == VideoType.HdDvd || video.VideoType == VideoType.Iso ||
-                             video.VideoType == VideoType.BluRay)
+                        if (video.VideoType == VideoType.HdDvd || video.VideoType == VideoType.Iso || video.VideoType == VideoType.BluRay)
                         {
                             continue;
                         }
@@ -134,26 +133,31 @@ namespace MediaBrowser.Server.Implementations.MediaEncoder
 
                         var protocol = MediaProtocol.File;
 
-                        var inputPath = MediaEncoderHelpers.GetInputArgument(video.Path, protocol, null, video.PlayableStreamFileNames);
+                        var inputPath = MediaEncoderHelpers.GetInputArgument(_fileSystem, video.Path, protocol, null, video.PlayableStreamFileNames);
 
                         try
                         {
 							_fileSystem.CreateDirectory(Path.GetDirectoryName(path));
 
-                            using (var stream = await _encoder.ExtractVideoImage(inputPath, protocol, video.Video3DFormat, time, cancellationToken).ConfigureAwait(false))
+                            var tempFile = await _encoder.ExtractVideoImage(inputPath, protocol, video.Video3DFormat, time, cancellationToken).ConfigureAwait(false);
+                            File.Copy(tempFile, path, true);
+
+                            try
                             {
-                                using (var fileStream = _fileSystem.GetFileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, true))
-                                {
-                                    await stream.CopyToAsync(fileStream).ConfigureAwait(false);
-                                }
+                                File.Delete(tempFile);
+                            }
+                            catch
+                            {
+                                
                             }
 
                             chapter.ImagePath = path;
+                            chapter.ImageDateModified = _fileSystem.GetLastWriteTimeUtc(path);
                             changesMade = true;
                         }
                         catch (Exception ex)
                         {
-                            _logger.ErrorException("Error extraching chapter images for {0}", ex, string.Join(",", inputPath));
+                            _logger.ErrorException("Error extracting chapter images for {0}", ex, string.Join(",", inputPath));
                             success = false;
                             break;
                         }
@@ -167,6 +171,7 @@ namespace MediaBrowser.Server.Implementations.MediaEncoder
                 else if (!string.Equals(path, chapter.ImagePath, StringComparison.OrdinalIgnoreCase))
                 {
                     chapter.ImagePath = path;
+                    chapter.ImageDateModified = _fileSystem.GetLastWriteTimeUtc(path);
                     changesMade = true;
                 }
             }
@@ -194,7 +199,7 @@ namespace MediaBrowser.Server.Implementations.MediaEncoder
 
             try
             {
-                return Directory.EnumerateFiles(path)
+                return _fileSystem.GetFilePaths(path)
                     .ToList();
             }
             catch (DirectoryNotFoundException)

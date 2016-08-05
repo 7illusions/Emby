@@ -12,7 +12,6 @@
     <FileAlignment>512</FileAlignment>
     <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <RestorePackages>true</RestorePackages>
     <ReleaseVersion>
     </ReleaseVersion>
   </PropertyGroup>
@@ -46,6 +45,16 @@
     <RunPostBuildEvent>Always</RunPostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="CommonIO, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\CommonIO.1.0.0.9\lib\net45\CommonIO.dll</HintPath>
+    </Reference>
+    <Reference Include="MoreLinq">
+      <HintPath>..\packages\morelinq.1.4.0\lib\net35\MoreLinq.dll</HintPath>
+    </Reference>
+    <Reference Include="Patterns.Logging">
+      <HintPath>..\packages\Patterns.Logging.1.0.0.2\lib\portable-net45+sl4+wp71+win8+wpa81\Patterns.Logging.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
@@ -56,9 +65,6 @@
     </Reference>
     <Reference Include="ServiceStack.Text">
       <HintPath>..\ThirdParty\ServiceStack.Text\ServiceStack.Text.dll</HintPath>
-    </Reference>
-    <Reference Include="MoreLinq">
-      <HintPath>..\packages\morelinq.1.1.1\lib\net35\MoreLinq.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -74,8 +80,6 @@
     <Compile Include="FilterService.cs" />
     <Compile Include="IHasDtoOptions.cs" />
     <Compile Include="Library\ChapterService.cs" />
-    <Compile Include="Playback\Dash\ManifestBuilder.cs" />
-    <Compile Include="Playback\Dash\MpegDashService.cs" />
     <Compile Include="Playback\MediaInfoService.cs" />
     <Compile Include="Playback\TranscodingThrottler.cs" />
     <Compile Include="PlaylistService.cs" />
@@ -125,7 +129,6 @@
     <Compile Include="ItemUpdateService.cs" />
     <Compile Include="Library\LibraryService.cs" />
     <Compile Include="Library\FileOrganizationService.cs" />
-    <Compile Include="Library\LibraryHelpers.cs" />
     <Compile Include="Library\LibraryStructureService.cs" />
     <Compile Include="LiveTv\LiveTvService.cs" />
     <Compile Include="LocalizationService.cs" />

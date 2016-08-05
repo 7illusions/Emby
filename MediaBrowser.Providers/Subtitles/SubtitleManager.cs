@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Common.Events;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -17,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Providers.Subtitles
 {
@@ -129,6 +129,8 @@ namespace MediaBrowser.Providers.Subtitles
 
                     try
                     {
+                        //var isText = MediaStream.IsTextFormat(response.Format);
+
                         using (var fs = _fileSystem.GetFileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.Read, true))
                         {
                             await stream.CopyToAsync(fs).ConfigureAwait(false);

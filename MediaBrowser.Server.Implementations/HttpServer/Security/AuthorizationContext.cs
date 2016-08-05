@@ -45,7 +45,6 @@ namespace MediaBrowser.Server.Implementations.HttpServer.Security
         {
             var auth = GetAuthorizationDictionary(httpReq);
 
-            string userId = null;
             string deviceId = null;
             string device = null;
             string client = null;
@@ -53,17 +52,18 @@ namespace MediaBrowser.Server.Implementations.HttpServer.Security
 
             if (auth != null)
             {
-                // TODO: Remove this 
-                auth.TryGetValue("UserId", out userId);
-
                 auth.TryGetValue("DeviceId", out deviceId);
                 auth.TryGetValue("Device", out device);
                 auth.TryGetValue("Client", out client);
                 auth.TryGetValue("Version", out version);
             }
 
-            var token = httpReq.Headers["X-MediaBrowser-Token"];
+            var token = httpReq.Headers["X-Emby-Token"];
 
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                token = httpReq.Headers["X-MediaBrowser-Token"];
+            }
             if (string.IsNullOrWhiteSpace(token))
             {
                 token = httpReq.QueryString["api_key"];
@@ -74,7 +74,6 @@ namespace MediaBrowser.Server.Implementations.HttpServer.Security
                 Client = client,
                 Device = device,
                 DeviceId = deviceId,
-                UserId = userId,
                 Version = version,
                 Token = token
             };
@@ -104,6 +103,10 @@ namespace MediaBrowser.Server.Implementations.HttpServer.Security
                     if (string.IsNullOrWhiteSpace(info.DeviceId))
                     {
                         info.DeviceId = tokenInfo.DeviceId;
+                    }
+                    if (string.IsNullOrWhiteSpace(info.Version))
+                    {
+                        info.Version = tokenInfo.AppVersion;
                     }
                 }
                 else
@@ -171,11 +174,22 @@ namespace MediaBrowser.Server.Implementations.HttpServer.Security
 
                 if (param.Length == 2)
                 {
-                    result.Add(param[0], param[1].Trim(new[] { '"' }));
+					var value = NormalizeValue (param[1].Trim(new[] { '"' }));
+                    result.Add(param[0], value);
                 }
             }
 
             return result;
         }
+
+		private string NormalizeValue(string value)
+		{
+			if (string.IsNullOrWhiteSpace (value)) 
+			{
+				return value;
+			}
+
+			return System.Net.WebUtility.HtmlEncode(value);
+		}
     }
 }

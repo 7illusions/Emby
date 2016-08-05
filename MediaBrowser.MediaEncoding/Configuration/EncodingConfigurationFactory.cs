@@ -2,7 +2,7 @@
 using MediaBrowser.Model.Configuration;
 using System.Collections.Generic;
 using System.IO;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.MediaEncoding.Configuration
 {

@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Progress;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.IO;
@@ -18,6 +17,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 using Interfaces.IO;
 
 namespace MediaBrowser.Server.Implementations.Sync
@@ -83,12 +83,7 @@ namespace MediaBrowser.Server.Implementations.Sync
 
             foreach (var localItem in localItems)
             {
-                // TODO: Remove this after a while
-                if (string.IsNullOrWhiteSpace(localItem.FileId))
-                {
-                    jobItemIds.Add(localItem.SyncJobItemId);
-                }
-                else if (remoteIds.Contains(localItem.FileId, StringComparer.OrdinalIgnoreCase))
+                if (remoteIds.Contains(localItem.FileId, StringComparer.OrdinalIgnoreCase))
                 {
                     jobItemIds.Add(localItem.SyncJobItemId);
                 }
@@ -329,17 +324,14 @@ namespace MediaBrowser.Server.Implementations.Sync
             {
                 var files = localItem.AdditionalFiles.ToList();
 
-                // TODO: Remove this. Have to check it for now since this is a new property
-                if (!string.IsNullOrWhiteSpace(localItem.FileId))
-                {
-                    files.Insert(0, localItem.FileId);
-                }
-
                 foreach (var file in files)
                 {
                     _logger.Debug("Removing {0} from {1}.", file, target.Name);
                     await provider.DeleteFile(file, target, cancellationToken).ConfigureAwait(false);
                 }
+
+                _logger.Debug("Removing {0} from {1}.", localItem.FileId, target.Name);
+                await provider.DeleteFile(localItem.FileId, target, cancellationToken).ConfigureAwait(false);
 
                 await dataProvider.Delete(target, localItem.Id).ConfigureAwait(false);
             }

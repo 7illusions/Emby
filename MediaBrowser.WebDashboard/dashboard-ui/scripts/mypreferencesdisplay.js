@@ -1,96 +1,106 @@
-﻿(function ($, window, document) {
+﻿define(['userSettingsBuilder', 'appStorage'], function (userSettingsBuilder, appStorage) {
 
-    function loadForm(page, user) {
+    return function (view, params) {
 
-        page.querySelector('.chkDisplayMissingEpisodes').checked = user.Configuration.DisplayMissingEpisodes || false;
-        page.querySelector('.chkDisplayUnairedEpisodes').checked = user.Configuration.DisplayUnairedEpisodes || false;
-        page.querySelector('.chkGroupMoviesIntoCollections').checked = user.Configuration.GroupMoviesIntoBoxSets || false;
+        var userId = params.userId || Dashboard.getCurrentUserId();
+        var userSettings = new userSettingsBuilder(userId);
 
-        $('#selectThemeSong', page).val(appStorage.getItem('enableThemeSongs-' + user.Id) || '');
-        $('#selectBackdrop', page).val(appStorage.getItem('enableBackdrops-' + user.Id) || '');
+        function loadForm(page, user) {
 
-        $('#selectLanguage', page).val(AppSettings.displayLanguage());
+            page.querySelector('.chkDisplayMissingEpisodes').checked = user.Configuration.DisplayMissingEpisodes || false;
+            page.querySelector('.chkDisplayUnairedEpisodes').checked = user.Configuration.DisplayUnairedEpisodes || false;
 
-        page.querySelector('.chkEnableFullScreen').checked = AppSettings.enableFullScreen();
+            page.querySelector('#selectThemeSong').value = appStorage.getItem('enableThemeSongs-' + user.Id) || '';
+            page.querySelector('#selectBackdrop').value = appStorage.getItem('enableBackdrops-' + user.Id) || '';
 
-        Dashboard.hideLoadingMsg();
-    }
+            page.querySelector('#selectLanguage').value = userSettings.language() || '';
 
-    function saveUser(page, user) {
+            Dashboard.hideLoadingMsg();
+        }
 
-        user.Configuration.DisplayMissingEpisodes = page.querySelector('.chkDisplayMissingEpisodes').checked;
-        user.Configuration.DisplayUnairedEpisodes = page.querySelector('.chkDisplayUnairedEpisodes').checked;
-        user.Configuration.GroupMoviesIntoBoxSets = page.querySelector('.chkGroupMoviesIntoCollections').checked;
+        function saveUser(page, user) {
 
-        AppSettings.enableFullScreen(page.querySelector('.chkEnableFullScreen').checked);
-        AppSettings.displayLanguage(page.querySelector('#selectLanguage').value);
+            user.Configuration.DisplayMissingEpisodes = page.querySelector('.chkDisplayMissingEpisodes').checked;
+            user.Configuration.DisplayUnairedEpisodes = page.querySelector('.chkDisplayUnairedEpisodes').checked;
 
-        appStorage.setItem('enableThemeSongs-' + user.Id, $('#selectThemeSong', page).val());
-        appStorage.setItem('enableBackdrops-' + user.Id, $('#selectBackdrop', page).val());
+            userSettings.language(page.querySelector('#selectLanguage').value);
 
-        ApiClient.updateUserConfiguration(user.Id, user.Configuration).done(function () {
-            Dashboard.alert(Globalize.translate('SettingsSaved'));
+            appStorage.setItem('enableThemeSongs-' + user.Id, page.querySelector('#selectThemeSong').value);
+            appStorage.setItem('enableBackdrops-' + user.Id, page.querySelector('#selectBackdrop').value);
 
-            loadForm(page, user);
+            return ApiClient.updateUserConfiguration(user.Id, user.Configuration);
+        }
+
+        function save(page) {
+
+            if (!AppInfo.enableAutoSave) {
+                Dashboard.showLoadingMsg();
+            }
+
+            ApiClient.getUser(userId).then(function (user) {
+
+                saveUser(page, user).then(function () {
+
+                    Dashboard.hideLoadingMsg();
+                    if (!AppInfo.enableAutoSave) {
+                        require(['toast'], function (toast) {
+                            toast(Globalize.translate('SettingsSaved'));
+                        });
+                    }
+
+                }, function () {
+                    Dashboard.hideLoadingMsg();
+                });
+
+            });
+        }
+
+        view.querySelector('.displayPreferencesForm').addEventListener('submit', function (e) {
+            save(view);
+            e.preventDefault();
+            // Disable default form submission
+            return false;
         });
-    }
 
-    function onSubmit() {
+        if (AppInfo.enableAutoSave) {
+            view.querySelector('.btnSave').classList.add('hide');
+        } else {
+            view.querySelector('.btnSave').classList.remove('hide');
+        }
 
-        var page = $(this).parents('.page')[0];
+        view.addEventListener('viewshow', function () {
+            var page = this;
 
-        Dashboard.showLoadingMsg();
+            Dashboard.showLoadingMsg();
 
-        var userId = getParameterByName('userId') || Dashboard.getCurrentUserId();
+            ApiClient.getUser(userId).then(function (user) {
 
-        ApiClient.getUser(userId).done(function (user) {
+                loadForm(page, user);
 
-            saveUser(page, user);
+                var requiresUserPreferences = view.querySelectorAll('.requiresUserPreferences');
+                for (var i = 0, length = requiresUserPreferences.length; i < length; i++) {
+                    if (user.Policy.EnableUserPreferenceAccess) {
+                        requiresUserPreferences[i].classList.remove('hide');
+                    } else {
+                        requiresUserPreferences[i].classList.add('hide');
+                    }
+                }
+            });
 
-        });
-
-        // Disable default form submission
-        return false;
-    }
-
-    $(document).on('pageinit', "#displayPreferencesPage", function () {
-
-        var page = this;
-
-        $('.displayPreferencesForm').off('submit', onSubmit).on('submit', onSubmit);
-
-    }).on('pageshowready', "#displayPreferencesPage", function () {
-
-        var page = this;
-
-        Dashboard.showLoadingMsg();
-
-        var userId = getParameterByName('userId') || Dashboard.getCurrentUserId();
-
-        ApiClient.getUser(userId).done(function (user) {
-
-            loadForm(page, user);
-
-            if (user.Policy.EnableUserPreferenceAccess) {
-                $('.requiresUserPreferences', page).show();
+            if (AppInfo.supportsUserDisplayLanguageSetting) {
+                page.querySelector('.languageSection').classList.remove('hide');
             } else {
-                $('.requiresUserPreferences', page).hide();
+                page.querySelector('.languageSection').classList.add('hide');
             }
         });
 
-        $('.fldEnableBackdrops', page).show();
+        view.addEventListener('viewbeforehide', function () {
+            var page = this;
 
-        if (AppInfo.supportsFullScreen) {
-            $('.fldFullscreen', page).show();
-        } else {
-            $('.fldFullscreen', page).hide();
-        }
+            if (AppInfo.enableAutoSave) {
+                save(page);
+            }
+        });
+    };
 
-        if (AppInfo.supportsUserDisplayLanguageSetting) {
-            $('.languageSection', page).show();
-        } else {
-            $('.languageSection', page).hide();
-        }
-    });
-
-})(jQuery, window, document);
+});

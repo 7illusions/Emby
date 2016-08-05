@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -7,7 +6,6 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Localization;
 using MediaBrowser.Controller.Providers;
-using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Providers;
@@ -16,8 +14,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Common;
+using MediaBrowser.Model.Net;
 
 namespace MediaBrowser.Providers.Movies
 {
@@ -37,10 +39,11 @@ namespace MediaBrowser.Providers.Movies
         private readonly ILogger _logger;
         private readonly ILocalizationManager _localization;
         private readonly ILibraryManager _libraryManager;
+        private readonly IApplicationHost _appHost;
 
         private readonly CultureInfo _usCulture = new CultureInfo("en-US");
 
-        public MovieDbProvider(IJsonSerializer jsonSerializer, IHttpClient httpClient, IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILogger logger, ILocalizationManager localization, ILibraryManager libraryManager)
+        public MovieDbProvider(IJsonSerializer jsonSerializer, IHttpClient httpClient, IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILogger logger, ILocalizationManager localization, ILibraryManager libraryManager, IApplicationHost appHost)
         {
             _jsonSerializer = jsonSerializer;
             _httpClient = httpClient;
@@ -49,6 +52,7 @@ namespace MediaBrowser.Providers.Movies
             _logger = logger;
             _localization = localization;
             _libraryManager = libraryManager;
+            _appHost = appHost;
             Current = this;
         }
 
@@ -73,7 +77,7 @@ namespace MediaBrowser.Providers.Movies
 
                 var tmdbSettings = await GetTmdbSettings(cancellationToken).ConfigureAwait(false);
 
-                var tmdbImageUrl = tmdbSettings.images.base_url + "original";
+                var tmdbImageUrl = tmdbSettings.images.secure_base_url + "original";
 
                 var remoteResult = new RemoteSearchResult
                 {
@@ -115,7 +119,7 @@ namespace MediaBrowser.Providers.Movies
         public Task<MetadataResult<T>> GetItemMetadata<T>(ItemLookupInfo id, CancellationToken cancellationToken)
             where T : BaseItem, new()
         {
-			var movieDb = new GenericMovieDbInfo<T>(_logger, _jsonSerializer, _libraryManager, _fileSystem);
+            var movieDb = new GenericMovieDbInfo<T>(_logger, _jsonSerializer, _libraryManager, _fileSystem);
 
             return movieDb.GetMetadata(id, cancellationToken);
         }
@@ -157,9 +161,7 @@ namespace MediaBrowser.Providers.Movies
             {
                 Url = string.Format(TmdbConfigUrl, ApiKey),
                 CancellationToken = cancellationToken,
-                AcceptHeader = AcceptHeader,
-                CacheMode = CacheMode.Unconditional,
-                CacheLength = TimeSpan.FromDays(1)
+                AcceptHeader = AcceptHeader
 
             }).ConfigureAwait(false))
             {
@@ -169,8 +171,8 @@ namespace MediaBrowser.Providers.Movies
             }
         }
 
-        private const string TmdbConfigUrl = "http://api.themoviedb.org/3/configuration?api_key={0}";
-        private const string GetMovieInfo3 = @"http://api.themoviedb.org/3/movie/{0}?api_key={1}&append_to_response=casts,releases,images,keywords,trailers";
+        private const string TmdbConfigUrl = "https://api.themoviedb.org/3/configuration?api_key={0}";
+        private const string GetMovieInfo3 = @"https://api.themoviedb.org/3/movie/{0}?api_key={1}&append_to_response=casts,releases,images,keywords,trailers";
 
         internal static string ApiKey = "f6bd687ffa63cd282b6ff2c6877f2669";
         internal static string AcceptHeader = "application/json,image/*";
@@ -210,7 +212,7 @@ namespace MediaBrowser.Providers.Movies
 
             var dataFilePath = GetDataFilePath(id, preferredMetadataLanguage);
 
-			_fileSystem.CreateDirectory(Path.GetDirectoryName(dataFilePath));
+            _fileSystem.CreateDirectory(Path.GetDirectoryName(dataFilePath));
 
             _jsonSerializer.SerializeToFile(mainResult, dataFilePath);
         }
@@ -221,10 +223,6 @@ namespace MediaBrowser.Providers.Movies
             if (string.IsNullOrEmpty(tmdbId))
             {
                 throw new ArgumentNullException("tmdbId");
-            }
-            if (string.IsNullOrEmpty(language))
-            {
-                throw new ArgumentNullException("language");
             }
 
             var path = GetDataFilePath(tmdbId, language);
@@ -249,15 +247,15 @@ namespace MediaBrowser.Providers.Movies
             {
                 throw new ArgumentNullException("tmdbId");
             }
-            if (string.IsNullOrEmpty(preferredLanguage))
-            {
-                throw new ArgumentNullException("preferredLanguage");
-            }
 
             var path = GetMovieDataPath(_configurationManager.ApplicationPaths, tmdbId);
 
-            var filename = string.Format("all-{0}.json",
-                preferredLanguage);
+            if (string.IsNullOrWhiteSpace(preferredLanguage))
+            {
+                preferredLanguage = "alllang";
+            }
+
+            var filename = string.Format("all-{0}.json", preferredLanguage);
 
             return Path.Combine(path, filename);
         }
@@ -268,15 +266,58 @@ namespace MediaBrowser.Providers.Movies
 
             if (!string.IsNullOrEmpty(preferredLanguage))
             {
+                preferredLanguage = NormalizeLanguage(preferredLanguage);
+
                 languages.Add(preferredLanguage);
+
+                if (preferredLanguage.Length == 5) // like en-US
+                {
+                    // Currenty, TMDB supports 2-letter language codes only
+                    // They are planning to change this in the future, thus we're
+                    // supplying both codes if we're having a 5-letter code.
+                    languages.Add(preferredLanguage.Substring(0, 2));
+                }
             }
+
             languages.Add("null");
+
             if (!string.Equals(preferredLanguage, "en", StringComparison.OrdinalIgnoreCase))
             {
                 languages.Add("en");
             }
 
             return string.Join(",", languages.ToArray());
+        }
+
+        public static string NormalizeLanguage(string language)
+        {
+            if (!string.IsNullOrEmpty(language))
+            {
+                // They require this to be uppercase
+                // https://emby.media/community/index.php?/topic/32454-fr-follow-tmdbs-new-language-api-update/?p=311148
+                var parts = language.Split('-');
+
+                if (parts.Length == 2)
+                {
+                    language = parts[0] + "-" + parts[1].ToUpper();
+                }
+            }
+
+            return language;
+        }
+
+        public static string AdjustImageLanguage(string imageLanguage, string requestLanguage)
+        {
+            if (!string.IsNullOrEmpty(imageLanguage) 
+                && !string.IsNullOrEmpty(requestLanguage) 
+                && requestLanguage.Length > 2 
+                && imageLanguage.Length == 2
+                && requestLanguage.StartsWith(imageLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                return requestLanguage;
+            }
+
+            return imageLanguage;
         }
 
         /// <summary>
@@ -293,12 +334,11 @@ namespace MediaBrowser.Providers.Movies
 
             if (!string.IsNullOrEmpty(language))
             {
-                url += string.Format("&language={0}", language);
-            }
+                url += string.Format("&language={0}", NormalizeLanguage(language));
 
-            var includeImageLanguageParam = GetImageLanguagesParam(language);
-            // Get images in english and with no language
-            url += "&include_image_language=" + includeImageLanguageParam;
+                // Get images in english and with no language
+                url += "&include_image_language=" + GetImageLanguagesParam(language);
+            }
 
             CompleteMovieData mainResult;
 
@@ -308,30 +348,49 @@ namespace MediaBrowser.Providers.Movies
             var cacheMode = isTmdbId ? CacheMode.None : CacheMode.Unconditional;
             var cacheLength = TimeSpan.FromDays(3);
 
-            using (var json = await GetMovieDbResponse(new HttpRequestOptions
+            try
             {
-                Url = url,
-                CancellationToken = cancellationToken,
-                AcceptHeader = AcceptHeader,
-                CacheMode = cacheMode,
-                CacheLength = cacheLength
+                using (var json = await GetMovieDbResponse(new HttpRequestOptions
+                {
+                    Url = url,
+                    CancellationToken = cancellationToken,
+                    AcceptHeader = AcceptHeader,
+                    CacheMode = cacheMode,
+                    CacheLength = cacheLength
 
-            }).ConfigureAwait(false))
+                }).ConfigureAwait(false))
+                {
+                    mainResult = _jsonSerializer.DeserializeFromStream<CompleteMovieData>(json);
+                }
+            }
+            catch (HttpException ex)
             {
-                mainResult = _jsonSerializer.DeserializeFromStream<CompleteMovieData>(json);
+                // Return null so that callers know there is no metadata for this id
+                if (ex.StatusCode.HasValue && ex.StatusCode.Value == HttpStatusCode.NotFound)
+                {
+                    return null;
+                }
+
+                throw;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
 
             // If the language preference isn't english, then have the overview fallback to english if it's blank
             if (mainResult != null &&
-                string.IsNullOrEmpty(mainResult.overview) && 
-                !string.IsNullOrEmpty(language) && 
+                string.IsNullOrEmpty(mainResult.overview) &&
+                !string.IsNullOrEmpty(language) &&
                 !string.Equals(language, "en", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.Info("MovieDbProvider couldn't find meta for language " + language + ". Trying English...");
 
-                url = string.Format(GetMovieInfo3, id, ApiKey) + "&include_image_language=" + includeImageLanguageParam + "&language=en";
+                url = string.Format(GetMovieInfo3, id, ApiKey) + "&language=en";
+
+                if (!string.IsNullOrEmpty(language))
+                {
+                    // Get images in english and with no language
+                    url += "&include_image_language=" + GetImageLanguagesParam(language);
+                }
 
                 using (var json = await GetMovieDbResponse(new HttpRequestOptions
                 {
@@ -352,41 +411,30 @@ namespace MediaBrowser.Providers.Movies
             return mainResult;
         }
 
+        private static long _lastRequestTicks;
+        // The limit is 40 requests per 10 seconds
+        private static int requestIntervalMs = 300;
+
         /// <summary>
         /// Gets the movie db response.
         /// </summary>
-        internal Task<Stream> GetMovieDbResponse(HttpRequestOptions options)
+        internal async Task<Stream> GetMovieDbResponse(HttpRequestOptions options)
         {
+            var delayTicks = (requestIntervalMs * 10000) - (DateTime.UtcNow.Ticks - _lastRequestTicks);
+            var delayMs = Math.Min(delayTicks / 10000, requestIntervalMs);
+
+            if (delayMs > 0)
+            {
+                _logger.Debug("Throttling Tmdb by {0} ms", delayMs);
+                await Task.Delay(Convert.ToInt32(delayMs)).ConfigureAwait(false);
+            }
+
             options.ResourcePool = MovieDbResourcePool;
+            _lastRequestTicks = DateTime.UtcNow.Ticks;
 
-            return _httpClient.Get(options);
-        }
+            options.UserAgent = "Emby/" + _appHost.ApplicationVersion;
 
-        public TheMovieDbOptions GetTheMovieDbOptions()
-        {
-            return _configurationManager.GetConfiguration<TheMovieDbOptions>("themoviedb");
-        }
-
-        public bool HasChanged(IHasMetadata item, DateTime date)
-        {
-            if (!GetTheMovieDbOptions().EnableAutomaticUpdates)
-            {
-                return false;
-            }
-
-            var tmdbId = item.GetProviderId(MetadataProviders.Tmdb);
-
-            if (!String.IsNullOrEmpty(tmdbId))
-            {
-                // Process images
-                var dataFilePath = GetDataFilePath(tmdbId, item.GetPreferredMetadataLanguage());
-
-                var fileInfo = new FileInfo(dataFilePath);
-
-                return !fileInfo.Exists || _fileSystem.GetLastWriteTimeUtc(fileInfo) > date;
-            }
-
-            return false;
+            return await _httpClient.Get(options).ConfigureAwait(false);
         }
 
         public void Dispose()
@@ -610,21 +658,6 @@ namespace MediaBrowser.Providers.Movies
                 Url = url,
                 ResourcePool = MovieDbResourcePool
             });
-        }
-    }
-
-    public class TmdbConfigStore : IConfigurationFactory
-    {
-        public IEnumerable<ConfigurationStore> GetConfigurations()
-        {
-            return new List<ConfigurationStore>
-            {
-                new ConfigurationStore
-                {
-                     Key = "themoviedb",
-                     ConfigurationType = typeof(TheMovieDbOptions)
-                }
-            };
         }
     }
 }

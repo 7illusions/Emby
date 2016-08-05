@@ -8,15 +8,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
+using MediaBrowser.Controller.Entities.Audio;
 
 namespace MediaBrowser.Controller.Entities.Movies
 {
     /// <summary>
     /// Class BoxSet
     /// </summary>
-    public class BoxSet : Folder, IHasTrailers, IHasKeywords, IHasDisplayOrder, IHasLookupInfo<BoxSetInfo>, IMetadataContainer, IHasShares
+    public class BoxSet : Folder, IHasTrailers, IHasDisplayOrder, IHasLookupInfo<BoxSetInfo>, IHasShares
     {
         public List<Share> Shares { get; set; }
 
@@ -27,7 +26,6 @@ namespace MediaBrowser.Controller.Entities.Movies
             RemoteTrailerIds = new List<Guid>();
 
             DisplayOrder = ItemSortBy.PremiereDate;
-            Keywords = new List<string>();
             Shares = new List<Share>();
         }
 
@@ -49,12 +47,6 @@ namespace MediaBrowser.Controller.Entities.Movies
         public List<MediaUrl> RemoteTrailers { get; set; }
 
         /// <summary>
-        /// Gets or sets the tags.
-        /// </summary>
-        /// <value>The tags.</value>
-        public List<string> Keywords { get; set; }
-
-        /// <summary>
         /// Gets or sets the display order.
         /// </summary>
         /// <value>The display order.</value>
@@ -63,6 +55,11 @@ namespace MediaBrowser.Controller.Entities.Movies
         protected override bool GetBlockUnratedValue(UserPolicy config)
         {
             return config.BlockUnratedItems.Contains(UnratedItem.Movie);
+        }
+
+        public override UnratedItem GetBlockUnratedType()
+        {
+            return UnratedItem.Movie;
         }
 
         [IgnoreDataMember]
@@ -115,7 +112,7 @@ namespace MediaBrowser.Controller.Entities.Movies
             // Gather all possible ratings
             var ratings = GetRecursiveChildren()
                 .Concat(GetLinkedChildren())
-                .Where(i => i is Movie || i is Series)
+                .Where(i => i is Movie || i is Series || i is MusicAlbum || i is Game)
                 .Select(i => i.OfficialRating)
                 .Where(i => !string.IsNullOrEmpty(i))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -152,34 +149,6 @@ namespace MediaBrowser.Controller.Entities.Movies
         public BoxSetInfo GetLookupInfo()
         {
             return GetItemLookupInfo<BoxSetInfo>();
-        }
-
-        public async Task RefreshAllMetadata(MetadataRefreshOptions refreshOptions, IProgress<double> progress, CancellationToken cancellationToken)
-        {
-            // Refresh bottom up, children first, then the boxset
-            // By then hopefully the  movies within will have Tmdb collection values
-            var items = GetRecursiveChildren().ToList();
-
-            var totalItems = items.Count;
-            var numComplete = 0;
-
-            // Refresh songs
-            foreach (var item in items)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                await item.RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
-
-                numComplete++;
-                double percent = numComplete;
-                percent /= totalItems;
-                progress.Report(percent * 100);
-            }
-
-            // Refresh current item
-            await RefreshMetadata(refreshOptions, cancellationToken).ConfigureAwait(false);
-
-            progress.Report(100);
         }
 
         public override bool IsVisible(User user)

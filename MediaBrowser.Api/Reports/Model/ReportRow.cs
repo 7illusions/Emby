@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Collections.Generic;
 
 namespace MediaBrowser.Api.Reports
 {
@@ -55,10 +51,6 @@ namespace MediaBrowser.Api.Reports
 		/// <summary> Gets or sets a value indicating whether this object has specials. </summary>
 		/// <value> true if this object has specials, false if not. </value>
 		public bool HasSpecials { get; set; }
-
-		/// <summary> Gets or sets a value indicating whether this object is unidentified. </summary>
-		/// <value> true if this object is unidentified, false if not. </value>
-		public bool IsUnidentified { get; set; }
 
 		/// <summary> Gets or sets the columns. </summary>
 		/// <value> The columns. </value>

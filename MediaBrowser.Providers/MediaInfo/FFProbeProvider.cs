@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -19,10 +18,10 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.MediaInfo;
 using MediaBrowser.Model.Serialization;
 using System;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Providers.MediaInfo
 {
@@ -31,6 +30,7 @@ namespace MediaBrowser.Providers.MediaInfo
         ICustomMetadataProvider<Movie>,
         ICustomMetadataProvider<LiveTvVideoRecording>,
         ICustomMetadataProvider<LiveTvAudioRecording>,
+        ICustomMetadataProvider<Trailer>,
         ICustomMetadataProvider<Video>,
         ICustomMetadataProvider<Audio>,
         IHasItemChangeMonitor,
@@ -74,6 +74,11 @@ namespace MediaBrowser.Providers.MediaInfo
         }
 
         public Task<ItemUpdateType> FetchAsync(LiveTvVideoRecording item, MetadataRefreshOptions options, CancellationToken cancellationToken)
+        {
+            return FetchVideoInfo(item, options, cancellationToken);
+        }
+
+        public Task<ItemUpdateType> FetchAsync(Trailer item, MetadataRefreshOptions options, CancellationToken cancellationToken)
         {
             return FetchVideoInfo(item, options, cancellationToken);
         }
@@ -164,14 +169,12 @@ namespace MediaBrowser.Providers.MediaInfo
             return prober.Probe(item, cancellationToken);
         }
 
-        public bool HasChanged(IHasMetadata item, MetadataStatus status, IDirectoryService directoryService)
+        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService)
         {
-            if (status.ItemDateModified.HasValue)
+            var file = directoryService.GetFile(item.Path);
+            if (file != null && file.LastWriteTimeUtc != item.DateModified)
             {
-                if (status.ItemDateModified.Value != item.DateModified)
-                {
-                    return true;
-                }
+                return true;
             }
 
             if (item.SupportsLocalMetadata)

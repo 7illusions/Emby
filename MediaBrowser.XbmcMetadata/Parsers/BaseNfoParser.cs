@@ -85,8 +85,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
         /// <param name="cancellationToken">The cancellation token.</param>
         private void Fetch(MetadataResult<T> item, string metadataFile, XmlReaderSettings settings, CancellationToken cancellationToken)
         {
-            item.ResetPeople();
-
             if (!SupportsUrlAfterClosingXmlTag)
             {
                 using (var streamReader = BaseNfoSaver.GetStreamReader(metadataFile))
@@ -94,6 +92,8 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     // Use XmlReader for best performance
                     using (var reader = XmlReader.Create(streamReader, settings))
                     {
+                        item.ResetPeople();
+
                         reader.MoveToContent();
 
                         // Loop through each element
@@ -113,6 +113,8 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
             using (var streamReader = BaseNfoSaver.GetStreamReader(metadataFile))
             {
+                item.ResetPeople();
+
                 // Need to handle a url after the xml data
                 // http://kodi.wiki/view/NFO_files/movies
 
@@ -180,7 +182,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     }
                     catch (XmlException)
                     {
-                        
+
                     }
                 }
             }
@@ -195,8 +197,20 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                 item.SetProviderId(MetadataProviders.Imdb, m.Value);
             }
 
-            // TODO: Support Tmdb
+            // Support Tmdb
             // http://www.themoviedb.org/movie/36557
+            var srch = "themoviedb.org/movie/";
+            var index = xml.IndexOf(srch, StringComparison.OrdinalIgnoreCase);
+
+            if (index != -1)
+            {
+                var tmdbId = xml.Substring(index + srch.Length).TrimEnd('/');
+                int value;
+                if (!string.IsNullOrWhiteSpace(tmdbId) && int.TryParse(tmdbId, NumberStyles.Any, CultureInfo.InvariantCulture, out value))
+                {
+                    item.SetProviderId(MetadataProviders.Tmdb, tmdbId);
+                }
+            }
         }
 
         protected virtual void FetchDataFromXmlNode(XmlReader reader, MetadataResult<T> itemResult)
@@ -215,7 +229,11 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         if (!string.IsNullOrWhiteSpace(val))
                         {
                             DateTime added;
-                            if (DateTime.TryParse(val, out added))
+                            if (DateTime.TryParseExact(val, BaseNfoSaver.DateAddedFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out added))
+                            {
+                                item.EndDate = added.ToUniversalTime();
+                            }
+                            else if (DateTime.TryParse(val, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out added))
                             {
                                 item.DateCreated = added.ToUniversalTime();
                             }
@@ -394,11 +412,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     {
                         var val = reader.ReadElementContentAsString();
 
-                        var hasLanguage = item as IHasPreferredMetadataLanguage;
-                        if (hasLanguage != null)
-                        {
-                            hasLanguage.PreferredMetadataLanguage = val;
-                        }
+                        item.PreferredMetadataLanguage = val;
 
                         break;
                     }
@@ -407,11 +421,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     {
                         var val = reader.ReadElementContentAsString();
 
-                        var hasLanguage = item as IHasPreferredMetadataLanguage;
-                        if (hasLanguage != null)
-                        {
-                            hasLanguage.PreferredMetadataCountryCode = val;
-                        }
+                        item.PreferredMetadataCountryCode = val;
 
                         break;
                     }
@@ -635,7 +645,10 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         {
                             var person = GetPersonFromXmlNode(subtree);
 
-                            itemResult.AddPerson(person);
+                            if (!string.IsNullOrWhiteSpace(person.Name))
+                            {
+                                itemResult.AddPerson(person);
+                            }
                         }
                         break;
                     }
@@ -649,8 +662,8 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         {
                             if (!string.IsNullOrWhiteSpace(val))
                             {
-                                val = val.Replace("plugin://plugin.video.youtube/?action=play_video&videoid=", "http://www.youtube.com/watch?v=", StringComparison.OrdinalIgnoreCase);
-                                
+                                val = val.Replace("plugin://plugin.video.youtube/?action=play_video&videoid=", "https://www.youtube.com/watch?v=", StringComparison.OrdinalIgnoreCase);
+
                                 hasTrailer.AddTrailerUrl(val, false);
                             }
                         }
@@ -849,6 +862,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     break;
 
                 case "collectionnumber":
+                case "tmdbcolid":
                     var tmdbCollection = reader.ReadElementContentAsString();
                     if (!string.IsNullOrWhiteSpace(tmdbCollection))
                     {
@@ -905,11 +919,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         var val = reader.ReadElementContentAsString();
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            var hasTags = item as IHasTags;
-                            if (hasTags != null)
-                            {
-                                hasTags.AddTag(val);
-                            }
+                            item.AddTag(val);
                         }
                         break;
                     }
@@ -918,13 +928,9 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                     {
                         var val = reader.ReadElementContentAsString();
 
-                        var hasKeywords = item as IHasKeywords;
-                        if (hasKeywords != null)
+                        if (!string.IsNullOrWhiteSpace(val))
                         {
-                            if (!string.IsNullOrWhiteSpace(val))
-                            {
-                                hasKeywords.AddKeyword(val);
-                            }
+                            item.AddKeyword(val);
                         }
                         break;
                     }
@@ -984,11 +990,11 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         if (!string.IsNullOrWhiteSpace(val) && !string.IsNullOrWhiteSpace(userDataUserId))
                         {
                             DateTime parsedValue;
-                            if (DateTime.TryParseExact(val, "yyyy-MM-dd HH:mm:ss", _usCulture, DateTimeStyles.None, out parsedValue))
+                            if (DateTime.TryParseExact(val, "yyyy-MM-dd HH:mm:ss", _usCulture, DateTimeStyles.AssumeLocal, out parsedValue))
                             {
                                 var userData = GetOrAdd(itemResult, userDataUserId);
 
-                                userData.LastPlayedDate = parsedValue;
+                                userData.LastPlayedDate = parsedValue.ToUniversalTime();
                             }
                         }
                         break;
@@ -1173,6 +1179,10 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                                     else if (string.Equals("FSBS", val, StringComparison.OrdinalIgnoreCase))
                                     {
                                         video.Video3DFormat = Video3DFormat.FullSideBySide;
+                                    }
+                                    else if (string.Equals("MVC", val, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        video.Video3DFormat = Video3DFormat.MVC;
                                     }
                                 }
                                 break;

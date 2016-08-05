@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities.TV;
+﻿using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Controller.Resolvers;
@@ -12,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
 {
@@ -99,7 +99,7 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
         }
 
         public static bool IsSeriesFolder(string path,
-            IEnumerable<FileSystemInfo> fileSystemChildren,
+            IEnumerable<FileSystemMetadata> fileSystemChildren,
             IDirectoryService directoryService,
             IFileSystem fileSystem,
             ILogger logger,

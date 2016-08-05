@@ -1,10 +1,10 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Playlists;
+﻿using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.LocalMetadata.Parsers;
 using MediaBrowser.Model.Logging;
 using System.IO;
 using System.Threading;
+using CommonIO;
 
 namespace MediaBrowser.LocalMetadata.Providers
 {
@@ -23,7 +23,7 @@ namespace MediaBrowser.LocalMetadata.Providers
             new PlaylistXmlParser(_logger).Fetch(result, path, cancellationToken);
         }
 
-        protected override FileSystemInfo GetXmlFile(ItemInfo info, IDirectoryService directoryService)
+        protected override FileSystemMetadata GetXmlFile(ItemInfo info, IDirectoryService directoryService)
         {
             return directoryService.GetFile(Path.Combine(info.Path, "playlist.xml"));
         }

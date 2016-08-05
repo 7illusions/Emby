@@ -12,7 +12,6 @@
     <FileAlignment>512</FileAlignment>
     <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <RestorePackages>true</RestorePackages>
     <ReleaseVersion>
     </ReleaseVersion>
   </PropertyGroup>
@@ -45,8 +44,18 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="CommonIO, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\CommonIO.1.0.0.9\lib\net45\CommonIO.dll</HintPath>
+    </Reference>
     <Reference Include="Interfaces.IO">
       <HintPath>..\packages\Interfaces.IO.1.0.0.5\lib\portable-net45+sl4+wp71+win8+wpa81\Interfaces.IO.dll</HintPath>
+    </Reference>
+    <Reference Include="MoreLinq">
+      <HintPath>..\packages\morelinq.1.4.0\lib\net35\MoreLinq.dll</HintPath>
+    </Reference>
+    <Reference Include="Patterns.Logging">
+      <HintPath>..\packages\Patterns.Logging.1.0.0.2\lib\portable-net45+sl4+wp71+win8+wpa81\Patterns.Logging.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -59,9 +68,6 @@
     <Reference Include="ServiceStack.Interfaces">
       <HintPath>..\ThirdParty\ServiceStack\ServiceStack.Interfaces.dll</HintPath>
     </Reference>
-    <Reference Include="MoreLinq">
-      <HintPath>..\packages\morelinq.1.1.1\lib\net35\MoreLinq.dll</HintPath>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\SharedVersion.cs">
@@ -69,7 +75,6 @@
     </Compile>
     <Compile Include="Activity\IActivityManager.cs" />
     <Compile Include="Activity\IActivityRepository.cs" />
-    <Compile Include="Channels\ChannelFolderItem.cs" />
     <Compile Include="Channels\ChannelItemInfo.cs" />
     <Compile Include="Channels\ChannelItemResult.cs" />
     <Compile Include="Channels\ChannelItemType.cs" />
@@ -78,11 +83,7 @@
     <Compile Include="Channels\ChannelSearchInfo.cs" />
     <Compile Include="Channels\IChannel.cs" />
     <Compile Include="Channels\IChannelManager.cs" />
-    <Compile Include="Channels\IChannelItem.cs" />
-    <Compile Include="Channels\ChannelAudioItem.cs" />
-    <Compile Include="Channels\ChannelVideoItem.cs" />
     <Compile Include="Channels\Channel.cs" />
-    <Compile Include="Channels\IChannelMediaItem.cs" />
     <Compile Include="Channels\IHasCacheKey.cs" />
     <Compile Include="Channels\IIndexableChannel.cs" />
     <Compile Include="Channels\InternalAllChannelMediaQuery.cs" />
@@ -122,6 +123,7 @@
     <Compile Include="Drawing\ImageStream.cs" />
     <Compile Include="Dto\DtoOptions.cs" />
     <Compile Include="Dto\IDtoService.cs" />
+    <Compile Include="Entities\Audio\AudioPodcast.cs" />
     <Compile Include="Entities\Audio\IHasAlbumArtist.cs" />
     <Compile Include="Entities\Audio\IHasMusicGenres.cs" />
     <Compile Include="Entities\Book.cs" />
@@ -140,11 +142,10 @@
     <Compile Include="Entities\IHasDisplayOrder.cs" />
     <Compile Include="Entities\IHasId.cs" />
     <Compile Include="Entities\IHasImages.cs" />
-    <Compile Include="Entities\IHasKeywords.cs" />
+    <Compile Include="Entities\KeywordExtensions.cs" />
     <Compile Include="Entities\IHasMediaSources.cs" />
     <Compile Include="Entities\IHasMetascore.cs" />
     <Compile Include="Entities\IHasOriginalTitle.cs" />
-    <Compile Include="Entities\IHasPreferredMetadataLanguage.cs" />
     <Compile Include="Entities\IHasProductionLocations.cs" />
     <Compile Include="Entities\IHasProgramAttributes.cs" />
     <Compile Include="Entities\IHasScreenshots.cs" />
@@ -153,10 +154,10 @@
     <Compile Include="Entities\IHasSpecialFeatures.cs" />
     <Compile Include="Entities\IHasStartDate.cs" />
     <Compile Include="Entities\IHasTaglines.cs" />
-    <Compile Include="Entities\IHasTags.cs" />
     <Compile Include="Entities\IHasThemeMedia.cs" />
     <Compile Include="Entities\IHasTrailers.cs" />
     <Compile Include="Entities\IHasUserData.cs" />
+    <Compile Include="Entities\IHiddenFromDisplay.cs" />
     <Compile Include="Entities\IItemByName.cs" />
     <Compile Include="Entities\ILibraryItem.cs" />
     <Compile Include="Entities\ImageSourceInfo.cs" />
@@ -174,9 +175,12 @@
     <Compile Include="Entities\Photo.cs" />
     <Compile Include="Entities\PhotoAlbum.cs" />
     <Compile Include="Entities\Share.cs" />
+    <Compile Include="Entities\SourceType.cs" />
+    <Compile Include="Entities\TagExtensions.cs" />
     <Compile Include="Entities\UserView.cs" />
     <Compile Include="Entities\UserViewBuilder.cs" />
     <Compile Include="FileOrganization\IFileOrganizationService.cs" />
+    <Compile Include="Health\IHealthMonitor.cs" />
     <Compile Include="IO\ThrottledStream.cs" />
     <Compile Include="Library\DeleteOptions.cs" />
     <Compile Include="Library\ILibraryPostScanTask.cs" />
@@ -196,7 +200,6 @@
     <Compile Include="Library\UserDataSaveEventArgs.cs" />
     <Compile Include="LiveTv\IHasRegistrationInfo.cs" />
     <Compile Include="LiveTv\IListingsProvider.cs" />
-    <Compile Include="LiveTv\ILiveTvItem.cs" />
     <Compile Include="LiveTv\ITunerHost.cs" />
     <Compile Include="LiveTv\RecordingGroup.cs" />
     <Compile Include="LiveTv\RecordingStatusChangedEventArgs.cs" />
@@ -215,7 +218,9 @@
     <Compile Include="LiveTv\ProgramInfo.cs" />
     <Compile Include="LiveTv\RecordingInfo.cs" />
     <Compile Include="LiveTv\SeriesTimerInfo.cs" />
+    <Compile Include="LiveTv\TimerEventInfo.cs" />
     <Compile Include="LiveTv\TimerInfo.cs" />
+    <Compile Include="LiveTv\TunerChannelMapping.cs" />
     <Compile Include="Localization\ILocalizationManager.cs" />
     <Compile Include="MediaEncoding\ChapterImageRefreshOptions.cs" />
     <Compile Include="MediaEncoding\EncodingJobOptions.cs" />
@@ -260,15 +265,14 @@
     <Compile Include="Playlists\IPlaylistManager.cs" />
     <Compile Include="Playlists\Playlist.cs" />
     <Compile Include="Plugins\ILocalizablePlugin.cs" />
+    <Compile Include="Power\IPowerManagement.cs" />
     <Compile Include="Providers\AlbumInfo.cs" />
     <Compile Include="Providers\ArtistInfo.cs" />
     <Compile Include="Providers\BookInfo.cs" />
     <Compile Include="Providers\BoxSetInfo.cs" />
-    <Compile Include="Providers\ChannelItemLookupInfo.cs" />
     <Compile Include="Providers\DirectoryService.cs" />
     <Compile Include="Providers\DynamicImageInfo.cs" />
     <Compile Include="Providers\DynamicImageResponse.cs" />
-    <Compile Include="Providers\EpisodeIdentity.cs" />
     <Compile Include="Providers\EpisodeInfo.cs" />
     <Compile Include="Providers\ExtraInfo.cs" />
     <Compile Include="Providers\ExtraSource.cs" />
@@ -282,29 +286,23 @@
     <Compile Include="Providers\IForcedProvider.cs" />
     <Compile Include="Providers\IHasChangeMonitor.cs" />
     <Compile Include="Entities\IHasMetadata.cs" />
-    <Compile Include="Providers\IHasIdentities.cs" />
     <Compile Include="Providers\IHasItemChangeMonitor.cs" />
     <Compile Include="Providers\IHasLookupInfo.cs" />
     <Compile Include="Providers\IHasOrder.cs" />
     <Compile Include="Providers\IImageFileSaver.cs" />
     <Compile Include="Providers\IImageProvider.cs" />
     <Compile Include="Providers\IImageSaver.cs" />
-    <Compile Include="Providers\IItemIdentity.cs" />
-    <Compile Include="Providers\IItemIdentityConverter.cs" />
-    <Compile Include="Providers\IItemIdentityProvider.cs" />
     <Compile Include="Providers\ILocalImageFileProvider.cs" />
     <Compile Include="Providers\ILocalMetadataProvider.cs" />
     <Compile Include="Providers\ImageRefreshMode.cs" />
     <Compile Include="Providers\ImageRefreshOptions.cs" />
     <Compile Include="Providers\IPreRefreshProvider.cs" />
-    <Compile Include="Providers\IProviderRepository.cs" />
     <Compile Include="Providers\IRemoteImageProvider.cs" />
     <Compile Include="Providers\ILocalImageProvider.cs" />
     <Compile Include="Providers\IMetadataProvider.cs" />
     <Compile Include="Providers\IMetadataService.cs" />
     <Compile Include="Providers\IRemoteMetadataProvider.cs" />
     <Compile Include="Providers\IRemoteSearchProvider.cs" />
-    <Compile Include="Providers\ISeriesOrderProvider.cs" />
     <Compile Include="Providers\ItemInfo.cs" />
     <Compile Include="Providers\LiveTvProgramLookupInfo.cs" />
     <Compile Include="Providers\LocalImageInfo.cs" />
@@ -314,9 +312,7 @@
     <Compile Include="Providers\MusicVideoInfo.cs" />
     <Compile Include="Providers\PersonLookupInfo.cs" />
     <Compile Include="Providers\RemoteSearchQuery.cs" />
-    <Compile Include="Providers\SeasonIdentity.cs" />
     <Compile Include="Providers\SeasonInfo.cs" />
-    <Compile Include="Providers\SeriesIdentity.cs" />
     <Compile Include="Providers\SeriesInfo.cs" />
     <Compile Include="Providers\SeriesOrderTypes.cs" />
     <Compile Include="Providers\SongInfo.cs" />
@@ -329,14 +325,11 @@
     <Compile Include="Security\IEncryptionManager.cs" />
     <Compile Include="Session\AuthenticationRequest.cs" />
     <Compile Include="Social\ISharingManager.cs" />
+    <Compile Include="Sorting\SortHelper.cs" />
     <Compile Include="Subtitles\ISubtitleManager.cs" />
     <Compile Include="Subtitles\ISubtitleProvider.cs" />
-    <Compile Include="Providers\ItemIdentifier.cs" />
-    <Compile Include="Providers\ItemIdentities.cs" />
     <Compile Include="Providers\ItemLookupInfo.cs" />
     <Compile Include="Providers\MetadataRefreshOptions.cs" />
-    <Compile Include="Providers\MetadataStatus.cs" />
-    <Compile Include="Providers\ISeriesOrderManager.cs" />
     <Compile Include="Session\ISessionManager.cs" />
     <Compile Include="Entities\AggregateFolder.cs" />
     <Compile Include="Entities\Audio\Audio.cs" />

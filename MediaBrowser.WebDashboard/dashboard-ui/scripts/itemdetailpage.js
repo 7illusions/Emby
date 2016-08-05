@@ -1,34 +1,34 @@
-﻿(function ($, document, LibraryBrowser, window) {
+﻿define(['layoutManager', 'cardBuilder', 'datetime', 'mediaInfo', 'backdrop', 'listView', 'itemContextMenu', 'itemHelper', 'userdataButtons', 'dom', 'indicators', 'scrollStyles', 'emby-itemscontainer'], function (layoutManager, cardBuilder, datetime, mediaInfo, backdrop, listView, itemContextMenu, itemHelper, userdataButtons, dom, indicators) {
 
     var currentItem;
 
-    function getPromise() {
+    function getPromise(params) {
 
-        var id = getParameterByName('id');
+        var id = params.id;
 
         if (id) {
             return ApiClient.getItem(Dashboard.getCurrentUserId(), id);
         }
 
-        var name = getParameterByName('genre');
+        var name = params.genre;
 
         if (name) {
             return ApiClient.getGenre(name, Dashboard.getCurrentUserId());
         }
 
-        name = getParameterByName('musicgenre');
+        name = params.musicgenre;
 
         if (name) {
             return ApiClient.getMusicGenre(name, Dashboard.getCurrentUserId());
         }
 
-        name = getParameterByName('gamegenre');
+        name = params.gamegenre;
 
         if (name) {
             return ApiClient.getGameGenre(name, Dashboard.getCurrentUserId());
         }
 
-        name = getParameterByName('musicartist');
+        name = params.musicartist;
 
         if (name) {
             return ApiClient.getArtist(name, Dashboard.getCurrentUserId());
@@ -38,29 +38,59 @@
         }
     }
 
-    function reload(page) {
+    function reload(page, params) {
 
         Dashboard.showLoadingMsg();
 
-        getPromise().done(function (item) {
+        getPromise(params).then(function (item) {
 
-            reloadFromItem(page, item);
+            reloadFromItem(page, params, item);
         });
     }
 
-    function reloadFromItem(page, item) {
+    function hideAll(page, className, show) {
+
+        var i, length;
+        var elems = page.querySelectorAll('.' + className);
+        for (i = 0, length = elems.length; i < length; i++) {
+            if (show) {
+                elems[i].classList.remove('hide');
+            } else {
+                elems[i].classList.add('hide');
+            }
+        }
+    }
+
+    function getContextMenuOptions(item, button) {
+
+        return {
+            item: item,
+            open: false,
+            play: false,
+            queue: false,
+            playAllFromHere: false,
+            queueAllFromHere: false,
+            sync: false,
+            positionTo: button
+        };
+    }
+
+    function reloadFromItem(page, params, item) {
 
         currentItem = item;
 
-        var context = getContext(item);
+        var context = params.context;
 
-        renderHeader(page, item, context);
+        LibraryMenu.setBackButtonVisible(true);
+        LibraryMenu.setMenuButtonVisible(false);
 
-        LibraryBrowser.renderName(item, $('.itemName', page), false, context);
-        LibraryBrowser.renderParentName(item, $('.parentName', page), context);
+        LibraryBrowser.renderName(item, page.querySelector('.itemName'), false, context);
+        LibraryBrowser.renderParentName(item, page.querySelector('.parentName'), context);
         LibraryMenu.setTitle(item.SeriesName || item.Name);
 
-        Dashboard.getCurrentUser().done(function (user) {
+        Dashboard.getCurrentUser().then(function (user) {
+
+            window.scrollTo(0, 0);
 
             renderImage(page, item, user);
 
@@ -70,14 +100,15 @@
             var hasBackdrop = false;
 
             // For these types, make the backdrop a little smaller so that the items are more quickly accessible
-            if (item.Type == 'MusicArtist' || item.Type == "MusicAlbum" || item.Type == "Playlist" || item.Type == "BoxSet" || item.Type == "Audio") {
-                $('#itemBackdrop', page).addClass('noBackdrop').css('background-image', 'none');
-                Backdrops.setBackdrops(page, [item]);
+            if (item.Type == 'MusicArtist' || item.Type == "MusicAlbum" || item.Type == "Playlist" || item.Type == "BoxSet" || item.MediaType == "Audio" || !layoutManager.mobile) {
+                var itemBackdropElement = page.querySelector('#itemBackdrop');
+                itemBackdropElement.classList.add('noBackdrop');
+                itemBackdropElement.style.backgroundImage = 'none';
+                backdrop.setBackdrops([item]);
             }
             else {
-                //$('#itemBackdrop', page).addClass('noBackdrop').css('background-image', 'none');
-                //Backdrops.setBackdrops(page, [item]);
                 hasBackdrop = LibraryBrowser.renderDetailPageBackdrop(page, item);
+                backdrop.clear();
             }
 
             var transparentHeader = hasBackdrop && page.classList.contains('noSecondaryNavPage');
@@ -90,60 +121,65 @@
 
                 var now = new Date();
 
-                if (now >= parseISO8601Date(item.StartDate, { toLocal: true }) && now < parseISO8601Date(item.EndDate, { toLocal: true })) {
-                    $('.btnPlay', page).removeClass('hide');
+                if (now >= datetime.parseISO8601Date(item.StartDate, true) && now < datetime.parseISO8601Date(item.EndDate, true)) {
+                    hideAll(page, 'btnPlay', true);
                     canPlay = true;
                 } else {
-                    $('.btnPlay', page).addClass('hide');
+                    hideAll(page, 'btnPlay');
                 }
             }
             else if (MediaController.canPlay(item)) {
-                $('.btnPlay', page).removeClass('hide');
+                hideAll(page, 'btnPlay', true);
                 canPlay = true;
             }
             else {
-                $('.btnPlay', page).addClass('hide');
+                hideAll(page, 'btnPlay');
             }
 
             if (item.LocalTrailerCount && item.PlayAccess == 'Full') {
-                $('.btnPlayTrailer', page).removeClass('hide');
+                hideAll(page, 'btnPlayTrailer', true);
             } else {
-                $('.btnPlayTrailer', page).addClass('hide');
+                hideAll(page, 'btnPlayTrailer');
             }
 
-            if (SyncManager.isAvailable(item, user)) {
-                $('.btnSync', page).removeClass('hide');
+            if (itemHelper.canSync(user, item)) {
+                hideAll(page, 'btnSync', true);
             } else {
-                $('.btnSync', page).addClass('hide');
+                hideAll(page, 'btnSync');
             }
 
             if (item.Type == 'Program' && item.TimerId) {
-                $('.btnCancelRecording', page).removeClass('hide');
+                hideAll(page, 'btnCancelRecording', true);
             } else {
-                $('.btnCancelRecording', page).addClass('hide');
+                hideAll(page, 'btnCancelRecording');
             }
 
             if (item.Type == 'Program' && (!item.TimerId && !item.SeriesTimerId)) {
 
                 if (canPlay) {
-                    $('.btnRecord', page).removeClass('hide');
-                    $('.btnFloatingRecord', page).addClass('hide');
+                    hideAll(page, 'btnRecord', true);
+                    hideAll(page, 'btnFloatingRecord');
                 } else {
-                    $('.btnRecord', page).addClass('hide');
-                    $('.btnFloatingRecord', page).removeClass('hide');
+                    hideAll(page, 'btnRecord');
+                    hideAll(page, 'btnFloatingRecord', true);
                 }
             } else {
-                $('.btnRecord', page).addClass('hide');
-                $('.btnFloatingRecord', page).addClass('hide');
+                hideAll(page, 'btnRecord');
+                hideAll(page, 'btnFloatingRecord');
             }
 
-            if (!item.LocalTrailerCount && item.RemoteTrailers.length && item.PlayAccess == 'Full') {
+            var btnPlayExternalTrailer = page.querySelectorAll('.btnPlayExternalTrailer');
+            for (var i = 0, length = btnPlayExternalTrailer.length; i < length; i++) {
+                if (!item.LocalTrailerCount && item.RemoteTrailers.length && item.PlayAccess == 'Full') {
 
-                $('.btnPlayExternalTrailer', page).removeClass('hide').attr('href', item.RemoteTrailers[0].Url);
+                    btnPlayExternalTrailer[i].classList.remove('hide');
+                    btnPlayExternalTrailer[i].href = item.RemoteTrailers[0].Url;
 
-            } else {
+                } else {
 
-                $('.btnPlayExternalTrailer', page).addClass('hide').attr('href', '#');
+                    btnPlayExternalTrailer[i].classList.add('hide');
+                    btnPlayExternalTrailer[i].href = '#';
+                }
             }
 
             var groupedVersions = (item.MediaSources || []).filter(function (g) {
@@ -151,71 +187,81 @@
             });
 
             if (user.Policy.IsAdministrator && groupedVersions.length) {
-                $('.splitVersionContainer', page).show();
+                page.querySelector('.splitVersionContainer').classList.remove('hide');
             } else {
-                $('.splitVersionContainer', page).hide();
+                page.querySelector('.splitVersionContainer').classList.add('hide');
             }
 
-            $('.btnMoreCommands', page).visible(LibraryBrowser.getMoreCommands(item, user).length > 0);
+            itemContextMenu.getCommands(getContextMenuOptions(item)).then(function (commands) {
+                if (commands.length) {
+                    hideAll(page, 'btnMoreCommands', true);
+                } else {
+                    hideAll(page, 'btnMoreCommands');
+                }
+            });
 
             if (user.Policy.IsAdministrator) {
-                $('.chapterSettingsButton', page).show();
+                page.querySelector('.chapterSettingsButton').classList.remove('hide');
             } else {
-                $('.chapterSettingsButton', page).hide();
+                page.querySelector('.chapterSettingsButton').classList.add('hide');
             }
 
-            LiveTvHelpers.renderOriginalAirDate($('.airDate', page), item);
-
+            var itemBirthday = page.querySelector('#itemBirthday');
             if (item.Type == "Person" && item.PremiereDate) {
 
                 try {
-                    var birthday = parseISO8601Date(item.PremiereDate, { toLocal: true }).toDateString();
+                    var birthday = datetime.parseISO8601Date(item.PremiereDate, true).toDateString();
 
-                    $('#itemBirthday', page).show().html(Globalize.translate('BirthDateValue').replace('{0}', birthday));
+                    itemBirthday.classList.remove('hide');
+                    itemBirthday.innerHTML = Globalize.translate('BirthDateValue').replace('{0}', birthday);
                 }
                 catch (err) {
-                    $('#itemBirthday', page).hide();
+                    itemBirthday.classList.add('hide');
                 }
             } else {
-                $('#itemBirthday', page).hide();
+                itemBirthday.classList.add('hide');
             }
 
+            var itemDeathDate = page.querySelector('#itemBirthday');
             if (item.Type == "Person" && item.EndDate) {
 
                 try {
-                    var deathday = parseISO8601Date(item.EndDate, { toLocal: true }).toDateString();
+                    var deathday = datetime.parseISO8601Date(item.EndDate, true).toDateString();
 
-                    $('#itemDeathDate', page).show().html(Globalize.translate('DeathDateValue').replace('{0}', deathday));
+                    itemDeathDate.classList.remove('hide');
+                    itemDeathDate.innerHTML = Globalize.translate('DeathDateValue').replace('{0}', deathday);
                 }
                 catch (err) {
-                    $('#itemBirthday', page).hide();
+                    itemDeathDate.classList.add('hide');
                 }
             } else {
             }
 
+            var itemBirthLocation = page.querySelector('#itemBirthLocation');
             if (item.Type == "Person" && item.ProductionLocations && item.ProductionLocations.length) {
 
                 var gmap = '<a class="textlink" target="_blank" href="https://maps.google.com/maps?q=' + item.ProductionLocations[0] + '">' + item.ProductionLocations[0] + '</a>';
 
-                $('#itemBirthLocation', page).show().html(Globalize.translate('BirthPlaceValue').replace('{0}', gmap)).trigger('create');
+                itemBirthLocation.classList.remove('hide');
+                itemBirthLocation.innerHTML = Globalize.translate('BirthPlaceValue').replace('{0}', gmap);
             } else {
-                $('#itemBirthLocation', page).hide();
+                itemBirthLocation.classList.add('hide');
             }
         });
 
-        if (item.LocationType == "Offline") {
+        //if (item.LocationType == "Offline") {
 
-            $('.offlineIndicator', page).show();
-        }
-        else {
-            $('.offlineIndicator', page).hide();
-        }
+        //    page.querySelector('.offlineIndicator').classList.remove('hide');
+        //}
+        //else {
+        //    page.querySelector('.offlineIndicator').classList.add('hide');
+        //}
 
         var isMissingEpisode = false;
 
         if (item.LocationType == "Virtual" && item.Type == "Episode") {
             try {
-                if (item.PremiereDate && (new Date().getTime() >= parseISO8601Date(item.PremiereDate, { toLocal: true }).getTime())) {
+                if (item.PremiereDate && (new Date().getTime() >= datetime.parseISO8601Date(item.PremiereDate, true).getTime())) {
                     isMissingEpisode = true;
                 }
             } catch (err) {
@@ -223,23 +269,57 @@
             }
         }
 
-        if (isMissingEpisode) {
+        //if (isMissingEpisode) {
 
-            $('.missingIndicator', page).show();
-        }
-        else {
-            $('.missingIndicator', page).hide();
-        }
+        //    page.querySelector('.missingIndicator').classList.remove('hide');
+        //}
+        //else {
+        //    page.querySelector('.missingIndicator').classList.add('hide');
+        //}
 
         setPeopleHeader(page, item);
 
-        $(page).trigger('displayingitem', [{
-
-            item: item,
-            context: context
-        }]);
+        page.dispatchEvent(new CustomEvent("displayingitem", {
+            detail: {
+                item: item,
+                context: context
+            },
+            bubbles: true
+        }));
 
         Dashboard.hideLoadingMsg();
+    }
+
+    function renderLinks(linksElem, item) {
+
+        var links = [];
+
+        if (item.HomePageUrl) {
+            links.push('<a class="textlink" href="' + item.HomePageUrl + '" target="_blank">' + Globalize.translate('ButtonWebsite') + '</a>');
+        }
+
+        if (item.ExternalUrls) {
+
+            for (var i = 0, length = item.ExternalUrls.length; i < length; i++) {
+
+                var url = item.ExternalUrls[i];
+
+                links.push('<a class="textlink" href="' + url.Url + '" target="_blank">' + url.Name + '</a>');
+            }
+        }
+
+        if (links.length) {
+
+            var html = links.join('&nbsp;&nbsp;/&nbsp;&nbsp;');
+
+            html = Globalize.translate('ValueLinks', html);
+
+            linksElem.innerHTML = html;
+            linksElem.classList.remove('hide');
+
+        } else {
+            linksElem.classList.add('hide');
+        }
     }
 
     function renderImage(page, item, user) {
@@ -247,109 +327,104 @@
         LibraryBrowser.renderDetailImage(page.querySelector('.detailImageContainer'), item, user.Policy.IsAdministrator && item.MediaType != 'Photo');
     }
 
-    function refreshImage(page, item, user) {
+    function refreshDetailImageUserData(elem, item) {
 
-        LibraryBrowser.refreshDetailImageUserData(page.querySelector('.detailImageContainer'), item);
+        var detailImageProgressContainer = elem.querySelector('.detailImageProgressContainer');
+
+        detailImageProgressContainer.innerHTML = indicators.getProgressBarHtml(item);
     }
 
-    function onWebSocketMessage(e, data) {
+    function refreshImage(page, item, user) {
 
-        var msg = data;
-        var page = $($.mobile.activePage)[0];
-
-        if (msg.MessageType === "UserDataChanged") {
-
-            if (currentItem && msg.Data.UserId == Dashboard.getCurrentUserId()) {
-
-                var key = currentItem.UserData.Key;
-
-                var userData = msg.Data.UserDataList.filter(function (u) {
-
-                    return u.Key == key;
-                })[0];
-
-                if (userData) {
-
-                    currentItem.UserData = userData;
-
-                    Dashboard.getCurrentUser().done(function (user) {
-
-                        refreshImage(page, currentItem, user);
-                    });
-                }
-            }
-        }
-
+        refreshDetailImageUserData(page.querySelector('.detailImageContainer'), item);
     }
 
     function setPeopleHeader(page, item) {
 
-        if (item.Type == "Audio" || item.Type == "MusicAlbum" || item.MediaType == "Book" || item.MediaType == "Photo") {
-            $('#peopleHeader', page).html(Globalize.translate('HeaderPeople'));
+        if (item.MediaType == "Audio" || item.Type == "MusicAlbum" || item.MediaType == "Book" || item.MediaType == "Photo") {
+            page.querySelector('#peopleHeader').innerHTML = Globalize.translate('HeaderPeople');
         } else {
-            $('#peopleHeader', page).html(Globalize.translate('HeaderCastAndCrew'));
+            page.querySelector('#peopleHeader').innerHTML = Globalize.translate('HeaderCastAndCrew');
         }
 
     }
 
-    function getContext(item) {
+    function renderNextUp(page, item, user) {
 
-        return getParameterByName('context');
-    }
+        var section = page.querySelector('.nextUpSection');
 
-    function renderHeader(page, item, context) {
-
-        $('.itemTabs', page).hide();
-
-        if (context == 'tv') {
-
-            if (AppInfo.enableBottomTabs) {
-                $(page).addClass('noSecondaryNavPage');
-            }
-            else {
-                $(page).removeClass('noSecondaryNavPage');
-            }
-
-            $('#tvShowsTabs', page).show();
-            LibraryMenu.setMenuButtonVisible(true);
+        if (item.Type != 'Series') {
+            section.classList.add('hide');
+            return;
         }
-        else {
-            $(page).addClass('noSecondaryNavPage');
-            LibraryMenu.setBackButtonVisible(true);
-            LibraryMenu.setMenuButtonVisible(false);
-        }
+
+        ApiClient.getNextUpEpisodes({
+
+            SeriesId: item.Id,
+            UserId: user.Id
+
+        }).then(function (result) {
+
+            if (result.Items.length) {
+                section.classList.remove('hide');
+            } else {
+                section.classList.add('hide');
+            }
+
+            var html = cardBuilder.getCardsHtml({
+                items: result.Items,
+                shape: getThumbShape(false),
+                showTitle: true,
+                displayAsSpecial: item.Type == "Season" && item.IndexNumber,
+                overlayText: true,
+                lazy: true,
+                overlayPlayButton: true
+            });
+
+            var itemsContainer = section.querySelector('.nextUpItems');
+
+            itemsContainer.innerHTML = html;
+            ImageLoader.lazyChildren(itemsContainer);
+        });
     }
 
     function setInitialCollapsibleState(page, item, context, user) {
 
-        $('.collectionItems', page).empty();
+        page.querySelector('.collectionItems').innerHTML = '';
 
         if (item.Type == 'TvChannel') {
 
-            $('#childrenCollapsible', page).removeClass('hide');
+            page.querySelector('#childrenCollapsible').classList.remove('hide');
             renderChannelGuide(page, item, user);
         }
         else if (item.Type == 'Playlist') {
 
-            $('#childrenCollapsible', page).removeClass('hide');
+            page.querySelector('#childrenCollapsible').classList.remove('hide');
             renderPlaylistItems(page, item, user);
         }
         else if (item.Type == 'Studio' || item.Type == 'Person' || item.Type == 'Genre' || item.Type == 'MusicGenre' || item.Type == 'GameGenre' || item.Type == 'MusicArtist') {
 
-            $('#childrenCollapsible', page).removeClass('hide');
+            page.querySelector('#childrenCollapsible').classList.remove('hide');
             renderItemsByName(page, item, user);
         }
         else if (item.IsFolder) {
 
             if (item.Type == "BoxSet") {
-                $('#childrenCollapsible', page).addClass('hide');
+                page.querySelector('#childrenCollapsible').classList.add('hide');
             } else {
-                $('#childrenCollapsible', page).removeClass('hide');
+                page.querySelector('#childrenCollapsible').classList.remove('hide');
             }
-            renderChildren(page, item, user, context);
+            renderChildren(page, item);
         }
         else {
-            $('#childrenCollapsible', page).addClass('hide');
+            page.querySelector('#childrenCollapsible').classList.add('hide');
+        }
+
+        if (item.Type == 'Series') {
+
+            renderNextUp(page, item, user);
+        } else {
+            page.querySelector('.nextUpSection').classList.add('hide');
         }
 
         if (item.MediaSources && item.MediaSources.length) {
@@ -358,55 +433,91 @@
 
         var chapters = item.Chapters || [];
 
-        if (!chapters.length || !AppInfo.enableDetailPageChapters) {
-            $('#scenesCollapsible', page).hide();
+        if (!chapters.length) {
+            page.querySelector('#scenesCollapsible').classList.add('hide');
         } else {
-            $('#scenesCollapsible', page).show();
+            page.querySelector('#scenesCollapsible').classList.remove('hide');
             renderScenes(page, item, user, 3);
         }
 
         if (!item.SpecialFeatureCount || item.SpecialFeatureCount == 0 || item.Type == "Series") {
-            $('#specialsCollapsible', page).addClass('hide');
+            page.querySelector('#specialsCollapsible').classList.add('hide');
         } else {
-            $('#specialsCollapsible', page).removeClass('hide');
+            page.querySelector('#specialsCollapsible').classList.remove('hide');
             renderSpecials(page, item, user, 6);
         }
         if (!item.People || !item.People.length) {
-            $('#castCollapsible', page).hide();
+            page.querySelector('#castCollapsible').classList.add('hide');
         } else {
-            $('#castCollapsible', page).show();
-            renderCast(page, item, context, 6);
+            page.querySelector('#castCollapsible').classList.remove('hide');
+            renderCast(page, item, context, enableScrollX() ? null : 12);
         }
 
         if (item.PartCount && item.PartCount > 1) {
-            $('#additionalPartsCollapsible', page).removeClass('hide');
+            page.querySelector('#additionalPartsCollapsible').classList.remove('hide');
             renderAdditionalParts(page, item, user);
         } else {
-            $('#additionalPartsCollapsible', page).addClass('hide');
+            page.querySelector('#additionalPartsCollapsible').classList.add('hide');
         }
 
-        $('#themeSongsCollapsible', page).hide();
-        $('#themeVideosCollapsible', page).hide();
+        page.querySelector('#themeSongsCollapsible').classList.add('hide');
+        page.querySelector('#themeVideosCollapsible').classList.add('hide');
 
         if (item.Type == "MusicAlbum") {
             renderMusicVideos(page, item, user);
         } else {
-            $('#musicVideosCollapsible', page).hide();
+            page.querySelector('#musicVideosCollapsible').classList.add('hide');
         }
 
         renderThemeMedia(page, item, user);
-        renderCriticReviews(page, item, 1);
+
+        if (enableScrollX()) {
+            renderCriticReviews(page, item);
+        } else {
+            renderCriticReviews(page, item, 1);
+        }
+    }
+
+    function renderOverview(elems, item) {
+
+        for (var i = 0, length = elems.length; i < length; i++) {
+            var elem = elems[i];
+            var overview = item.Overview || '';
+
+            if (overview) {
+                elem.innerHTML = overview;
+
+                elem.classList.remove('empty');
+
+                var anchors = elem.querySelectorAll('a');
+                for (var j = 0, length2 = anchors.length; j < length2; j++) {
+                    anchors[j].setAttribute("target", "_blank");
+                }
+
+            } else {
+                elem.innerHTML = '';
+
+                elem.classList.add('empty');
+            }
+        }
     }
 
     function renderDetails(page, item, context, isStatic) {
 
         renderSimilarItems(page, item, context);
-        renderSiblingLinks(page, item, context);
+        renderMoreFromItems(page, item);
+
+        if (!isStatic) {
+            renderSiblingLinks(page, item, context);
+        }
+
+        var taglineElement = page.querySelector('.tagline');
 
         if (item.Taglines && item.Taglines.length) {
-            $('.tagline', page).html(item.Taglines[0]).show();
+            taglineElement.classList.remove('hide');
+            taglineElement.innerHTML = item.Taglines[0];
         } else {
-            $('.tagline', page).hide();
+            taglineElement.classList.add('hide');
         }
 
         var topOverview = page.querySelector('.topOverview');
@@ -414,64 +525,78 @@
 
         var seasonOnBottom = screen.availHeight < 800 || screen.availWidth < 600;
 
-        if (item.Type == 'MusicAlbum' || item.Type == 'MusicArtist' || (item.Type == 'Season' && seasonOnBottom) || (item.Type == 'Series' && seasonOnBottom)) {
-            LibraryBrowser.renderOverview([bottomOverview], item);
+        if (item.Type == 'MusicAlbum' || item.Type == 'MusicArtist' || (item.Type == 'Season' && seasonOnBottom)) {
+            renderOverview([bottomOverview], item);
             topOverview.classList.add('hide');
             bottomOverview.classList.remove('hide');
         } else {
-            LibraryBrowser.renderOverview([topOverview], item);
+            renderOverview([topOverview], item);
             topOverview.classList.remove('hide');
             bottomOverview.classList.add('hide');
         }
 
-        $('.itemCommunityRating', page).html(LibraryBrowser.getRatingHtml(item));
+        renderAwardSummary(page.querySelector('#awardSummary'), item);
 
-        LibraryBrowser.renderAwardSummary($('#awardSummary', page), item);
+        var i, length;
+        var itemMiscInfo = page.querySelectorAll('.itemMiscInfo');
+        for (i = 0, length = itemMiscInfo.length; i < length; i++) {
+            mediaInfo.fillPrimaryMediaInfo(itemMiscInfo[i], item, {
+                interactive: true
+            });
+        }
+        var itemGenres = page.querySelectorAll('.itemGenres');
+        for (i = 0, length = itemGenres.length; i < length; i++) {
+            renderGenres(itemGenres[i], item, null, isStatic);
+        }
 
-        $('.itemMiscInfo', page).html(LibraryBrowser.getMiscInfoHtml(item));
-
-        LibraryBrowser.renderGenres($('.itemGenres', page), item, null, isStatic);
-        LibraryBrowser.renderStudios($('.itemStudios', page), item, isStatic);
+        renderStudios(page.querySelector('.itemStudios'), item, isStatic);
         renderUserDataIcons(page, item);
-        LibraryBrowser.renderLinks(page.querySelector('.itemExternalLinks'), item);
+        renderLinks(page.querySelector('.itemExternalLinks'), item);
 
-        $('.criticRatingScore', page).html((item.CriticRating || '0') + '%');
+        page.querySelector('.criticRatingScore').innerHTML = (item.CriticRating || '0') + '%';
 
         if (item.CriticRatingSummary) {
-            $('#criticRatingSummary', page).show();
-            $('.criticRatingSummaryText', page).html(item.CriticRatingSummary);
+            page.querySelector('#criticRatingSummary').classList.remove('hide');
+            page.querySelector('.criticRatingSummaryText').innerHTML = item.CriticRatingSummary;
 
         } else {
-            $('#criticRatingSummary', page).hide();
+            page.querySelector('#criticRatingSummary').classList.add('hide');
         }
 
         renderTags(page, item);
 
         renderSeriesAirTime(page, item, isStatic);
 
+        var playersElement = page.querySelector('#players');
+
         if (item.Players) {
-            $('#players', page).show().html(item.Players + ' Player');
+            playersElement.classList.remove('hide');
+            playersElement.innerHTML = item.Players + ' Player';
         } else {
-            $('#players', page).hide();
+            playersElement.classList.add('hide');
         }
 
-        if (item.ArtistItems && item.ArtistItems.length && item.Type != "MusicAlbum") {
-            $('.artist', page).show().html(getArtistLinksHtml(item.ArtistItems, context)).trigger('create');
-        } else {
-            $('.artist', page).hide();
+        var artist = page.querySelectorAll('.artist');
+        for (i = 0, length = artist.length; i < length; i++) {
+            if (item.ArtistItems && item.ArtistItems.length && item.Type != "MusicAlbum") {
+                artist[i].classList.remove('hide');
+                artist[i].innerHTML = getArtistLinksHtml(item.ArtistItems, context);
+            } else {
+                artist[i].classList.add('hide');
+            }
         }
 
         if (item.MediaSources && item.MediaSources.length && item.Path) {
-            $('.audioVideoMediaInfo', page).removeClass('hide');
+            page.querySelector('.audioVideoMediaInfo').classList.remove('hide');
         } else {
-            $('.audioVideoMediaInfo', page).addClass('hide');
+            page.querySelector('.audioVideoMediaInfo').classList.add('hide');
         }
 
         if (item.MediaType == 'Photo') {
-            $('.photoInfo', page).removeClass('hide');
+            page.querySelector('.photoInfo').classList.remove('hide');
             renderPhotoInfo(page, item);
         } else {
-            $('.photoInfo', page).addClass('hide');
+            page.querySelector('.photoInfo').classList.add('hide');
         }
 
         renderTabButtons(page, item);
@@ -511,7 +636,7 @@
         }
 
         if (item.ImageOrientation) {
-            attributes.push(createAttribute(Globalize.translate('MediaInfoOrientation'), item.ImageOrientation));
+            //attributes.push(createAttribute(Globalize.translate('MediaInfoOrientation'), item.ImageOrientation));
         }
 
         if (item.IsoSpeedRating) {
@@ -536,20 +661,20 @@
 
         html += attributes.join('<br/>');
 
-        $('.photoInfoContent', page).html(html).trigger('create');
+        page.querySelector('.photoInfoContent').innerHTML = html;
     }
 
     function renderTabButtons(page, item) {
 
-        var elem = $('.tabDetails', page)[0];
+        var elem = page.querySelector('.tabDetails');
         var text = elem.textContent || elem.innerText || '';
 
         if (text.trim()) {
 
-            $('.detailsSection', page).removeClass('hide');
+            page.querySelector('.detailsSection').classList.remove('hide');
 
         } else {
-            $('.detailsSection', page).addClass('hide');
+            page.querySelector('.detailsSection').classList.add('hide');
         }
     }
 
@@ -579,9 +704,13 @@
 
     function renderSiblingLinks(page, item, context) {
 
-        $('.lnkSibling', page).addClass('hide');
+        var lnkPreviousItem = page.querySelector('.lnkPreviousItem');
+        var lnkNextItem = page.querySelector('.lnkNextItem');
 
         if ((item.Type != "Episode" && item.Type != "Season" && item.Type != "Audio" && item.Type != "Photo")) {
+            lnkNextItem.classList.add('hide');
+            lnkPreviousItem.classList.add('hide');
+
             return;
         }
 
@@ -615,7 +744,7 @@
 
         context = context || '';
 
-        promise.done(function (result) {
+        promise.then(function (result) {
 
             var foundExisting = false;
 
@@ -628,74 +757,177 @@
                 }
                 else if (!foundExisting) {
 
-                    $('.lnkPreviousItem', page).removeClass('hide').attr('href', 'itemdetails.html?id=' + curr.Id + '&context=' + context);
+                    lnkPreviousItem.classList.remove('hide');
+                    lnkPreviousItem.href = 'itemdetails.html?id=' + curr.Id + '&context=' + context;
                 }
                 else {
 
-                    $('.lnkNextItem', page).removeClass('hide').attr('href', 'itemdetails.html?id=' + curr.Id + '&context=' + context);
+                    lnkNextItem.classList.remove('hide');
+                    lnkNextItem.href = 'itemdetails.html?id=' + curr.Id + '&context=' + context;
                 }
             }
         });
     }
 
-    function renderSimilarItems(page, item, context) {
+    function enableScrollX() {
+        return browserInfo.mobile && AppInfo.enableAppLayouts && screen.availWidth <= 1000;
+    }
 
-        if (item.Type == "Movie" || item.Type == "Trailer" || item.Type == "Series" || item.Type == "Program" || item.Type == "Recording" || item.Type == "Game" || item.Type == "MusicAlbum" || item.Type == "MusicArtist" || item.Type == "ChannelVideoItem") {
-            $('#similarCollapsible', page).show();
+    function getPortraitShape(scrollX) {
+        if (scrollX == null) {
+            scrollX = enableScrollX();
         }
-        else {
-            $('#similarCollapsible', page).hide();
+        return scrollX ? 'overflowPortrait' : 'portrait';
+    }
+
+    function getSquareShape(scrollX) {
+        if (scrollX == null) {
+            scrollX = enableScrollX();
+        }
+        return scrollX ? 'overflowSquare' : 'square';
+    }
+
+    function getThumbShape(scrollX) {
+
+        if (scrollX == null) {
+            scrollX = enableScrollX();
+        }
+        return scrollX ? 'overflowBackdrop' : 'backdrop';
+    }
+
+    function renderMoreFromItems(page, item) {
+
+        var moreFromSection = page.querySelector('#moreFromSection');
+
+        if (!moreFromSection) {
             return;
         }
 
-        var shape = item.Type == "MusicAlbum" || item.Type == "MusicArtist" ? "detailPageSquare" : "detailPagePortrait";
-        var screenWidth = $(window).width();
-        var screenHeight = $(window).height();
-
-        var options = {
-            userId: Dashboard.getCurrentUserId(),
-            limit: screenWidth > 800 && shape == "detailPagePortrait" ? 5 : 4,
-            fields: "PrimaryImageAspectRatio,UserData,SyncInfo"
-        };
-
-        if (screenWidth >= 800 && screenHeight >= 1000) {
-            options.limit *= 2;
+        if (item.Type != 'MusicAlbum' || !item.AlbumArtists || !item.AlbumArtists.length) {
+            moreFromSection.classList.add('hide');
+            return;
         }
 
-        ApiClient.getSimilarItems(item.Id, options).done(function (result) {
+        ApiClient.getItems(Dashboard.getCurrentUserId(), {
+
+            IncludeItemTypes: "MusicAlbum",
+            ArtistIds: item.AlbumArtists[0].Id,
+            Recursive: true,
+            ExcludeItemIds: item.Id
+
+        }).then(function (result) {
 
             if (!result.Items.length) {
-
-                $('#similarCollapsible', page).hide();
+                moreFromSection.classList.add('hide');
                 return;
             }
+            moreFromSection.classList.remove('hide');
 
-            var elem = $('#similarCollapsible', page).show();
+            moreFromSection.querySelector('.moreFromHeader').innerHTML = Globalize.translate('MoreFromValue', item.AlbumArtists[0].Name);
 
-            $('.similiarHeader', elem).html(Globalize.translate('HeaderIfYouLikeCheckTheseOut', item.Name));
+            var html = '';
 
-            var html = LibraryBrowser.getPosterViewHtml({
+            if (enableScrollX()) {
+                html += '<div is="emby-itemscontainer" class="hiddenScrollX itemsContainer">';
+            } else {
+                html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
+            }
+
+            var shape = item.Type == "MusicAlbum" || item.Type == "MusicArtist" ? getSquareShape() : getPortraitShape();
+
+            html += cardBuilder.getCardsHtml({
                 items: result.Items,
                 shape: shape,
                 showParentTitle: item.Type == "MusicAlbum",
                 centerText: true,
                 showTitle: item.Type == "MusicAlbum" || item.Type == "Game" || item.Type == "MusicArtist",
-                borderless: item.Type == "Game",
+                coverImage: item.Type == "MusicAlbum" || item.Type == "MusicArtist",
+                overlayPlayButton: true
+            });
+            html += '</div>';
+
+            var similarContent = page.querySelector('#moreFromItems');
+            similarContent.innerHTML = html;
+            ImageLoader.lazyChildren(similarContent);
+        });
+    }
+
+    function renderSimilarItems(page, item, context) {
+
+        var similarCollapsible = page.querySelector('#similarCollapsible');
+
+        if (!similarCollapsible) {
+            return;
+        }
+
+        if (item.Type == "Movie" || item.Type == "Trailer" || item.Type == "Series" || item.Type == "Program" || item.Type == "Recording" || item.Type == "Game" || item.Type == "MusicAlbum" || item.Type == "MusicArtist" || item.Type == "ChannelVideoItem") {
+            similarCollapsible.classList.remove('hide');
+        }
+        else {
+            similarCollapsible.classList.add('hide');
+            return;
+        }
+
+        var shape = item.Type == "MusicAlbum" || item.Type == "MusicArtist" ? getSquareShape() : getPortraitShape();
+
+        var options = {
+            userId: Dashboard.getCurrentUserId(),
+            limit: 8,
+            fields: "PrimaryImageAspectRatio,UserData,CanDelete"
+        };
+
+        if (item.Type == 'MusicAlbum' && item.AlbumArtists && item.AlbumArtists.length) {
+            options.ExcludeArtistIds = item.AlbumArtists[0].Id;
+        }
+
+        if (enableScrollX()) {
+            options.limit = 12;
+        }
+
+        ApiClient.getSimilarItems(item.Id, options).then(function (result) {
+
+            if (!result.Items.length) {
+
+                similarCollapsible.classList.add('hide');
+                return;
+            }
+
+            similarCollapsible.classList.remove('hide');
+            similarCollapsible.querySelector('.similiarHeader').innerHTML = Globalize.translate('HeaderIfYouLikeCheckTheseOut', item.Name);
+
+            var html = '';
+
+            if (enableScrollX()) {
+                html += '<div is="emby-itemscontainer" class="hiddenScrollX itemsContainer">';
+            } else {
+                html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
+            }
+            html += cardBuilder.getCardsHtml({
+                items: result.Items,
+                shape: shape,
+                showParentTitle: item.Type == "MusicAlbum",
+                centerText: true,
+                showTitle: item.Type == "MusicAlbum" || item.Type == "Game" || item.Type == "MusicArtist",
                 context: context,
                 lazy: true,
                 showDetailsMenu: true,
                 coverImage: item.Type == "MusicAlbum" || item.Type == "MusicArtist",
                 overlayPlayButton: true
             });
+            html += '</div>';
 
-            $('#similarContent', page).html(html).lazyChildren().createCardMenus();
+            var similarContent = page.querySelector('#similarContent');
+            similarContent.innerHTML = html;
+            ImageLoader.lazyChildren(similarContent);
         });
     }
 
     function renderSeriesAirTime(page, item, isStatic) {
 
+        var seriesAirTime = page.querySelector('#seriesAirTime');
+
         if (item.Type != "Series") {
-            $('#seriesAirTime', page).hide();
+            seriesAirTime.classList.add('hide');
             return;
         }
 
@@ -724,13 +956,16 @@
         if (html) {
             html = (item.Status == 'Ended' ? 'Aired ' : 'Airs ') + html;
 
-            $('#seriesAirTime', page).show().html(html).trigger('create');
+            seriesAirTime.innerHTML = html;
+            seriesAirTime.classList.remove('hide');
         } else {
-            $('#seriesAirTime', page).hide();
+            seriesAirTime.classList.add('hide');
         }
     }
 
     function renderTags(page, item) {
+
+        var itemTags = page.querySelector('.itemTags');
 
         if (item.Tags && item.Tags.length) {
 
@@ -742,16 +977,17 @@
 
             }
 
-            $('.itemTags', page).show().html(html);
+            itemTags.innerHTML = html;
+            itemTags.classList.remove('hide');
 
         } else {
-            $('.itemTags', page).hide();
+            itemTags.classList.add('hide');
         }
     }
 
     function getEpisodesFunction(seriesId, query) {
 
-        query = $.extend({}, query);
+        query = Object.assign({}, query);
 
         return function (index, limit, fields) {
 
@@ -767,7 +1003,7 @@
 
     function getAlbumSongsFunction(query) {
 
-        query = $.extend({}, query);
+        query = Object.assign({}, query);
 
         return function (index, limit, fields) {
 
@@ -782,11 +1018,11 @@
     }
 
     var _childrenItemsFunction = null;
-    function renderChildren(page, item, user, context) {
+    function renderChildren(page, item) {
 
         _childrenItemsFunction = null;
 
-        var fields = "ItemCounts,AudioInfo,PrimaryImageAspectRatio,SyncInfo";
+        var fields = "ItemCounts,AudioInfo,PrimaryImageAspectRatio,SyncInfo,CanDelete";
 
         var query = {
             ParentId: item.Id,
@@ -798,13 +1034,14 @@
             query.SortBy = "SortName";
         }
 
+        var userId = Dashboard.getCurrentUserId();
         var promise;
 
         if (item.Type == "Series") {
 
             promise = ApiClient.getSeasons(item.Id, {
 
-                userId: user.Id,
+                userId: userId,
                 Fields: fields
             });
         }
@@ -814,14 +1051,15 @@
             promise = ApiClient.getEpisodes(item.SeriesId, {
 
                 seasonId: item.Id,
-                userId: user.Id,
+                userId: userId,
                 Fields: fields
             });
 
             _childrenItemsFunction = getEpisodesFunction(item.SeriesId, {
 
                 seasonId: item.Id,
-                userId: user.Id
+                userId: userId,
+                Fields: fields
             });
         }
         else if (item.Type == "MusicAlbum") {
@@ -831,38 +1069,45 @@
 
         promise = promise || ApiClient.getItems(Dashboard.getCurrentUserId(), query);
 
-        promise.done(function (result) {
+        promise.then(function (result) {
 
             var html = '';
 
+            var scrollX = false;
+            var isList = false;
+
             if (item.Type == "MusicAlbum") {
 
-                html = LibraryBrowser.getListViewHtml({
+                html = listView.getListViewHtml({
                     items: result.Items,
                     smallIcon: true,
                     showIndex: true,
                     index: 'disc',
                     showIndexNumber: true,
                     playFromHere: true,
-                    defaultAction: 'playallfromhere',
+                    action: 'playallfromhere',
                     lazy: true
                 });
-
+                isList = true;
             }
             else if (item.Type == "Series") {
-                html = LibraryBrowser.getPosterViewHtml({
+
+                scrollX = enableScrollX();
+
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
-                    shape: "detailPagePortrait",
-                    showTitle: false,
+                    shape: getPortraitShape(),
+                    showTitle: true,
                     centerText: true,
-                    context: context,
-                    lazy: true
+                    lazy: true,
+                    overlayPlayButton: true
                 });
             }
             else if (item.Type == "Season") {
-                html = LibraryBrowser.getPosterViewHtml({
+
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
-                    shape: "detailPage169",
+                    shape: getThumbShape(false),
                     showTitle: true,
                     displayAsSpecial: item.Type == "Season" && item.IndexNumber,
                     playFromHere: true,
@@ -873,7 +1118,7 @@
                 });
             }
             else if (item.Type == "GameSystem") {
-                html = LibraryBrowser.getPosterViewHtml({
+                html = cardBuilder.getCardsHtml({
                     items: result.Items,
                     shape: "auto",
                     showTitle: true,
@@ -884,6 +1129,22 @@
             }
 
             var elem = page.querySelector('.childrenItemsContainer');
+            if (scrollX) {
+                elem.classList.add('hiddenScrollX');
+                elem.classList.remove('vertical-wrap');
+                elem.classList.remove('vertical-list');
+            } else {
+                elem.classList.remove('hiddenScrollX');
+
+                if (isList) {
+                    elem.classList.add('vertical-list');
+                    elem.classList.remove('vertical-wrap');
+                } else {
+                    elem.classList.add('vertical-wrap');
+                    elem.classList.remove('vertical-list');
+                }
+            }
+
             elem.innerHTML = html;
             ImageLoader.lazyChildren(elem);
 
@@ -897,7 +1158,7 @@
                     { name: Globalize.translate('HeaderBooks'), type: 'Book' }
                 ];
 
-                renderCollectionItems(page, item, collectionItemTypes, result.Items, user, context);
+                renderCollectionItems(page, item, collectionItemTypes, result.Items);
             }
         });
 
@@ -918,9 +1179,9 @@
         }
 
         if (item.Type == "MusicAlbum") {
-            $('.childrenSectionHeader', page).hide();
+            page.querySelector('.childrenSectionHeader', page).classList.add('hide');
         } else {
-            $('.childrenSectionHeader', page).show();
+            page.querySelector('.childrenSectionHeader', page).classList.remove('hide');
         }
     }
 
@@ -951,12 +1212,85 @@
         });
     }
 
-    function renderCollectionItems(page, parentItem, types, items, user) {
+    function renderStudios(elem, item, isStatic) {
+
+        if (item.Studios && item.Studios.length && item.Type != "Series") {
+
+            var html = '';
+
+            for (var i = 0, length = item.Studios.length; i < length; i++) {
+
+                if (i > 0) {
+                    html += '&nbsp;&nbsp;/&nbsp;&nbsp;';
+                }
+
+                if (isStatic) {
+                    html += item.Studios[i].Name;
+                } else {
+                    html += '<a class="textlink" href="itemdetails.html?id=' + item.Studios[i].Id + '">' + item.Studios[i].Name + '</a>';
+                }
+            }
+
+            var translationKey = item.Studios.length > 1 ? "ValueStudios" : "ValueStudio";
+
+            html = Globalize.translate(translationKey, html);
+
+            elem.innerHTML = html;
+            elem.classList.remove('hide');
+
+        } else {
+            elem.classList.add('hide');
+        }
+    }
+
+    function renderGenres(elem, item, limit, isStatic) {
+
+        var html = '';
+
+        var genres = item.Genres || [];
+
+        for (var i = 0, length = genres.length; i < length; i++) {
+
+            if (limit && i >= limit) {
+                break;
+            }
+
+            if (i > 0) {
+                html += '<span>&nbsp;&nbsp;/&nbsp;&nbsp;</span>';
+            }
+
+            var param = item.Type == "Audio" || item.Type == "MusicArtist" || item.Type == "MusicAlbum" ? "musicgenre" : "genre";
+
+            if (item.MediaType == "Game") {
+                param = "gamegenre";
+            }
+
+            if (isStatic) {
+                html += genres[i];
+            } else {
+                html += '<a class="textlink" href="itemdetails.html?' + param + '=' + ApiClient.encodeName(genres[i]) + '">' + genres[i] + '</a>';
+            }
+        }
+
+        elem.innerHTML = html;
+    }
+
+    function renderAwardSummary(elem, item) {
+        if (item.AwardSummary) {
+            elem.classList.remove('hide');
+            elem.innerHTML = Globalize.translate('ValueAwards', item.AwardSummary);
+        } else {
+            elem.classList.add('hide');
+        }
+    }
+
+    function renderCollectionItems(page, parentItem, types, items) {
 
         // First empty out existing content
         page.querySelector('.collectionItems').innerHTML = '';
+        var i, length;
 
-        for (var i = 0, length = types.length; i < length; i++) {
+        for (i = 0, length = types.length; i < length; i++) {
 
             var type = types[i];
 
@@ -967,7 +1301,7 @@
             });
 
             if (typeItems.length) {
-                renderCollectionItemType(page, parentItem, type, typeItems, user);
+                renderCollectionItemType(page, parentItem, type, typeItems);
             }
         }
 
@@ -984,86 +1318,80 @@
         });
 
         if (otherTypeItems.length) {
-            renderCollectionItemType(page, parentItem, otherType, otherTypeItems, user);
+            renderCollectionItemType(page, parentItem, otherType, otherTypeItems);
         }
 
         if (!items.length) {
-            renderCollectionItemType(page, parentItem, { name: Globalize.translate('HeaderItems') }, items, user);
+            renderCollectionItemType(page, parentItem, { name: Globalize.translate('HeaderItems') }, items);
         }
-
-        $('.collectionItems', page).createCardMenus();
     }
 
-    function renderCollectionItemType(page, parentItem, type, items, user, context) {
+    function renderCollectionItemType(page, parentItem, type, items) {
 
         var html = '';
 
         html += '<div class="detailSection">';
 
+        html += '<div style="display:flex;align-items:center;">';
         html += '<h1>';
         html += '<span>' + type.name + '</span>';
 
         html += '</h1>';
+        html += '<button class="btnAddToCollection autoSize" type="button" is="paper-icon-button-light" style="margin-left:1em;"><i class="md-icon" icon="add">add</i></button>';
+        html += '</div>';
 
-        html += '<div class="detailSectionContent">';
+        html += '<div is="emby-itemscontainer" class="detailSectionContent itemsContainer vertical-wrap">';
 
-        var shape = type.type == 'MusicAlbum' ? 'detailPageSquare' : 'detailPagePortrait';
+        var shape = type.type == 'MusicAlbum' ? getSquareShape(false) : getPortraitShape(false);
 
-        html += LibraryBrowser.getPosterViewHtml({
+        html += cardBuilder.getCardsHtml({
             items: items,
             shape: shape,
             showTitle: true,
             centerText: true,
-            context: context,
             lazy: true,
             showDetailsMenu: true,
             overlayMoreButton: true,
             showAddToCollection: false,
-            showRemoveFromCollection: true
+            showRemoveFromCollection: true,
+            collectionId: parentItem.Id
         });
         html += '</div>';
 
         html += '</div>';
 
         var collectionItems = page.querySelector('.collectionItems');
-        $(collectionItems).append(html);
+        collectionItems.insertAdjacentHTML('beforeend', html);
         ImageLoader.lazyChildren(collectionItems);
 
-        $(collectionItems).off('removefromcollection').on('removefromcollection', function (e, itemId) {
-
-            removeFromCollection(page, parentItem, [itemId], user, context);
-        });
-    }
-
-    function removeFromCollection(page, parentItem, itemIds, user, context) {
-
-        Dashboard.showLoadingMsg();
-
-        var url = ApiClient.getUrl("Collections/" + parentItem.Id + "/Items", {
-
-            Ids: itemIds.join(',')
-        });
-
-        ApiClient.ajax({
-            type: "DELETE",
-            url: url
-
-        }).done(function () {
-
-            renderChildren(page, parentItem, user, context);
-            Dashboard.hideLoadingMsg();
+        collectionItems.querySelector('.btnAddToCollection').addEventListener('click', function () {
+            require(['alert'], function (alert) {
+                alert({
+                    text: Globalize.translate('AddItemToCollectionHelp'),
+                    html: Globalize.translate('AddItemToCollectionHelp') + '<br/><br/><a target="_blank" href="https://github.com/MediaBrowser/Wiki/wiki/Collections">' + Globalize.translate('ButtonLearnMore') + '</a>'
+                });
+            });
         });
     }
 
     function renderUserDataIcons(page, item) {
 
-        $('.userDataIcons', page).html(LibraryBrowser.getUserDataIconsHtml(item, true, 'fab'));
+        var userDataIcons = page.querySelectorAll('.userDataIcons');
+
+        var html = userdataButtons.getIconsHtml({
+            item: item,
+            style: 'fab-mini'
+        });
+
+        for (var i = 0, length = userDataIcons.length; i < length; i++) {
+            userDataIcons[i].innerHTML = html;
+        }
     }
 
     function renderCriticReviews(page, item, limit) {
 
         if (item.Type != "Movie" && item.Type != "Trailer" && item.Type != "MusicVideo") {
-            $('#criticReviewsCollapsible', page).hide();
+            page.querySelector('#criticReviewsCollapsible').classList.add('hide');
             return;
         }
 
@@ -1073,13 +1401,13 @@
             options.limit = limit;
         }
 
-        ApiClient.getCriticReviews(item.Id, options).done(function (result) {
+        ApiClient.getCriticReviews(item.Id, options).then(function (result) {
 
             if (result.TotalRecordCount || item.CriticRatingSummary || item.AwardSummary) {
-                $('#criticReviewsCollapsible', page).show();
+                page.querySelector('#criticReviewsCollapsible').classList.remove('hide');
                 renderCriticReviewsContent(page, result, limit);
             } else {
-                $('#criticReviewsCollapsible', page).hide();
+                page.querySelector('#criticReviewsCollapsible').classList.add('hide');
             }
         });
     }
@@ -1089,31 +1417,28 @@
         var html = '';
 
         var reviews = result.Items;
-
         for (var i = 0, length = reviews.length; i < length; i++) {
 
             var review = reviews[i];
 
-            html += '<div class="criticReview">';
-
-            html += '<div class="reviewScore">';
-
+            html += '<div class="paperList criticReviewPaperList">';
+            html += '<div class="listItem">';
 
             if (review.Score != null) {
-                html += review.Score;
+                //html += review.Score;
             }
             else if (review.Likes != null) {
 
                 if (review.Likes) {
-                    html += '<img src="css/images/fresh.png" />';
+                    html += '<div style="background-color:transparent;background-image:url(\'css/images/fresh.png\');background-repeat:no-repeat;background-position:center center;background-size: cover;width:40px;height:40px;"></div>';
                 } else {
-                    html += '<img src="css/images/rotten.png" />';
+                    html += '<div style="background-color:transparent;background-image:url(\'css/images/rotten.png\');background-repeat:no-repeat;background-position:center center;background-size: cover;width:40px;height:40px;"></div>';
                 }
             }
 
-            html += '</div>';
+            html += '<div class="listItemBody two-line">';
 
-            html += '<div class="reviewCaption">' + review.Caption + '</div>';
+            html += '<div style="white-space:normal;">' + review.Caption + '</div>';
 
             var vals = [];
 
@@ -1124,13 +1449,12 @@
                 vals.push(review.Publisher);
             }
 
-            html += '<div class="reviewerName">' + vals.join(', ') + '.';
-
+            html += '<div class="secondary">' + vals.join(', ') + '.';
             if (review.Date) {
 
                 try {
 
-                    var date = parseISO8601Date(review.Date, { toLocal: true }).toLocaleDateString();
+                    var date = datetime.parseISO8601Date(review.Date, true).toLocaleDateString();
 
                     html += '<span class="reviewDate">' + date + '</span>';
                 }
@@ -1139,27 +1463,35 @@
                 }
 
             }
-
             html += '</div>';
 
             if (review.Url) {
-                html += '<div class="reviewLink"><a class="textlink" href="' + review.Url + '" target="_blank">' + Globalize.translate('ButtonFullReview') + '</a></div>';
+                html += '<div class="secondary"><a class="textlink" href="' + review.Url + '" target="_blank">' + Globalize.translate('ButtonFullReview') + '</a></div>';
             }
 
+            html += '</div>';
+
+            html += '</div>';
             html += '</div>';
         }
 
         if (limit && result.TotalRecordCount > limit) {
-            html += '<p style="margin: 0;"><paper-button raised class="more moreCriticReviews">' + Globalize.translate('ButtonMore') + '</paper-button></p>';
+            html += '<p style="margin: 0;"><button is="emby-button" type="button" class="raised more moreCriticReviews">' + Globalize.translate('ButtonMore') + '</button></p>';
         }
 
         var criticReviewsContent = page.querySelector('#criticReviewsContent');
         criticReviewsContent.innerHTML = html;
+
+        if (enableScrollX()) {
+            criticReviewsContent.classList.add('hiddenScrollX');
+        } else {
+            criticReviewsContent.classList.remove('hiddenScrollX');
+        }
     }
 
     function renderThemeMedia(page, item) {
 
-        ApiClient.getThemeMedia(Dashboard.getCurrentUserId(), item.Id, true).done(function (result) {
+        ApiClient.getThemeMedia(Dashboard.getCurrentUserId(), item.Id, true).then(function (result) {
 
             var themeSongs = result.ThemeSongsResult.OwnerId == item.Id ?
                 result.ThemeSongsResult.Items :
@@ -1172,7 +1504,13 @@
             renderThemeSongs(page, themeSongs);
             renderThemeVideos(page, themeVideos);
 
-            $(page).trigger('thememediadownload', [result]);
+            page.dispatchEvent(new CustomEvent("thememediadownload", {
+                detail: {
+                    themeMediaResult: result
+                },
+                bubbles: true
+            }));
+
         });
 
     }
@@ -1181,16 +1519,16 @@
 
         if (items.length) {
 
-            $('#themeSongsCollapsible', page).show();
+            page.querySelector('#themeSongsCollapsible').classList.remove('hide');
 
-            var html = LibraryBrowser.getListViewHtml({
+            var html = listView.getListViewHtml({
                 items: items,
-                smallIcon: true
+                sortBy: query.SortBy
             });
 
             page.querySelector('#themeSongsContent').innerHTML = html;
         } else {
-            $('#themeSongsCollapsible', page).hide();
+            page.querySelector('#themeSongsCollapsible').classList.add('hide');
         }
     }
 
@@ -1198,11 +1536,13 @@
 
         if (items.length) {
 
-            $('#themeVideosCollapsible', page).show();
+            page.querySelector('#themeVideosCollapsible').classList.remove('hide');
 
-            $('#themeVideosContent', page).html(getVideosHtml(items, user)).lazyChildren();
+            var themeVideosContent = page.querySelector('#themeVideosContent');
+            themeVideosContent.innerHTML = getVideosHtml(items, user);
+            ImageLoader.lazyChildren(themeVideosContent);
         } else {
-            $('#themeVideosCollapsible', page).hide();
+            page.querySelector('#themeVideosCollapsible').classList.add('hide');
         }
     }
 
@@ -1214,17 +1554,20 @@
             SortOrder: "Ascending",
             IncludeItemTypes: "MusicVideo",
             Recursive: true,
-            Fields: "DateCreated,SyncInfo",
+            Fields: "DateCreated,CanDelete",
             Albums: item.Name
 
-        }).done(function (result) {
+        }).then(function (result) {
             if (result.Items.length) {
 
-                $('#musicVideosCollapsible', page).show();
+                page.querySelector('#musicVideosCollapsible').classList.remove('hide');
 
-                $('#musicVideosContent', page).html(getVideosHtml(result.Items, user)).lazyChildren();
+                var musicVideosContent = page.querySelector('.musicVideosContent');
+                musicVideosContent.innerHTML = getVideosHtml(result.Items, user);
+                ImageLoader.lazyChildren(musicVideosContent);
+
             } else {
-                $('#musicVideosCollapsible', page).hide();
+                page.querySelector('#musicVideosCollapsible').classList.add('hide');
             }
         });
 
@@ -1232,89 +1575,57 @@
 
     function renderAdditionalParts(page, item, user) {
 
-        ApiClient.getAdditionalVideoParts(user.Id, item.Id).done(function (result) {
+        ApiClient.getAdditionalVideoParts(user.Id, item.Id).then(function (result) {
 
             if (result.Items.length) {
 
-                $('#additionalPartsCollapsible', page).show();
+                page.querySelector('#additionalPartsCollapsible').classList.remove('hide');
 
-                $('#additionalPartsContent', page).html(getVideosHtml(result.Items, user)).lazyChildren();
+                var additionalPartsContent = page.querySelector('#additionalPartsContent');
+                additionalPartsContent.innerHTML = getVideosHtml(result.Items, user);
+                ImageLoader.lazyChildren(additionalPartsContent);
+
             } else {
-                $('#additionalPartsCollapsible', page).hide();
+                page.querySelector('#additionalPartsCollapsible').classList.add('hide');
             }
         });
     }
 
     function renderScenes(page, item, user, limit, isStatic) {
-        var html = '';
 
         var chapters = item.Chapters || [];
-
-        var maxWidth = LibraryBrowser.getPosterViewInfo().backdropWidth;
-
-        for (var i = 0, length = chapters.length; i < length; i++) {
-
-            if (limit && i >= limit) {
-                break;
-            }
-
-            var chapter = chapters[i];
-            var chapterName = chapter.Name || "Chapter " + i;
-
-            var onclick = item.PlayAccess == 'Full' && !isStatic ? ' onclick="ItemDetailPage.play(' + chapter.StartPositionTicks + ');"' : '';
-
-            html += '<a class="card detailPage169Card" href="#play-Chapter-' + i + '"' + onclick + '>';
-
-            html += '<div class="cardBox">';
-            html += '<div class="cardScalable">';
-
-            var imgUrl;
-
-            if (chapter.ImageTag) {
-
-                imgUrl = ApiClient.getScaledImageUrl(item.Id, {
-                    maxWidth: maxWidth,
-                    tag: chapter.ImageTag,
-                    type: "Chapter",
-                    index: i
-                });
-            } else {
-                imgUrl = "css/images/items/list/chapter.png";
-            }
-
-            html += '<div class="cardPadder"></div>';
-
-            html += '<div class="cardContent">';
-            html += '<div class="cardImage lazy" data-src="' + imgUrl + '"></div>';
-
-            html += '<div class="cardFooter">';
-            html += '<div class="cardText">' + chapterName + '</div>';
-            html += '<div class="cardText">';
-            html += Dashboard.getDisplayTime(chapter.StartPositionTicks);
-            html += '</div>';
-
-            //cardFooter
-            html += "</div>";
-
-            // cardContent
-            html += '</div>';
-
-            // cardScalable
-            html += '</div>';
-
-            // cardBox
-            html += '</div>';
-
-            html += '</a>';
-        }
-
-        if (limit && chapters.length > limit) {
-            html += '<p style="margin: 0;"><paper-button raised class="more moreScenes">' + Globalize.translate('ButtonMore') + '</paper-button></p>';
-        }
-
         var scenesContent = page.querySelector('#scenesContent');
-        scenesContent.innerHTML = html;
-        ImageLoader.lazyChildren(scenesContent);
+
+        if (enableScrollX()) {
+            scenesContent.classList.add('smoothScrollX');
+            limit = null;
+        } else {
+            scenesContent.classList.add('vertical-wrap');
+        }
+
+        var limitExceeded = limit && chapters.length > limit;
+
+        if (limitExceeded) {
+            chapters = chapters.slice(0);
+            chapters.length = Math.min(limit, chapters.length);
+        }
+
+        require(['chaptercardbuilder'], function (chaptercardbuilder) {
+
+            chaptercardbuilder.buildChapterCards(item, chapters, {
+                itemsContainer: scenesContent,
+                coverImage: true,
+                width: 400,
+                backdropShape: getThumbShape(),
+                squareShape: getSquareShape()
+            });
+        });
+
+        if (limitExceeded) {
+            page.querySelector('.moreScenes').classList.remove('hide');
+        } else {
+            page.querySelector('.moreScenes').classList.add('hide');
+        }
     }
 
     function renderMediaSources(page, item) {
@@ -1353,7 +1664,7 @@
 
             var displayType = Globalize.translate('MediaInfoStreamType' + stream.Type);
 
-            html += '<div class="mediaInfoStreamType">' + displayType + '</div>';
+            html += '<h3 class="mediaInfoStreamType">' + displayType + '</h3>';
 
             var attributes = [];
 
@@ -1363,6 +1674,14 @@
 
             if (stream.Codec) {
                 attributes.push(createAttribute(Globalize.translate('MediaInfoCodec'), stream.Codec.toUpperCase()));
+            }
+
+            if (stream.CodecTag) {
+                attributes.push(createAttribute(Globalize.translate('MediaInfoCodecTag'), stream.CodecTag));
+            }
+
+            if (stream.IsAVC != null) {
+                attributes.push(createAttribute('AVC', (stream.IsAVC ? 'Yes' : 'No')));
             }
 
             if (stream.Profile) {
@@ -1401,11 +1720,11 @@
             }
 
             if (stream.BitRate && stream.Codec != "mjpeg") {
-                attributes.push(createAttribute(Globalize.translate('MediaInfoBitrate'), (parseInt(stream.BitRate / 1024)) + ' kbps'));
+                attributes.push(createAttribute(Globalize.translate('MediaInfoBitrate'), (parseInt(stream.BitRate / 1000)) + ' kbps'));
             }
 
             if (stream.SampleRate) {
-                attributes.push(createAttribute(Globalize.translate('MediaInfoSampleRate'), stream.SampleRate + ' khz'));
+                attributes.push(createAttribute(Globalize.translate('MediaInfoSampleRate'), stream.SampleRate + ' Hz'));
             }
 
             if (stream.BitDepth) {
@@ -1420,8 +1739,8 @@
                 attributes.push(createAttribute(Globalize.translate('MediaInfoRefFrames'), stream.RefFrames));
             }
 
-            if (stream.KeyFrames) {
-                //attributes.push(createAttribute(Globalize.translate('MediaInfoKeyFrames'), stream.KeyFrames.join(', ')));
+            if (stream.NalLengthSize) {
+                attributes.push(createAttribute('NAL', stream.NalLengthSize));
             }
 
             if (stream.Type != "Video") {
@@ -1436,8 +1755,8 @@
                 attributes.push(createAttribute(Globalize.translate('MediaInfoTimestamp'), version.Timestamp));
             }
 
-            if (stream.IsCabac != null) {
-                attributes.push(createAttribute(Globalize.translate('CABAC'), (stream.IsCabac ? 'Yes' : 'No')));
+            if (stream.DisplayTitle) {
+                attributes.push(createAttribute('Title', stream.DisplayTitle));
             }
 
             html += attributes.join('<br/>');
@@ -1475,8 +1794,6 @@
 
         var html = '';
 
-        var maxWidth = LibraryBrowser.getPosterViewInfo().backdropWidth;
-
         for (var i = 0, length = items.length; i < length; i++) {
 
             if (limit && i >= limit) {
@@ -1485,7 +1802,7 @@
 
             var item = items[i];
 
-            var cssClass = "card detailPage169Card";
+            var cssClass = "card backdropCard scalableCard";
 
             var href = "itemdetails.html?id=" + item.Id;
 
@@ -1503,7 +1820,7 @@
             if (imageTags.Primary) {
 
                 imgUrl = ApiClient.getScaledImageUrl(item.Id, {
-                    maxWidth: maxWidth,
+                    maxWidth: 400,
                     tag: imageTags.Primary,
                     type: "primary"
                 });
@@ -1517,11 +1834,11 @@
             html += '<div class="cardContent">';
             html += '<div class="cardImage lazy" data-src="' + imgUrl + '"></div>';
 
-            html += '<div class="cardFooter">';
+            html += '<div class="innerCardFooter">';
             html += '<div class="cardText">' + item.Name + '</div>';
             html += '<div class="cardText">';
             if (item.RunTimeTicks != "") {
-                html += Dashboard.getDisplayTime(item.RunTimeTicks);
+                html += datetime.getDisplayRunningTime(item.RunTimeTicks);
             }
             else {
                 html += "&nbsp;";
@@ -1544,7 +1861,7 @@
         }
 
         if (limit && items.length > limit) {
-            html += '<p style="margin: 0;padding-left:5px;"><paper-button raised class="more ' + moreButtonClass + '">' + Globalize.translate('ButtonMore') + '</paper-button></p>';
+            html += '<p style="margin: 0;padding-left:5px;"><button is="emby-button" type="button" class="raised more ' + moreButtonClass + '">' + Globalize.translate('ButtonMore') + '</button></p>';
         }
 
         return html;
@@ -1552,7 +1869,7 @@
 
     function renderSpecials(page, item, user, limit) {
 
-        ApiClient.getSpecialFeatures(user.Id, item.Id).done(function (specials) {
+        ApiClient.getSpecialFeatures(user.Id, item.Id).then(function (specials) {
 
             var specialsContent = page.querySelector('#specialsContent');
             specialsContent.innerHTML = getVideosHtml(specials, user, limit, "moreSpecials");
@@ -1563,76 +1880,39 @@
 
     function renderCast(page, item, context, limit, isStatic) {
 
-        var html = '';
-
-        var casts = item.People || [];
-
-        for (var i = 0, length = casts.length; i < length; i++) {
-
-            if (limit && i >= limit) {
-                break;
-            }
-
-            var cast = casts[i];
-            var href = isStatic ? '#' : 'itemdetails.html?id=' + cast.Id + '';
-            html += '<a class="tileItem smallPosterTileItem" href="' + href + '">';
-
-            var imgUrl;
-            var lazy = true;
-
-            if (cast.PrimaryImageTag) {
-
-                imgUrl = ApiClient.getScaledImageUrl(cast.Id, {
-                    width: 100,
-                    tag: cast.PrimaryImageTag,
-                    type: "primary",
-                    minScale: 2
-                });
-
-            } else {
-
-                imgUrl = "css/images/items/list/person.png";
-                lazy = false;
-            }
-
-            if (lazy) {
-                html += '<div class="tileImage lazy" data-src="' + imgUrl + '"></div>';
-            } else {
-                html += '<div class="tileImage" style="background-image:url(\'' + imgUrl + '\');"></div>';
-            }
-
-            html += '<div class="tileContent">';
-
-            html += '<p>' + cast.Name + '</p>';
-
-            var role = cast.Role ? Globalize.translate('ValueAsRole', cast.Role) : cast.Type;
-
-            if (role == "GuestStar") {
-                role = Globalize.translate('ValueGuestStar');
-            }
-
-            role = role || "";
-
-            var maxlength = 40;
-
-            if (role.length > maxlength) {
-                role = role.substring(0, maxlength - 3) + '...';
-            }
-
-            html += '<p>' + role + '</p>';
-
-            html += '</div>';
-
-            html += '</a>';
-        }
-
-        if (limit && casts.length > limit) {
-            html += '<p style="margin: 0;padding-left:5px;"><paper-button raised class="more morePeople">' + Globalize.translate('ButtonMore') + '</paper-button></p>';
-        }
-
+        var people = item.People || [];
         var castContent = page.querySelector('#castContent');
-        castContent.innerHTML = html;
-        ImageLoader.lazyChildren(castContent);
+
+        if (enableScrollX()) {
+            castContent.classList.add('smoothScrollX');
+            limit = 32;
+        } else {
+            castContent.classList.add('vertical-wrap');
+        }
+
+        var limitExceeded = limit && people.length > limit;
+
+        if (limitExceeded) {
+            people = people.slice(0);
+            people.length = Math.min(limit, people.length);
+        }
+
+        require(['peoplecardbuilder'], function (peoplecardbuilder) {
+
+            peoplecardbuilder.buildPeopleCards(people, {
+                itemsContainer: castContent,
+                coverImage: true,
+                serverId: item.ServerId,
+                width: 160,
+                shape: getPortraitShape()
+            });
+        });
+
+        if (limitExceeded && !enableScrollX()) {
+            page.querySelector('.morePeople').classList.remove('hide');
+        } else {
+            page.querySelector('.morePeople').classList.add('hide');
+        }
     }
 
     function play(startPosition) {
@@ -1643,196 +1923,83 @@
         });
     }
 
-    function splitVersions(page) {
+    function splitVersions(page, params) {
 
-        var id = getParameterByName('id');
+        require(['confirm'], function (confirm) {
 
-        Dashboard.confirm("Are you sure you wish to split the media sources into separate items?", "Split Media Apart", function (confirmResult) {
-
-            if (confirmResult) {
+            confirm("Are you sure you wish to split the media sources into separate items?", "Split Media Apart").then(function () {
 
                 Dashboard.showLoadingMsg();
 
                 ApiClient.ajax({
                     type: "DELETE",
-                    url: ApiClient.getUrl("Videos/" + id + "/AlternateSources")
+                    url: ApiClient.getUrl("Videos/" + params.id + "/AlternateSources")
 
-                }).done(function () {
+                }).then(function () {
 
                     Dashboard.hideLoadingMsg();
 
-                    reload(page);
+                    reload(page, params);
                 });
-            }
+            });
         });
     }
 
     function playTrailer(page) {
 
-        ApiClient.getLocalTrailers(Dashboard.getCurrentUserId(), currentItem.Id).done(function (trailers) {
+        ApiClient.getLocalTrailers(Dashboard.getCurrentUserId(), currentItem.Id).then(function (trailers) {
 
             MediaController.play({ items: trailers });
 
         });
     }
 
-    function onItemDeleted(e, itemId) {
+    function showPlayMenu(item, target) {
 
-        if (currentItem && currentItem.Id == itemId) {
-            if (currentItem.Type == 'Recording') {
-                Dashboard.navigate('livetv.html');
-            } else {
-                Dashboard.navigate('index.html');
-            }
-        }
+        require(['playMenu'], function (playMenu) {
+
+            playMenu.show({
+
+                item: item,
+                positionTo: target
+            });
+        });
     }
 
     function playCurrentItem(button) {
 
         if (currentItem.Type == 'Program') {
 
-            ApiClient.getLiveTvChannel(currentItem.ChannelId, Dashboard.getCurrentUserId()).done(function (channel) {
+            ApiClient.getLiveTvChannel(currentItem.ChannelId, Dashboard.getCurrentUserId()).then(function (channel) {
 
-                LibraryBrowser.showPlayMenu(null, channel.Id, channel.Type, false, channel.MediaType, (channel.UserData || {}).PlaybackPositionTicks);
+                showPlayMenu(channel, button);
             });
 
             return;
         }
 
-        var userdata = currentItem.UserData || {};
-
-        var mediaType = currentItem.MediaType;
-
-        if (currentItem.Type == "MusicArtist" || currentItem.Type == "MusicAlbum") {
-            mediaType = "Audio";
-        }
-
-        LibraryBrowser.showPlayMenu(button, currentItem.Id, currentItem.Type, currentItem.IsFolder, mediaType, userdata.PlaybackPositionTicks);
+        showPlayMenu(currentItem, button);
     }
 
-    function deleteTimer(page, id) {
+    function deleteTimer(page, params, id) {
 
-        Dashboard.confirm(Globalize.translate('MessageConfirmRecordingCancellation'), Globalize.translate('HeaderConfirmRecordingCancellation'), function (result) {
+        require(['confirm'], function (confirm) {
 
-            if (result) {
+            confirm(Globalize.translate('MessageConfirmRecordingCancellation'), Globalize.translate('HeaderConfirmRecordingCancellation')).then(function () {
 
                 Dashboard.showLoadingMsg();
 
-                ApiClient.cancelLiveTvTimer(id).done(function () {
+                ApiClient.cancelLiveTvTimer(id).then(function () {
 
-                    Dashboard.alert(Globalize.translate('MessageRecordingCancelled'));
+                    require(['toast'], function (toast) {
+                        toast(Globalize.translate('MessageRecordingCancelled'));
+                    });
 
-                    reload(page);
+                    reload(page, params);
                 });
-            }
-
+            });
         });
     }
-
-    $(document).on('pageinit', "#itemDetailPage", function () {
-
-        var page = this;
-
-        $('.btnPlay', page).on('click', function () {
-            playCurrentItem(this);
-        });
-
-        $('.btnPlayTrailer', page).on('click', function () {
-            playTrailer(page);
-        });
-
-        $('.btnSplitVersions', page).on('click', function () {
-
-            splitVersions(page);
-        });
-
-        $('.btnSync', page).on('click', function () {
-
-            SyncManager.showMenu({
-                items: [currentItem]
-            });
-        });
-
-        $('.btnRecord,.btnFloatingRecord', page).on('click', function () {
-
-            var id = getParameterByName('id');
-
-            Dashboard.navigate('livetvnewrecording.html?programid=' + id);
-
-        });
-
-        $('.btnCancelRecording', page).on('click', function () {
-
-            deleteTimer(page, currentItem.TimerId);
-        });
-
-        $('.btnMoreCommands', page).on('click', function () {
-
-            var button = this;
-
-            Dashboard.getCurrentUser().done(function (user) {
-
-                LibraryBrowser.showMoreCommands(button, currentItem.Id, LibraryBrowser.getMoreCommands(currentItem, user));
-            });
-        });
-
-        $('.childrenItemsContainer', page).on('playallfromhere', function (e, index) {
-
-            LibraryBrowser.playAllFromHere(_childrenItemsFunction, index);
-
-        }).on('queueallfromhere', function (e, index) {
-
-            LibraryBrowser.queueAllFromHere(_childrenItemsFunction, index);
-
-        });
-
-        $(page).on("click", ".moreScenes", function () {
-
-            Dashboard.getCurrentUser().done(function (user) {
-                renderScenes(page, currentItem, user);
-            });
-
-        }).on("click", ".morePeople", function () {
-
-            renderCast(page, currentItem, getContext(currentItem));
-
-        }).on("click", ".moreSpecials", function () {
-
-            Dashboard.getCurrentUser().done(function (user) {
-                renderSpecials(page, currentItem, user);
-            });
-
-        }).on("click", ".moreCriticReviews", function () {
-
-            renderCriticReviews(page, currentItem);
-        });
-
-        //var btnMore = page.querySelectorAll('.btnMoreCommands iron-icon');
-        //for (var i = 0, length = btnMore.length; i < length; i++) {
-        //    btnMore[i].icon = AppInfo.moreIcon;
-        //}
-
-    }).on('pagebeforeshow', "#itemDetailPage", function () {
-
-        var page = this;
-
-        reload(page);
-
-        Events.on(ApiClient, 'websocketmessage', onWebSocketMessage);
-
-        Events.on(LibraryBrowser, 'itemdeleting', onItemDeleted);
-
-    }).on('pagebeforehide', "#itemDetailPage", function () {
-
-        Events.off(LibraryBrowser, 'itemdeleting', onItemDeleted);
-
-        currentItem = null;
-
-        var page = this;
-
-        Events.off(ApiClient, 'websocketmessage', onWebSocketMessage);
-        LibraryMenu.setTransparentMenu(false);
-    });
 
     function itemDetailPage() {
 
@@ -1849,4 +2016,175 @@
 
     window.ItemDetailPage = new itemDetailPage();
 
-})(jQuery, document, LibraryBrowser, window);
+    function onPlayClick() {
+        playCurrentItem(this);
+    }
+
+    function onSyncClick() {
+        require(['syncDialog'], function (syncDialog) {
+            syncDialog.showMenu({
+                items: [currentItem]
+            });
+        });
+    }
+
+    return function (view, params) {
+
+        function onPlayTrailerClick() {
+            playTrailer(view);
+        }
+
+        function onRecordClick() {
+            var id = params.id;
+            Dashboard.showLoadingMsg();
+
+            require(['recordingCreator'], function (recordingCreator) {
+                recordingCreator.show(id, currentItem.ServerId).then(function () {
+                    reload(view, params);
+                });
+            });
+        }
+
+        function onCancelRecordingClick() {
+            deleteTimer(view, params, currentItem.TimerId);
+        }
+
+        function onMoreCommandsClick() {
+            var button = this;
+
+            itemContextMenu.show(getContextMenuOptions(currentItem, button)).then(function (result) {
+
+                if (result.deleted) {
+                    Emby.Page.goHome();
+
+                } else if (result.updated) {
+                    reload(view, params);
+                }
+            });
+        }
+
+        var elems = view.querySelectorAll('.btnPlay');
+        var i, length;
+        for (i = 0, length = elems.length; i < length; i++) {
+            elems[i].addEventListener('click', onPlayClick);
+        }
+
+        elems = view.querySelectorAll('.btnPlayTrailer');
+        for (i = 0, length = elems.length; i < length; i++) {
+            elems[i].addEventListener('click', onPlayTrailerClick);
+        }
+
+        view.querySelector('.btnSplitVersions').addEventListener('click', function () {
+
+            splitVersions(view, params);
+        });
+
+        elems = view.querySelectorAll('.btnSync');
+        for (i = 0, length = elems.length; i < length; i++) {
+            elems[i].addEventListener('click', onSyncClick);
+        }
+
+        elems = view.querySelectorAll('.btnRecord,.btnFloatingRecord');
+        for (i = 0, length = elems.length; i < length; i++) {
+            elems[i].addEventListener('click', onRecordClick);
+        }
+
+        elems = view.querySelectorAll('.btnCancelRecording');
+        for (i = 0, length = elems.length; i < length; i++) {
+            elems[i].addEventListener('click', onCancelRecordingClick);
+        }
+
+        elems = view.querySelectorAll('.btnMoreCommands');
+        for (i = 0, length = elems.length; i < length; i++) {
+            elems[i].addEventListener('click', onMoreCommandsClick);
+        }
+
+        view.addEventListener('click', function (e) {
+
+            if (dom.parentWithClass(e.target, 'moreScenes')) {
+                Dashboard.getCurrentUser().then(function (user) {
+                    renderScenes(view, currentItem, user);
+                });
+            }
+            else if (dom.parentWithClass(e.target, 'morePeople')) {
+                renderCast(view, currentItem, params.context);
+            }
+            else if (dom.parentWithClass(e.target, 'moreSpecials')) {
+                Dashboard.getCurrentUser().then(function (user) {
+                    renderSpecials(view, currentItem, user);
+                });
+            }
+            else if (dom.parentWithClass(e.target, 'moreCriticReviews')) {
+                renderCriticReviews(view, currentItem);
+            }
+        });
+
+        view.querySelector('.collectionItems').addEventListener('needsrefresh', function (e) {
+
+            renderChildren(view, currentItem);
+        });
+
+        function editImages() {
+            return new Promise(function (resolve, reject) {
+
+                require(['components/imageeditor/imageeditor'], function (ImageEditor) {
+
+                    ImageEditor.show(currentItem.Id).then(resolve, reject);
+                });
+            });
+        }
+
+        view.querySelector('.detailImageContainer').addEventListener('click', function (e) {
+            var itemDetailGalleryLink = dom.parentWithClass(e.target, 'itemDetailGalleryLink');
+            if (itemDetailGalleryLink) {
+                editImages().then(function () {
+                    reload(view, params);
+                });
+            }
+        });
+
+        function onWebSocketMessage(e, data) {
+
+            var msg = data;
+
+            if (msg.MessageType === "UserDataChanged") {
+
+                if (currentItem && msg.Data.UserId == Dashboard.getCurrentUserId()) {
+
+                    var key = currentItem.UserData.Key;
+
+                    var userData = msg.Data.UserDataList.filter(function (u) {
+
+                        return u.Key == key;
+                    })[0];
+
+                    if (userData) {
+
+                        currentItem.UserData = userData;
+
+                        Dashboard.getCurrentUser().then(function (user) {
+
+                            refreshImage(view, currentItem, user);
+                        });
+                    }
+                }
+            }
+
+        }
+
+        view.addEventListener('viewbeforeshow', function () {
+            var page = this;
+            reload(page, params);
+
+            Events.on(ApiClient, 'websocketmessage', onWebSocketMessage);
+        });
+
+        view.addEventListener('viewbeforehide', function () {
+
+            currentItem = null;
+
+            Events.off(ApiClient, 'websocketmessage', onWebSocketMessage);
+            LibraryMenu.setTransparentMenu(false);
+        });
+    };
+});

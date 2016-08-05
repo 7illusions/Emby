@@ -1,6 +1,7 @@
-﻿(function ($, document, window, FileReader, escape) {
+﻿define(['dialogHelper', 'css!css/metadataeditor.css', 'emby-button', 'paper-icon-button-light'], function (dialogHelper) {
 
     var currentItem;
+    var hasChanges = false;
 
     function getBaseRemoteOptions() {
 
@@ -19,9 +20,17 @@
             reloadItem(page, item);
         }
         else {
-            ApiClient.getItem(Dashboard.getCurrentUserId(), currentItem.Id).done(function (item) {
+            ApiClient.getItem(Dashboard.getCurrentUserId(), currentItem.Id).then(function (item) {
                 reloadItem(page, item);
             });
+        }
+    }
+
+    function addListeners(elems, eventName, fn) {
+
+        for (var i = 0, length = elems.length; i < length; i++) {
+
+            elems[i].addEventListener(eventName, fn);
         }
     }
 
@@ -29,15 +38,20 @@
 
         currentItem = item;
 
-        ApiClient.getRemoteImageProviders(getBaseRemoteOptions()).done(function (providers) {
+        ApiClient.getRemoteImageProviders(getBaseRemoteOptions()).then(function (providers) {
 
-            if (providers.length) {
-                $('.lnkBrowseAllImages', page).removeClass('hide');
-            } else {
-                $('.lnkBrowseAllImages', page).addClass('hide');
+            var btnBrowseAllImages = page.querySelectorAll('.btnBrowseAllImages');
+            for (var i = 0, length = btnBrowseAllImages.length; i < length; i++) {
+
+                if (providers.length) {
+                    btnBrowseAllImages[i].classList.remove('hide');
+                } else {
+                    btnBrowseAllImages[i].classList.add('hide');
+                }
             }
 
-            ApiClient.getItemImageInfos(currentItem.Id).done(function (imageInfos) {
+
+            ApiClient.getItemImageInfos(currentItem.Id).then(function (imageInfos) {
 
                 renderStandardImages(page, item, imageInfos, providers);
                 renderBackdrops(page, item, imageInfos, providers);
@@ -45,6 +59,27 @@
                 Dashboard.hideLoadingMsg();
             });
         });
+    }
+
+    function getImageUrl(item, type, index, options) {
+
+        options = options || {};
+        options.type = type;
+        options.index = index;
+
+        if (type == 'Backdrop') {
+            options.tag = item.BackdropImageTags[index];
+        } else if (type == 'Screenshot') {
+            options.tag = item.ScreenshotImageTags[index];
+        } else if (type == 'Primary') {
+            options.tag = item.PrimaryImageTag || item.ImageTags[type];
+        } else {
+            options.tag = item.ImageTags[type];
+        }
+
+        // For search hints
+        return ApiClient.getScaledImageUrl(item.Id || item.ItemId, options);
+
     }
 
     function renderImages(page, item, images, imageProviders, elem) {
@@ -60,7 +95,7 @@
 
             var height = 150;
 
-            html += '<div style="height:' + height + 'px;vertical-align:top;background-repeat:no-repeat;background-position:center bottom;background-size:contain;background-image:url(\'' + LibraryBrowser.getImageUrl(currentItem, image.ImageType, image.ImageIndex, { height: height }) + '\');"></div>';
+            html += '<div style="height:' + height + 'px;vertical-align:top;background-repeat:no-repeat;background-position:center bottom;background-size:contain;" class="lazy" data-src="' + getImageUrl(currentItem, image.ImageType, image.ImageIndex, { height: height }) + '"></div>';
 
             html += '<div class="editorTileFooter">';
 
@@ -79,24 +114,24 @@
             if (image.ImageType == "Backdrop" || image.ImageType == "Screenshot") {
 
                 if (i > 0) {
-                    html += '<paper-icon-button class="btnMoveImage" icon="chevron-left" data-imagetype="' + image.ImageType + '" data-index="' + image.ImageIndex + '" data-newindex="' + (image.ImageIndex - 1) + '" title="' + Globalize.translate('ButtonMoveLeft') + '"></paper-icon-button>';
+                    html += '<button is="paper-icon-button-light" class="btnMoveImage autoSize" data-imagetype="' + image.ImageType + '" data-index="' + image.ImageIndex + '" data-newindex="' + (image.ImageIndex - 1) + '" title="' + Globalize.translate('ButtonMoveLeft') + '"><i class="md-icon">chevron_left</i></button>';
                 } else {
-                    html += '<paper-icon-button icon="chevron-left" disabled title="' + Globalize.translate('ButtonMoveLeft') + '"></paper-icon-button>';
+                    html += '<button is="paper-icon-button-light" class="autoSize" disabled title="' + Globalize.translate('ButtonMoveLeft') + '"><i class="md-icon">chevron_left</i></button>';
                 }
 
                 if (i < length - 1) {
-                    html += '<paper-icon-button class="btnMoveImage" icon="chevron-right" data-imagetype="' + image.ImageType + '" data-index="' + image.ImageIndex + '" data-newindex="' + (image.ImageIndex + 1) + '" title="' + Globalize.translate('ButtonMoveRight') + '"></paper-icon-button>';
+                    html += '<button is="paper-icon-button-light" class="btnMoveImage autoSize" data-imagetype="' + image.ImageType + '" data-index="' + image.ImageIndex + '" data-newindex="' + (image.ImageIndex + 1) + '" title="' + Globalize.translate('ButtonMoveRight') + '"><i class="md-icon">chevron_right</i></button>';
                 } else {
-                    html += '<paper-icon-button icon="chevron-right" disabled title="' + Globalize.translate('ButtonMoveRight') + '"></paper-icon-button>';
+                    html += '<button is="paper-icon-button-light" class="autoSize" disabled title="' + Globalize.translate('ButtonMoveRight') + '"><i class="md-icon">chevron_right</i></button>';
                 }
             }
             else {
                 if (imageProviders.length) {
-                    html += '<paper-icon-button icon="search" data-imagetype="' + image.ImageType + '" class="btnSearchImages" title="' + Globalize.translate('ButtonBrowseOnlineImages') + '"></paper-icon-button>';
+                    html += '<button is="paper-icon-button-light" data-imagetype="' + image.ImageType + '" class="btnSearchImages autoSize" title="' + Globalize.translate('ButtonBrowseOnlineImages') + '"><i class="md-icon">search</i></button>';
                 }
             }
 
-            html += '<paper-icon-button icon="delete" data-imagetype="' + image.ImageType + '" data-index="' + (image.ImageIndex != null ? image.ImageIndex : "null") + '" class="btnDeleteImage" title="' + Globalize.translate('Delete') + '"></paper-icon-button>';
+            html += '<button is="paper-icon-button-light" data-imagetype="' + image.ImageType + '" data-index="' + (image.ImageIndex != null ? image.ImageIndex : "null") + '" class="btnDeleteImage autoSize" title="' + Globalize.translate('Delete') + '"><i class="md-icon">delete</i></button>';
 
             html += '</div>';
 
@@ -106,35 +141,38 @@
         }
 
         elem.innerHTML = html;
+        ImageLoader.lazyChildren(elem);
 
-        $('.btnSearchImages', elem).on('click', function () {
+        addListeners(elem.querySelectorAll('.btnSearchImages'), 'click', function () {
             showImageDownloader(page, this.getAttribute('data-imagetype'));
         });
 
-        $('.btnDeleteImage', elem).on('click', function () {
-
+        addListeners(elem.querySelectorAll('.btnDeleteImage'), 'click', function () {
             var type = this.getAttribute('data-imagetype');
             var index = this.getAttribute('data-index');
             index = index == "null" ? null : parseInt(index);
-            Dashboard.confirm(Globalize.translate('DeleteImageConfirmation'), Globalize.translate('HeaderDeleteImage'), function (result) {
 
-                if (result) {
-                    ApiClient.deleteItemImage(currentItem.Id, type, index).done(function () {
+            require(['confirm'], function (confirm) {
 
+                confirm(Globalize.translate('DeleteImageConfirmation'), Globalize.translate('HeaderDeleteImage')).then(function () {
+
+                    ApiClient.deleteItemImage(currentItem.Id, type, index).then(function () {
+
+                        hasChanges = true;
                         reload(page);
 
                     });
-                }
-
+                });
             });
         });
 
-        $('.btnMoveImage', elem).on('click', function () {
+        addListeners(elem.querySelectorAll('.btnMoveImage'), 'click', function () {
             var type = this.getAttribute('data-imagetype');
             var index = parseInt(this.getAttribute('data-index'));
             var newIndex = parseInt(this.getAttribute('data-newindex'));
-            ApiClient.updateItemImageIndex(currentItem.Id, type, index, newIndex).done(function () {
+            ApiClient.updateItemImageIndex(currentItem.Id, type, index, newIndex).then(function () {
 
+                hasChanges = true;
                 reload(page);
 
             });
@@ -160,10 +198,10 @@
         });
 
         if (images.length) {
-            $('#backdropsContainer', page).show();
+            page.querySelector('#backdropsContainer', page).classList.remove('hide');
             renderImages(page, item, images, imageProviders, page.querySelector('#backdrops'));
         } else {
-            $('#backdropsContainer', page).hide();
+            page.querySelector('#backdropsContainer', page).classList.add('hide');
         }
     }
 
@@ -177,75 +215,79 @@
         });
 
         if (images.length) {
-            $('#screenshotsContainer', page).show();
-            renderImages(page, item, images, imageProviders, $('#screenshots', page));
+            page.querySelector('#screenshotsContainer', page).classList.remove('hide');
+            renderImages(page, item, images, imageProviders, page.querySelector('#screenshots'));
         } else {
-            $('#screenshotsContainer', page).hide();
+            page.querySelector('#screenshotsContainer', page).classList.add('hide');
         }
     }
 
     function showImageDownloader(page, imageType) {
-        require(['components/imagedownloader/imagedownloader'], function () {
+        require(['components/imagedownloader/imagedownloader'], function (ImageDownloader) {
 
-            ImageDownloader.show(currentItem.Id, currentItem.Type, imageType).done(function (hasChanges) {
+            ImageDownloader.show(currentItem.Id, currentItem.Type, imageType).then(function () {
 
-                if (hasChanges) {
-                    reload(page);
-                }
+                hasChanges = true;
+                reload(page);
             });
         });
     }
 
-    function initEditor(page) {
+    function initEditor(page, options) {
 
-        $('.btnOpenUploadMenu', page).on('click', function () {
+        addListeners(page.querySelectorAll('.btnOpenUploadMenu'), 'click', function () {
+            var imageType = this.getAttribute('data-imagetype');
 
-            require(['components/imageuploader/imageuploader'], function () {
+            require(['components/imageuploader/imageuploader'], function (imageUploader) {
 
-                ImageUploader.show(currentItem.Id).done(function (hasChanges) {
+                imageUploader.show(currentItem.Id, {
 
-                    if (hasChanges) {
+                    theme: options.theme,
+                    imageType: imageType
+
+                }).then(function (hasChanged) {
+
+                    if (hasChanged) {
+                        hasChanges = true;
                         reload(page);
                     }
                 });
             });
         });
 
-        $('.btnBrowseAllImages', page).on('click', function () {
+        addListeners(page.querySelectorAll('.btnBrowseAllImages'), 'click', function () {
             showImageDownloader(page, this.getAttribute('data-imagetype') || 'Primary');
         });
     }
 
-    function showEditor(itemId) {
+    function showEditor(itemId, options, resolve, reject) {
+
+        options = options || {};
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.ajax({
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'components/imageeditor/imageeditor.template.html', true);
 
-            type: 'GET',
-            url: 'components/imageeditor/imageeditor.template.html'
+        xhr.onload = function (e) {
 
-        }).done(function (template) {
+            var template = this.response;
+            ApiClient.getItem(Dashboard.getCurrentUserId(), itemId).then(function (item) {
 
-            ApiClient.getItem(Dashboard.getCurrentUserId(), itemId).done(function (item) {
+                var dlg = dialogHelper.createDialog({
+                    size: 'fullscreen-border',
+                    removeOnClose: true
+                });
 
-                var dlg = document.createElement('paper-dialog');
+                var theme = options.theme || 'b';
 
-                dlg.setAttribute('with-backdrop', 'with-backdrop');
-                dlg.setAttribute('role', 'alertdialog');
-                // without this safari will scroll the background instead of the dialog contents
-                dlg.setAttribute('modal', 'modal');
-                // seeing max call stack size exceeded in the debugger with this
-                dlg.setAttribute('noAutoFocus', 'noAutoFocus');
-                dlg.entryAnimation = 'scale-up-animation';
-                dlg.exitAnimation = 'fade-out-animation';
-                dlg.classList.add('fullscreen-editor-paper-dialog');
-                dlg.classList.add('ui-body-b');
-                dlg.classList.add('smoothScrollY');
+                dlg.classList.add('ui-body-' + theme);
+                dlg.classList.add('background-theme-' + theme);
+                dlg.classList.add('popupEditor');
 
                 var html = '';
                 html += '<h2 class="dialogHeader">';
-                html += '<paper-fab icon="arrow-back" class="mini btnCloseDialog"></paper-fab>';
+                html += '<button type="button" is="emby-button" icon="arrow-back" class="fab mini btnCloseDialog autoSize" tabindex="-1"><i class="md-icon">&#xE5C4;</i></button>';
                 html += '<div style="display:inline-block;margin-left:.6em;vertical-align:middle;">' + item.Name + '</div>';
                 html += '</h2>';
 
@@ -256,41 +298,44 @@
                 dlg.innerHTML = html;
                 document.body.appendChild(dlg);
 
-                initEditor(dlg);
+                initEditor(dlg, options);
 
                 // Has to be assigned a z-index after the call to .open() 
-                $(dlg).on('iron-overlay-closed', onDialogClosed);
+                dlg.addEventListener('close', function () {
 
-                PaperDialogHelper.openWithHash(dlg, 'imageeditor');
+                    Dashboard.hideLoadingMsg();
+
+                    if (hasChanges) {
+                        resolve();
+                    } else {
+                        reject();
+                    }
+                });
+
+                dialogHelper.open(dlg);
 
                 var editorContent = dlg.querySelector('.editorContent');
                 reload(editorContent, item);
 
-                $('.btnCloseDialog', dlg).on('click', closeDialog);
+                dlg.querySelector('.btnCloseDialog').addEventListener('click', function () {
+
+                    dialogHelper.close(dlg);
+                });
             });
-        });
+        }
+
+        xhr.send();
     }
 
-    function closeDialog() {
+    return {
+        show: function (itemId, options) {
 
-        history.back();
-    }
+            return new Promise(function (resolve, reject) {
 
-    function onDialogClosed() {
+                hasChanges = false;
 
-        $(this).remove();
-        Dashboard.hideLoadingMsg();
-    }
-
-    window.ImageEditor = {
-        show: function (itemId) {
-
-            require(['components/paperdialoghelper'], function () {
-
-                Dashboard.importCss('css/metadataeditor.css');
-                showEditor(itemId);
+                showEditor(itemId, options, resolve, reject);
             });
         }
     };
-
-})(jQuery, document, window, window.FileReader, escape);
+});

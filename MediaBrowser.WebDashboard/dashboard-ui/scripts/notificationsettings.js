@@ -1,10 +1,10 @@
-﻿(function () {
+﻿define(['jQuery'], function ($) {
 
     function reload(page) {
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getJSON(ApiClient.getUrl("Notifications/Types")).done(function (list) {
+        ApiClient.getJSON(ApiClient.getUrl("Notifications/Types")).then(function (list) {
 
             var html = '';
 
@@ -32,10 +32,10 @@
                 itemHtml += '<paper-icon-item>';
 
                 if (i.Enabled) {
-                    itemHtml += '<paper-fab class="listAvatar blue" icon="notifications-active" item-icon></paper-fab>';
+                    itemHtml += '<paper-fab mini class="blue" icon="notifications-active" item-icon></paper-fab>';
                 }
                 else {
-                    itemHtml += '<paper-fab class="listAvatar" style="background-color:#999;" icon="notifications-off" item-icon></paper-fab>';
+                    itemHtml += '<paper-fab mini style="background-color:#999;" icon="notifications-off" item-icon></paper-fab>';
                 }
 
                 itemHtml += '<paper-item-body two-line>';
@@ -43,7 +43,7 @@
 
                 itemHtml += '</paper-item-body>';
 
-                itemHtml += '<paper-icon-button icon="mode-edit"></paper-icon-button>';
+                itemHtml += '<button type="button" is="paper-icon-button-light"><iron-icon icon="mode-edit"></iron-icon></button>';
 
                 itemHtml += '</paper-icon-item>';
                 itemHtml += '</a>';
@@ -52,7 +52,9 @@
 
             }).join('');
 
-            html += '</div>';
+            if (list.length) {
+                html += '</div>';
+            }
 
             $('.notificationList', page).html(html).trigger('create');
 
@@ -60,11 +62,27 @@
         });
     }
 
-    $(document).on('pageshowready', "#notificationSettingsPage", function () {
+    function getTabs() {
+        return [
+        {
+            href: 'notificationsettings.html',
+            name: Globalize.translate('TabNotifications')
+        },
+        {
+            href: 'appservices.html?context=notifications',
+            name: Globalize.translate('TabServices')
+        }];
+    }
 
-        var page = this;
+    return function (view, params) {
 
-        reload(page);
-    });
+        view.addEventListener('viewshow', function () {
 
-})(jQuery, window);
+            LibraryMenu.setTabs('notifications', 0, getTabs);
+
+            require(['paper-fab', 'paper-item-body', 'paper-icon-item'], function () {
+                reload(view);
+            });
+        });
+    };
+});

@@ -126,11 +126,6 @@
     color: #ccc;
 }
 
-/* Fixes button running outside of list */
-.btnRemoveFromEditorList .ui-btn-inner {
-    padding-right: 0 !important;
-}
-
 .chkAirDay {
     padding: 0 2em 1em 0;
 }
@@ -252,6 +247,13 @@
 
 .editorTileFooter {
     padding: .5em;
+}
+
+.ui-body-a .editorTileFooter {
+    background-color: #fff;
+}
+
+.ui-body-b .editorTileFooter {
     background-color: #282828;
 }
 
@@ -404,10 +406,6 @@
     }
 }
 
-.popupIdentify form, .identificationSearchResults {
-    overflow-y: auto;
-}
-
 .collectionItemSearchResults {
     max-height: 65%;
     overflow-y: auto;
@@ -416,20 +414,12 @@
 
 @media all and (min-height: 500px) {
 
-    .popupIdentify form, .identificationSearchResults {
-        height: 350px;
-    }
-
     .subtitleViewerContent {
         height: 400px;
     }
 }
 
 @media all and (min-height: 600px) {
-
-    .popupIdentify form, .identificationSearchResults {
-        height: 450px;
-    }
 
     .collectionItemSearchResults {
         max-height: 70%;
@@ -442,10 +432,6 @@
 
 @media all and (min-height: 700px) {
 
-    .popupIdentify form, .identificationSearchResults {
-        height: 550px;
-    }
-
     .collectionItemSearchResults {
         max-height: 75%;
     }
@@ -457,18 +443,7 @@
 
 @media all and (min-height: 800px) {
 
-    .popupIdentify form, .identificationSearchResults {
-        height: 600px;
-    }
-
     .collectionItemSearchResults {
         max-height: 80%;
-    }
-}
-
-@media all and (min-height: 900px) {
-
-    .popupIdentify form, .identificationSearchResults {
-        height: 700px;
     }
 }

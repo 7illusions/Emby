@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
@@ -11,8 +10,10 @@ using MediaBrowser.Server.Implementations.Photos;
 using MoreLinq;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.UserViews
 {
@@ -52,9 +53,7 @@ namespace MediaBrowser.Server.Implementations.UserViews
                 return new List<BaseItem>();
             }
 
-            if (string.Equals(view.ViewType, SpecialFolder.GameGenre, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(view.ViewType, SpecialFolder.MusicGenre, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(view.ViewType, SpecialFolder.MovieGenre, StringComparison.OrdinalIgnoreCase) ||
+            if (string.Equals(view.ViewType, SpecialFolder.MovieGenre, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(view.ViewType, SpecialFolder.TvGenre, StringComparison.OrdinalIgnoreCase))
             {
                 var userItemsResult = await view.GetItems(new InternalItemsQuery
@@ -70,7 +69,7 @@ namespace MediaBrowser.Server.Implementations.UserViews
 
             var result = await view.GetItems(new InternalItemsQuery
             {
-                User = (view.UserId.HasValue ? _userManager.GetUserById(view.UserId.Value) : null),
+                User = view.UserId.HasValue ? _userManager.GetUserById(view.UserId.Value) : null,
                 CollapseBoxSetItems = false,
                 Recursive = recursive,
                 ExcludeItemTypes = new[] { "UserView", "CollectionFolder" }
@@ -86,11 +85,6 @@ namespace MediaBrowser.Server.Implementations.UserViews
                     if (series != null)
                     {
                         return series;
-                    }
-                    var episodeSeason = episode.Season;
-                    if (episodeSeason != null)
-                    {
-                        return episodeSeason;
                     }
 
                     return episode;
@@ -130,12 +124,12 @@ namespace MediaBrowser.Server.Implementations.UserViews
             return GetFinalItems(items.Where(i => i.HasImage(ImageType.Primary)).ToList());
         }
 
-        public override bool Supports(IHasImages item)
+        protected override bool Supports(IHasImages item)
         {
             var view = item as UserView;
             if (view != null)
             {
-                return (IsUsingCollectionStrip(view));
+                return IsUsingCollectionStrip(view);
             }
 
             return false;
@@ -154,20 +148,23 @@ namespace MediaBrowser.Server.Implementations.UserViews
                 CollectionType.HomeVideos,
                 CollectionType.BoxSets,
                 CollectionType.Playlists,
-                CollectionType.Photos
+                CollectionType.Photos,
+                string.Empty
             };
 
             return collectionStripViewTypes.Contains(view.ViewType ?? string.Empty);
         }
 
-        protected override async Task<bool> CreateImage(IHasImages item, List<BaseItem> itemsWithImages, string outputPath, ImageType imageType, int imageIndex)
+        protected override async Task<string> CreateImage(IHasImages item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
         {
+            var outputPath = Path.ChangeExtension(outputPathWithoutExtension, ".png");
+
             var view = (UserView)item;
             if (imageType == ImageType.Primary && IsUsingCollectionStrip(view))
             {
                 if (itemsWithImages.Count == 0)
                 {
-                    return false;
+                    return null;
                 }
 
                 return await CreateThumbCollage(item, itemsWithImages, outputPath, 960, 540).ConfigureAwait(false);

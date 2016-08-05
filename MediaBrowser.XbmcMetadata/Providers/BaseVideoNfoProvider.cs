@@ -1,13 +1,12 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.XbmcMetadata.Parsers;
 using MediaBrowser.XbmcMetadata.Savers;
-using System.IO;
 using System.Linq;
 using System.Threading;
+using CommonIO;
 
 namespace MediaBrowser.XbmcMetadata.Providers
 {
@@ -41,7 +40,7 @@ namespace MediaBrowser.XbmcMetadata.Providers
             }
         }
 
-        protected override FileSystemInfo GetXmlFile(ItemInfo info, IDirectoryService directoryService)
+        protected override FileSystemMetadata GetXmlFile(ItemInfo info, IDirectoryService directoryService)
         {
             return MovieNfoSaver.GetMovieSavePaths(info, FileSystem)
                 .Select(directoryService.GetFile)

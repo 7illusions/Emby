@@ -7,7 +7,6 @@ using MediaBrowser.Common.Implementations.ScheduledTasks;
 using MediaBrowser.Common.Implementations.Security;
 using MediaBrowser.Common.Implementations.Serialization;
 using MediaBrowser.Common.Implementations.Updates;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Common.Progress;
@@ -30,6 +29,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Common.Implementations
 {
@@ -132,7 +132,7 @@ namespace MediaBrowser.Common.Implementations
         /// Gets the HTTP client.
         /// </summary>
         /// <value>The HTTP client.</value>
-        protected IHttpClient HttpClient { get; private set; }
+        public IHttpClient HttpClient { get; private set; }
         /// <summary>
         /// Gets the network manager.
         /// </summary>
@@ -199,7 +199,7 @@ namespace MediaBrowser.Common.Implementations
             ILogManager logManager, 
             IFileSystem fileSystem)
         {
-			XmlSerializer = new MediaBrowser.Common.Implementations.Serialization.XmlSerializer (fileSystem);
+			XmlSerializer = new XmlSerializer (fileSystem, logManager.GetLogger("XmlSerializer"));
             FailedAssemblies = new List<string>();
 
             ApplicationPaths = applicationPaths;
@@ -250,7 +250,7 @@ namespace MediaBrowser.Common.Implementations
             progress.Report(15);
 
             var innerProgress = new ActionableProgress<double>();
-            innerProgress.RegisterAction(p => progress.Report((.8 * p) + 15));
+            innerProgress.RegisterAction(p => progress.Report(.8 * p + 15));
 
             await RegisterResources(innerProgress).ConfigureAwait(false);
 
@@ -321,7 +321,7 @@ namespace MediaBrowser.Common.Implementations
 
         protected virtual IJsonSerializer CreateJsonSerializer()
         {
-            return new JsonSerializer(FileSystemManager);
+            return new JsonSerializer(FileSystemManager, LogManager.GetLogger("JsonSerializer"));
         }
 
         private void SetHttpLimit()
@@ -415,6 +415,8 @@ namespace MediaBrowser.Common.Implementations
         /// </summary>
         protected virtual void FindParts()
         {
+            RegisterModules();
+            
             ConfigurationManager.AddParts(GetExports<IConfigurationFactory>());
             Plugins = GetExports<IPlugin>();
         }
@@ -450,7 +452,7 @@ namespace MediaBrowser.Common.Implementations
 
 			RegisterSingleInstance<IApplicationPaths>(ApplicationPaths);
 
-			TaskManager = new TaskManager(ApplicationPaths, JsonSerializer, Logger, FileSystemManager);
+			TaskManager = new TaskManager(ApplicationPaths, JsonSerializer, LogManager.GetLogger("TaskManager"), FileSystemManager);
 
 			RegisterSingleInstance(JsonSerializer);
 			RegisterSingleInstance(XmlSerializer);
@@ -462,7 +464,7 @@ namespace MediaBrowser.Common.Implementations
 
 			RegisterSingleInstance(FileSystemManager);
 
-			HttpClient = new HttpClientManager.HttpClientManager(ApplicationPaths, Logger, FileSystemManager);
+            HttpClient = new HttpClientManager.HttpClientManager(ApplicationPaths, LogManager.GetLogger("HttpClient"), FileSystemManager);
 			RegisterSingleInstance(HttpClient);
 
 			NetworkManager = CreateNetworkManager(LogManager.GetLogger("NetworkManager"));
@@ -471,7 +473,7 @@ namespace MediaBrowser.Common.Implementations
 			SecurityManager = new PluginSecurityManager(this, HttpClient, JsonSerializer, ApplicationPaths, LogManager);
 			RegisterSingleInstance(SecurityManager);
 
-			InstallationManager = new InstallationManager(Logger, this, ApplicationPaths, HttpClient, JsonSerializer, SecurityManager, ConfigurationManager, FileSystemManager);
+            InstallationManager = new InstallationManager(LogManager.GetLogger("InstallationManager"), this, ApplicationPaths, HttpClient, JsonSerializer, SecurityManager, ConfigurationManager, FileSystemManager);
 			RegisterSingleInstance(InstallationManager);
 
 			ZipClient = new ZipClient(FileSystemManager);
@@ -480,7 +482,6 @@ namespace MediaBrowser.Common.Implementations
 			IsoManager = new IsoManager();
 			RegisterSingleInstance(IsoManager);
 
-			RegisterModules();
 			return Task.FromResult (true);
         }
 
@@ -523,6 +524,14 @@ namespace MediaBrowser.Common.Implementations
             }
             catch (ReflectionTypeLoadException ex)
             {
+                if (ex.LoaderExceptions != null)
+                {
+                    foreach (var loaderException in ex.LoaderExceptions)
+                    {
+                        Logger.Error("LoaderException: " + loaderException.Message);
+                    }
+                }
+                
                 // If it fails we can still get a list of the Types it was able to resolve
                 return ex.Types.Where(t => t != null);
             }
@@ -543,7 +552,7 @@ namespace MediaBrowser.Common.Implementations
             }
             catch (Exception ex)
             {
-                Logger.Error("Error creating {0}", ex, type.Name);
+                Logger.ErrorException("Error creating {0}", ex, type.Name);
 
                 throw;
             }
@@ -562,7 +571,7 @@ namespace MediaBrowser.Common.Implementations
             }
             catch (Exception ex)
             {
-                Logger.Error("Error creating {0}", ex, type.Name);
+                Logger.ErrorException("Error creating {0}", ex, type.Name);
                 // Don't blow up in release mode
                 return null;
             }
@@ -651,7 +660,7 @@ namespace MediaBrowser.Common.Implementations
         {
             try
             {
-                return Assembly.Load(File.ReadAllBytes((file)));
+                return Assembly.Load(File.ReadAllBytes(file));
             }
             catch (Exception ex)
             {

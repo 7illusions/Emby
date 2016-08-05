@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace MediaBrowser.Api.Reports
 {
 	public enum HeaderMetadata
@@ -43,7 +39,6 @@ namespace MediaBrowser.Api.Reports
 		MusicArtist,
 		AudioAlbum,
         Locked,
-        Unidentified,
         ImagePrimary,
         ImageBackdrop,
         ImageLogo,

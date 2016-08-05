@@ -3,7 +3,7 @@ using MediaBrowser.Model.Logging;
 using System;
 using System.IO;
 using System.Text;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.Common.Implementations.Devices
 {

@@ -10,7 +10,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+using CommonIO;
+using Microsoft.Win32;
 
 namespace MediaBrowser.Common.Implementations.ScheduledTasks
 {
@@ -53,6 +54,25 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
         private ILogger Logger { get; set; }
         private readonly IFileSystem _fileSystem;
 
+        private bool _suspendTriggers;
+
+        public bool SuspendTriggers
+        {
+            get { return _suspendTriggers; }
+            set
+            {
+                Logger.Info("Setting SuspendTriggers to {0}", value);
+                var executeQueued = _suspendTriggers && !value;
+
+                _suspendTriggers = value;
+
+                if (executeQueued)
+                {
+                    ExecuteQueuedTasks();
+                }
+            }
+        }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="TaskManager" /> class.
         /// </summary>
@@ -68,6 +88,26 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
             _fileSystem = fileSystem;
 
             ScheduledTasks = new IScheduledTaskWorker[] { };
+        }
+
+        private void BindToSystemEvent()
+        {
+            try
+            {
+                SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
+            }
+            catch
+            {
+
+            }
+        }
+
+        void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            foreach (var task in ScheduledTasks)
+            {
+                task.ReloadTriggerEvents();
+            }
         }
 
         /// <summary>
@@ -126,7 +166,43 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
         {
             QueueScheduledTask<T>(new TaskExecutionOptions());
         }
-        
+
+        public void QueueIfNotRunning<T>()
+            where T : IScheduledTask
+        {
+            var task = ScheduledTasks.First(t => t.ScheduledTask.GetType() == typeof(T));
+
+            if (task.State != TaskState.Running)
+            {
+                QueueScheduledTask<T>(new TaskExecutionOptions());
+            }
+        }
+
+        public void Execute<T>()
+            where T : IScheduledTask
+        {
+            var scheduledTask = ScheduledTasks.FirstOrDefault(t => t.ScheduledTask.GetType() == typeof(T));
+
+            if (scheduledTask == null)
+            {
+                Logger.Error("Unable to find scheduled task of type {0} in Execute.", typeof(T).Name);
+            }
+            else
+            {
+                var type = scheduledTask.ScheduledTask.GetType();
+
+                Logger.Info("Queueing task {0}", type.Name);
+
+                lock (_taskQueue)
+                {
+                    if (scheduledTask.State == TaskState.Idle)
+                    {
+                        Execute(scheduledTask, new TaskExecutionOptions());
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Queues the scheduled task.
         /// </summary>
@@ -159,7 +235,7 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
 
             lock (_taskQueue)
             {
-                if (task.State == TaskState.Idle)
+                if (task.State == TaskState.Idle && !SuspendTriggers)
                 {
                     Execute(task, options);
                     return;
@@ -181,6 +257,8 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
             myTasks.AddRange(list.Select(t => new ScheduledTaskWorker(t, ApplicationPaths, this, JsonSerializer, Logger, _fileSystem)));
 
             ScheduledTasks = myTasks.ToArray();
+
+            BindToSystemEvent();
         }
 
         /// <summary>
@@ -249,6 +327,13 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
         /// </summary>
         private void ExecuteQueuedTasks()
         {
+            if (SuspendTriggers)
+            {
+                return;
+            }
+
+            Logger.Info("ExecuteQueuedTasks");
+
             // Execute queued tasks
             lock (_taskQueue)
             {

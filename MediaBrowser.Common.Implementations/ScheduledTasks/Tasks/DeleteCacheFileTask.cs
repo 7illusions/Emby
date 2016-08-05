@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.ScheduledTasks;
 using MediaBrowser.Model.Logging;
 using System;
@@ -8,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Common.Implementations.ScheduledTasks.Tasks
 {
@@ -71,7 +71,7 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks.Tasks
 
             progress.Report(90);
 
-            minDateModified = DateTime.UtcNow.AddDays(-2);
+            minDateModified = DateTime.UtcNow.AddDays(-1);
 
             try
             {
@@ -122,12 +122,23 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks.Tasks
 
         private void DeleteEmptyFolders(string parent)
         {
-            foreach (var directory in Directory.GetDirectories(parent))
+            foreach (var directory in _fileSystem.GetDirectoryPaths(parent))
             {
                 DeleteEmptyFolders(directory);
-                if (!Directory.EnumerateFileSystemEntries(directory).Any())
+                if (!_fileSystem.GetFileSystemEntryPaths(directory).Any())
                 {
-					_fileSystem.DeleteDirectory(directory, false);
+                    try
+                    {
+                        _fileSystem.DeleteDirectory(directory, false);
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        _logger.ErrorException("Error deleting directory {0}", ex, directory);
+                    }
+                    catch (IOException ex)
+                    {
+                        _logger.ErrorException("Error deleting directory {0}", ex, directory);
+                    }
                 }
             }
         }
@@ -137,6 +148,10 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks.Tasks
             try
             {
                 _fileSystem.DeleteFile(path);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.ErrorException("Error deleting file {0}", ex, path);
             }
             catch (IOException ex)
             {

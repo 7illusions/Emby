@@ -8,7 +8,8 @@ using MediaBrowser.Model.Logging;
 using System;
 using System.IO;
 using System.Linq;
-using MediaBrowser.Common.IO;
+using CommonIO;
+using MediaBrowser.Controller.Configuration;
 
 namespace Emby.Drawing.ImageMagick
 {
@@ -16,17 +17,19 @@ namespace Emby.Drawing.ImageMagick
     {
         private readonly ILogger _logger;
         private readonly IApplicationPaths _appPaths;
-		private readonly IHttpClient _httpClient;
-		private readonly IFileSystem _fileSystem;
+        private readonly IHttpClient _httpClient;
+        private readonly IFileSystem _fileSystem;
+        private readonly IServerConfigurationManager _config;
 
-        public ImageMagickEncoder(ILogger logger, IApplicationPaths appPaths, IHttpClient httpClient, IFileSystem fileSystem)
+        public ImageMagickEncoder(ILogger logger, IApplicationPaths appPaths, IHttpClient httpClient, IFileSystem fileSystem, IServerConfigurationManager config)
         {
             _logger = logger;
             _appPaths = appPaths;
             _httpClient = httpClient;
-			_fileSystem = fileSystem;
+            _fileSystem = fileSystem;
+            _config = config;
 
-            LogImageMagickVersion();
+            LogVersion();
         }
 
         public string[] SupportedInputFormats
@@ -67,11 +70,16 @@ namespace Emby.Drawing.ImageMagick
             }
         }
 
-        private void LogImageMagickVersion()
+        private void LogVersion()
         {
-            _logger.Info("ImageMagick version: " + Wand.VersionString);
+            _logger.Info("ImageMagick version: " + GetVersion());
             TestWebp();
             Wand.SetMagickThreadCount(1);
+        }
+
+        public static string GetVersion()
+        {
+            return Wand.VersionString;
         }
 
         private bool _webpAvailable = true;
@@ -80,16 +88,16 @@ namespace Emby.Drawing.ImageMagick
             try
             {
                 var tmpPath = Path.Combine(_appPaths.TempDirectory, Guid.NewGuid() + ".webp");
-				_fileSystem.CreateDirectory(Path.GetDirectoryName(tmpPath));
+                _fileSystem.CreateDirectory(Path.GetDirectoryName(tmpPath));
 
                 using (var wand = new MagickWand(1, 1, new PixelWand("none", 1)))
                 {
                     wand.SaveImage(tmpPath);
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                _logger.ErrorException("Error loading webp: ", ex);
+                //_logger.ErrorException("Error loading webp: ", ex);
                 _webpAvailable = false;
             }
         }
@@ -130,17 +138,27 @@ namespace Emby.Drawing.ImageMagick
                 string.Equals(ext, ".webp", StringComparison.OrdinalIgnoreCase);
         }
 
-        public void EncodeImage(string inputPath, string outputPath, int width, int height, int quality, ImageProcessingOptions options)
+        public void EncodeImage(string inputPath, string outputPath, bool autoOrient, int width, int height, int quality, ImageProcessingOptions options, ImageFormat selectedOutputFormat)
         {
+            // Even if the caller specified 100, don't use it because it takes forever
+            quality = Math.Min(quality, 99);
+
             if (string.IsNullOrWhiteSpace(options.BackgroundColor) || !HasTransparency(inputPath))
             {
                 using (var originalImage = new MagickWand(inputPath))
                 {
-                    originalImage.CurrentImage.ResizeImage(width, height);
+                    ScaleImage(originalImage, width, height);
 
+                    if (autoOrient)
+                    {
+                        AutoOrientImage(originalImage);
+                    }
+
+                    AddForegroundLayer(originalImage, options);
                     DrawIndicator(originalImage, width, height, options);
 
                     originalImage.CurrentImage.CompressionQuality = quality;
+                    originalImage.CurrentImage.StripImage();
 
                     originalImage.SaveImage(outputPath);
                 }
@@ -151,16 +169,68 @@ namespace Emby.Drawing.ImageMagick
                 {
                     using (var originalImage = new MagickWand(inputPath))
                     {
-                        originalImage.CurrentImage.ResizeImage(width, height);
+                        ScaleImage(originalImage, width, height);
+
+                        if (autoOrient)
+                        {
+                            AutoOrientImage(originalImage);
+                        }
 
                         wand.CurrentImage.CompositeImage(originalImage, CompositeOperator.OverCompositeOp, 0, 0);
+
+                        AddForegroundLayer(wand, options);
                         DrawIndicator(wand, width, height, options);
 
                         wand.CurrentImage.CompressionQuality = quality;
+                        wand.CurrentImage.StripImage();
 
                         wand.SaveImage(outputPath);
                     }
                 }
+            }
+        }
+
+        private void AddForegroundLayer(MagickWand wand, ImageProcessingOptions options)
+        {
+            if (string.IsNullOrWhiteSpace(options.ForegroundLayer))
+            {
+                return;
+            }
+
+            Double opacity;
+            if (!Double.TryParse(options.ForegroundLayer, out opacity)) opacity = .4;
+
+            using (var pixel = new PixelWand("#000", opacity))
+            using (var overlay = new MagickWand(wand.CurrentImage.Width, wand.CurrentImage.Height, pixel))
+            {
+                wand.CurrentImage.CompositeImage(overlay, CompositeOperator.OverCompositeOp, 0, 0);
+            }
+        }
+
+        private void AutoOrientImage(MagickWand wand)
+        {
+            wand.CurrentImage.AutoOrientImage();
+        }
+
+        public static void RotateImage(MagickWand wand, float angle)
+        {
+            using (var pixelWand = new PixelWand("none", 1))
+            {
+                wand.CurrentImage.RotateImage(pixelWand, angle);
+            }
+        }
+
+        private void ScaleImage(MagickWand wand, int width, int height)
+        {
+            var highQuality = false;
+
+            if (highQuality)
+            {
+                wand.CurrentImage.ResizeImage(width, height);
+            }
+            else
+            {
+                wand.CurrentImage.ScaleImage(width, height);
             }
         }
 
@@ -184,7 +254,7 @@ namespace Emby.Drawing.ImageMagick
                 {
                     var currentImageSize = new ImageSize(imageWidth, imageHeight);
 
-					var task = new PlayedIndicatorDrawer(_appPaths, _httpClient, _fileSystem).DrawPlayedIndicator(wand, currentImageSize);
+                    var task = new PlayedIndicatorDrawer(_appPaths, _httpClient, _fileSystem).DrawPlayedIndicator(wand, currentImageSize);
                     Task.WaitAll(task);
                 }
                 else if (options.UnplayedCount.HasValue)
@@ -212,15 +282,15 @@ namespace Emby.Drawing.ImageMagick
 
             if (ratio >= 1.4)
             {
-                new StripCollageBuilder(_appPaths, _fileSystem).BuildThumbCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height, options.Text);
+                new StripCollageBuilder(_appPaths, _fileSystem).BuildThumbCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height);
             }
             else if (ratio >= .9)
             {
-                new StripCollageBuilder(_appPaths, _fileSystem).BuildSquareCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height, options.Text);
+                new StripCollageBuilder(_appPaths, _fileSystem).BuildSquareCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height);
             }
             else
             {
-                new StripCollageBuilder(_appPaths, _fileSystem).BuildPosterCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height, options.Text);
+                new StripCollageBuilder(_appPaths, _fileSystem).BuildPosterCollage(options.InputPaths.ToList(), options.OutputPath, options.Width, options.Height);
             }
         }
 
@@ -242,6 +312,16 @@ namespace Emby.Drawing.ImageMagick
             {
                 throw new ObjectDisposedException(GetType().Name);
             }
+        }
+
+        public bool SupportsImageCollageCreation
+        {
+            get { return true; }
+        }
+
+        public bool SupportsImageEncoding
+        {
+            get { return true; }
         }
     }
 }

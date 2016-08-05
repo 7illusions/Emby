@@ -1,12 +1,11 @@
-﻿(function () {
+﻿define(['appSettings'], function (appSettings) {
 
     var syncPromise;
-    var lastStart = 0;
 
     window.LocalSync = {
 
         isSupported: function () {
-            return AppInfo.isNativeApp;
+            return AppInfo.isNativeApp && Dashboard.capabilities().SupportsSync;
         },
 
         sync: function (options) {
@@ -15,30 +14,32 @@
                 return syncPromise.promise();
             }
 
-            var deferred = DeferredBuilder.Deferred();
+            return new Promise(function (resolve, reject) {
 
-            require(['multiserversync'], function () {
+                require(['multiserversync'], function () {
 
-                lastStart = new Date().getTime();
+                    options = options || {};
 
-                options = options || {};
+                    LocalSync.normalizeSyncOptions(options);
 
-                if ($.browser.safari) {
-                    options.enableBackgroundTransfer = true;
-                }
+                    options.cameraUploadServers = appSettings.cameraUploadServers();
 
-                syncPromise = new MediaBrowser.MultiServerSync(ConnectionManager).sync(options).done(function () {
+                    syncPromise = new MediaBrowser.MultiServerSync(ConnectionManager).sync(options).then(function () {
 
-                    syncPromise = null;
-                    deferred.resolve();
+                        syncPromise = null;
+                        resolve();
 
-                }).fail(function () {
+                    }, function () {
 
-                    syncPromise = null;
+                        syncPromise = null;
+                    });
                 });
-            });
 
-            return deferred.promise();
+            });
+        },
+
+        normalizeSyncOptions: function (options) {
+
         },
 
         getSyncStatus: function () {
@@ -50,23 +51,4 @@
         }
     };
 
-    var syncInterval = 1800000;
-
-    function restartInterval() {
-        if (LocalSync.isSupported) {
-            setInterval(function () {
-
-                //LocalSync.startSync();
-
-            }, syncInterval);
-
-            if (lastStart > 0 && (now - lastStart) >= syncInterval) {
-                //LocalSync.startSync();
-            }
-        }
-        //LocalSync.startSync();
-    }
-
-    Dashboard.ready(restartInterval);
-    document.addEventListener("resume", restartInterval, false);
-})();
+});

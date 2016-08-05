@@ -2,6 +2,9 @@
 using MediaBrowser.Model.Logging;
 using System.Collections.Generic;
 using System.Reflection;
+using MediaBrowser.Controller.Power;
+using MediaBrowser.Server.Implementations.Persistence;
+using MediaBrowser.Server.Startup.Common.FFMpeg;
 
 namespace MediaBrowser.Server.Startup.Common
 {
@@ -20,7 +23,7 @@ namespace MediaBrowser.Server.Startup.Common
         /// <param name="httpServerPort">The HTTP server port.</param>
         /// <param name="httpsServerPort">The HTTPS server port.</param>
         /// <param name="tempDirectory">The temporary directory.</param>
-        void AuthorizeServer(int udpPort, int httpServerPort, int httpsServerPort, string tempDirectory);
+        void AuthorizeServer(int udpPort, int httpServerPort, int httpsServerPort, string applicationPath, string tempDirectory);
 
         /// <summary>
         /// Gets the environment.
@@ -53,6 +56,12 @@ namespace MediaBrowser.Server.Startup.Common
         bool SupportsAutoRunAtStartup { get; }
 
         /// <summary>
+        /// Gets a value indicating whether [supports library monitor].
+        /// </summary>
+        /// <value><c>true</c> if [supports library monitor]; otherwise, <c>false</c>.</value>
+        bool SupportsLibraryMonitor { get; }
+        
+        /// <summary>
         /// Gets a value indicating whether this instance can self update.
         /// </summary>
         /// <value><c>true</c> if this instance can self update; otherwise, <c>false</c>.</value>
@@ -84,5 +93,19 @@ namespace MediaBrowser.Server.Startup.Common
         /// Prevents the system stand by.
         /// </summary>
         void PreventSystemStandby();
+
+        void AllowSystemStandby();
+
+        /// <summary>
+        /// Gets the power management.
+        /// </summary>
+        /// <returns>IPowerManagement.</returns>
+        IPowerManagement GetPowerManagement();
+
+        FFMpegInstallInfo GetFfmpegInstallInfo();
+
+        void LaunchUrl(string url);
+
+        IDbConnector GetDbConnector();
     }
 }

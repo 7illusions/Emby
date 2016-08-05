@@ -8,11 +8,25 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using MediaBrowser.Controller.Power;
+using MediaBrowser.Model.System;
+using MediaBrowser.Server.Implementations.Persistence;
+using MediaBrowser.Server.Startup.Common.FFMpeg;
+using OperatingSystem = MediaBrowser.Server.Startup.Common.OperatingSystem;
 
 namespace MediaBrowser.Server.Mono.Native
 {
     public abstract class BaseMonoApp : INativeApp
     {
+        protected StartupOptions StartupOptions { get; private set; }
+        protected ILogger Logger { get; private set; }
+
+        protected BaseMonoApp(StartupOptions startupOptions, ILogger logger)
+        {
+            StartupOptions = startupOptions;
+            Logger = logger;
+        }
+
         /// <summary>
         /// Shutdowns this instance.
         /// </summary>
@@ -60,6 +74,11 @@ namespace MediaBrowser.Server.Mono.Native
 
         }
 
+        public void AllowSystemStandby()
+        {
+
+        }
+
         public List<Assembly> GetAssembliesWithParts()
         {
             var list = new List<Assembly>();
@@ -83,7 +102,7 @@ namespace MediaBrowser.Server.Mono.Native
             return list;
         }
 
-        public void AuthorizeServer(int udpPort, int httpServerPort, int httpsPort, string tempDirectory)
+        public void AuthorizeServer(int udpPort, int httpServerPort, int httpsPort, string applicationPath, string tempDirectory)
         {
         }
 
@@ -106,6 +125,14 @@ namespace MediaBrowser.Server.Mono.Native
             get
             {
                 return false;
+            }
+        }
+
+        public bool SupportsLibraryMonitor
+        {
+            get
+            {
+				return Environment.OperatingSystem != Startup.Common.OperatingSystem.Osx;
             }
         }
 
@@ -150,11 +177,19 @@ namespace MediaBrowser.Server.Mono.Native
             }
             else if (string.Equals(uname.machine, "x86_64", StringComparison.OrdinalIgnoreCase))
             {
-                info.SystemArchitecture = Architecture.X86_X64;
+                info.SystemArchitecture = Architecture.X64;
             }
             else if (uname.machine.StartsWith("arm", StringComparison.OrdinalIgnoreCase))
             {
                 info.SystemArchitecture = Architecture.Arm;
+            }
+            else if (System.Environment.Is64BitOperatingSystem)
+            {
+                info.SystemArchitecture = Architecture.X64;
+            }
+            else 
+            {
+                info.SystemArchitecture = Architecture.X86;
             }
 
             info.OperatingSystemVersionString = string.IsNullOrWhiteSpace(sysName) ?
@@ -165,19 +200,27 @@ namespace MediaBrowser.Server.Mono.Native
         }
 
         private Uname _unixName;
+
         private Uname GetUnixName()
         {
             if (_unixName == null)
             {
                 var uname = new Uname();
-                Utsname utsname;
-                var callResult = Syscall.uname(out utsname);
-                if (callResult == 0)
+                try
                 {
-                    uname.sysname = utsname.sysname;
-                    uname.machine = utsname.machine;
-                }
+                    Utsname utsname;
+                    var callResult = Syscall.uname(out utsname);
+                    if (callResult == 0)
+                    {
+                        uname.sysname = utsname.sysname ?? string.Empty;
+                        uname.machine = utsname.machine ?? string.Empty;
+                    }
 
+                }
+                catch (Exception ex)
+                {
+                    Logger.ErrorException("Error getting unix name", ex);
+                }
                 _unixName = uname;
             }
             return _unixName;
@@ -187,6 +230,82 @@ namespace MediaBrowser.Server.Mono.Native
         {
             public string sysname = string.Empty;
             public string machine = string.Empty;
+        }
+
+        public IPowerManagement GetPowerManagement()
+        {
+            return new NullPowerManagement();
+        }
+
+        public FFMpegInstallInfo GetFfmpegInstallInfo()
+        {
+            return GetInfo(Environment);
+        }
+
+        public void LaunchUrl(string url)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IDbConnector GetDbConnector()
+        {
+            return new DbConnector(Logger);
+        }
+
+        public static FFMpegInstallInfo GetInfo(NativeEnvironment environment)
+        {
+            var info = new FFMpegInstallInfo();
+
+            // Windows builds: http://ffmpeg.zeranoe.com/builds/
+            // Linux builds: http://johnvansickle.com/ffmpeg/
+            // OS X builds: http://ffmpegmac.net/
+            // OS X x64: http://www.evermeet.cx/ffmpeg/
+
+            switch (environment.OperatingSystem)
+            {
+                case OperatingSystem.Osx:
+                case OperatingSystem.Bsd:
+                    break;
+                case OperatingSystem.Linux:
+
+                    info.ArchiveType = "7z";
+                    info.Version = "20160215";
+                    break;
+            }
+
+            info.DownloadUrls = GetDownloadUrls(environment);
+
+            return info;
+        }
+
+        private static string[] GetDownloadUrls(NativeEnvironment environment)
+        {
+            switch (environment.OperatingSystem)
+            {
+                case OperatingSystem.Linux:
+
+                    switch (environment.SystemArchitecture)
+                    {
+                        case Architecture.X64:
+                            return new[]
+                            {
+                                "https://github.com/MediaBrowser/Emby.Resources/raw/master/ffmpeg/linux/ffmpeg-git-20160215-64bit-static.7z"
+                            };
+                    }
+                    break;
+            }
+
+            // No version available 
+            return new string[] { };
+        }
+
+    }
+
+    public class NullPowerManagement : IPowerManagement
+    {
+        public void ScheduleWake(DateTime utcTime)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Common.Net;
+﻿using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Entities;
 using System;
 using System.Collections.Generic;
@@ -7,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Providers.ImagesByName
 {
@@ -24,7 +24,7 @@ namespace MediaBrowser.Providers.ImagesByName
         /// <returns>Task.</returns>
         public static async Task EnsureList(string url, string file, IHttpClient httpClient, IFileSystem fileSystem, SemaphoreSlim semaphore, CancellationToken cancellationToken)
         {
-            var fileInfo = new FileInfo(file);
+            var fileInfo = fileSystem.GetFileInfo(file);
 
             if (!fileInfo.Exists || (DateTime.UtcNow - fileSystem.GetLastWriteTimeUtc(fileInfo)).TotalDays > 1)
             {

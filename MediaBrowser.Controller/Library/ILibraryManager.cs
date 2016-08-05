@@ -8,9 +8,10 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Model.Dto;
 
 namespace MediaBrowser.Controller.Library
 {
@@ -25,21 +26,20 @@ namespace MediaBrowser.Controller.Library
         /// <param name="fileInfo">The file information.</param>
         /// <param name="parent">The parent.</param>
         /// <returns>BaseItem.</returns>
-        BaseItem ResolvePath(FileSystemInfo fileInfo, 
+        BaseItem ResolvePath(FileSystemMetadata fileInfo,
             Folder parent = null);
 
         /// <summary>
         /// Resolves a set of files into a list of BaseItem
         /// </summary>
-        /// <typeparam name="T"></typeparam>
         /// <param name="files">The files.</param>
         /// <param name="directoryService">The directory service.</param>
         /// <param name="parent">The parent.</param>
         /// <param name="collectionType">Type of the collection.</param>
         /// <returns>List{``0}.</returns>
-        IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemInfo> files, 
+        IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemMetadata> files,
             IDirectoryService directoryService,
-            Folder parent, string 
+            Folder parent, string
             collectionType = null);
 
         /// <summary>
@@ -54,6 +54,13 @@ namespace MediaBrowser.Controller.Library
         /// <param name="name">The name.</param>
         /// <returns>Task{Person}.</returns>
         Person GetPerson(string name);
+
+        /// <summary>
+        /// Finds the by path.
+        /// </summary>
+        /// <param name="path">The path.</param>
+        /// <returns>BaseItem.</returns>
+        BaseItem FindByPath(string path, bool? isFolder);
 
         /// <summary>
         /// Gets the artist.
@@ -145,20 +152,6 @@ namespace MediaBrowser.Controller.Library
         BaseItem GetItemById(Guid id);
 
         /// <summary>
-        /// Gets the items.
-        /// </summary>
-        /// <param name="query">The query.</param>
-        /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
-        QueryResult<BaseItem> GetItems(InternalItemsQuery query);
-
-        /// <summary>
-        /// Gets the memory item by identifier.
-        /// </summary>
-        /// <param name="id">The identifier.</param>
-        /// <returns>BaseItem.</returns>
-        BaseItem GetMemoryItemById(Guid id);
-        
-        /// <summary>
         /// Gets the intros.
         /// </summary>
         /// <param name="item">The item.</param>
@@ -244,6 +237,8 @@ namespace MediaBrowser.Controller.Library
         /// <returns>BaseItem.</returns>
         BaseItem RetrieveItem(Guid id);
 
+        bool IsScanRunning { get; }
+
         /// <summary>
         /// Occurs when [item added].
         /// </summary>
@@ -291,13 +286,13 @@ namespace MediaBrowser.Controller.Library
         /// <param name="path">The path.</param>
         /// <returns>System.String.</returns>
         string GetConfiguredContentType(string path);
-        
+
         /// <summary>
         /// Normalizes the root path list.
         /// </summary>
         /// <param name="paths">The paths.</param>
         /// <returns>IEnumerable{System.String}.</returns>
-        IEnumerable<string> NormalizeRootPathList(IEnumerable<string> paths);
+        IEnumerable<FileSystemMetadata> NormalizeRootPathList(IEnumerable<FileSystemMetadata> paths);
 
         /// <summary>
         /// Registers the item.
@@ -314,13 +309,6 @@ namespace MediaBrowser.Controller.Library
         Task DeleteItem(BaseItem item, DeleteOptions options);
 
         /// <summary>
-        /// Replaces the videos with primary versions.
-        /// </summary>
-        /// <param name="items">The items.</param>
-        /// <returns>IEnumerable{BaseItem}.</returns>
-        IEnumerable<BaseItem> ReplaceVideosWithPrimaryVersions(IEnumerable<BaseItem> items);
-
-        /// <summary>
         /// Gets the named view.
         /// </summary>
         /// <param name="user">The user.</param>
@@ -328,15 +316,13 @@ namespace MediaBrowser.Controller.Library
         /// <param name="parentId">The parent identifier.</param>
         /// <param name="viewType">Type of the view.</param>
         /// <param name="sortName">Name of the sort.</param>
-        /// <param name="uniqueId">The unique identifier.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
         Task<UserView> GetNamedView(User user,
             string name,
             string parentId,
-            string viewType, 
-            string sortName, 
-            string uniqueId,
+            string viewType,
+            string sortName,
             CancellationToken cancellationToken);
 
         /// <summary>
@@ -349,8 +335,8 @@ namespace MediaBrowser.Controller.Library
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task&lt;UserView&gt;.</returns>
         Task<UserView> GetNamedView(User user,
-            string name, 
-            string viewType, 
+            string name,
+            string viewType,
             string sortName,
             CancellationToken cancellationToken);
 
@@ -383,6 +369,19 @@ namespace MediaBrowser.Controller.Library
             string sortName,
             string uniqueId,
             CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Gets the shadow view.
+        /// </summary>
+        /// <param name="parent">The parent.</param>
+        /// <param name="viewType">Type of the view.</param>
+        /// <param name="sortName">Name of the sort.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>Task&lt;UserView&gt;.</returns>
+        Task<UserView> GetShadowView(BaseItem parent,
+          string viewType,
+          string sortName,
+          CancellationToken cancellationToken);
 
         /// <summary>
         /// Determines whether [is video file] [the specified path].
@@ -434,7 +433,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="fileSystemChildren">The file system children.</param>
         /// <param name="directoryService">The directory service.</param>
         /// <returns>IEnumerable&lt;Trailer&gt;.</returns>
-        IEnumerable<Video> FindTrailers(BaseItem owner, List<FileSystemInfo> fileSystemChildren,
+        IEnumerable<Video> FindTrailers(BaseItem owner, List<FileSystemMetadata> fileSystemChildren,
             IDirectoryService directoryService);
 
         /// <summary>
@@ -444,7 +443,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="fileSystemChildren">The file system children.</param>
         /// <param name="directoryService">The directory service.</param>
         /// <returns>IEnumerable&lt;Video&gt;.</returns>
-        IEnumerable<Video> FindExtras(BaseItem owner, List<FileSystemInfo> fileSystemChildren,
+        IEnumerable<Video> FindExtras(BaseItem owner, List<FileSystemMetadata> fileSystemChildren,
             IDirectoryService directoryService);
 
         /// <summary>
@@ -467,19 +466,13 @@ namespace MediaBrowser.Controller.Library
         /// <param name="query">The query.</param>
         /// <returns>List&lt;PersonInfo&gt;.</returns>
         List<PersonInfo> GetPeople(InternalPeopleQuery query);
-        
+
         /// <summary>
         /// Gets the people items.
         /// </summary>
         /// <param name="query">The query.</param>
         /// <returns>List&lt;Person&gt;.</returns>
         List<Person> GetPeopleItems(InternalPeopleQuery query);
-        
-        /// <summary>
-        /// Gets all people names.
-        /// </summary>
-        /// <returns>List&lt;System.String&gt;.</returns>
-        List<PersonInfo> GetAllPeople();
 
         /// <summary>
         /// Updates the people.
@@ -509,5 +502,65 @@ namespace MediaBrowser.Controller.Library
         /// <param name="query">The query.</param>
         /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
         QueryResult<BaseItem> QueryItems(InternalItemsQuery query);
+
+        /// <summary>
+        /// Substitutes the path.
+        /// </summary>
+        /// <param name="path">The path.</param>
+        /// <param name="from">From.</param>
+        /// <param name="to">To.</param>
+        /// <returns>System.String.</returns>
+        string SubstitutePath(string path, string from, string to);
+
+        /// <summary>
+        /// Converts the image to local.
+        /// </summary>
+        /// <param name="item">The item.</param>
+        /// <param name="image">The image.</param>
+        /// <param name="imageIndex">Index of the image.</param>
+        /// <returns>Task.</returns>
+        Task<ItemImageInfo> ConvertImageToLocal(IHasImages item, ItemImageInfo image, int imageIndex);
+
+        /// <summary>
+        /// Gets the items.
+        /// </summary>
+        /// <param name="query">The query.</param>
+        /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
+        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query);
+
+        /// <summary>
+        /// Gets the items.
+        /// </summary>
+        /// <param name="query">The query.</param>
+        /// <param name="parentIds">The parent ids.</param>
+        /// <returns>List&lt;BaseItem&gt;.</returns>
+        IEnumerable<BaseItem> GetItemList(InternalItemsQuery query, IEnumerable<string> parentIds);
+
+        /// <summary>
+        /// Gets the items result.
+        /// </summary>
+        /// <param name="query">The query.</param>
+        /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
+        QueryResult<BaseItem> GetItemsResult(InternalItemsQuery query);
+
+        /// <summary>
+        /// Ignores the file.
+        /// </summary>
+        /// <param name="file">The file.</param>
+        /// <param name="parent">The parent.</param>
+        /// <returns><c>true</c> if XXXX, <c>false</c> otherwise.</returns>
+        bool IgnoreFile(FileSystemMetadata file, BaseItem parent);
+
+        void AddVirtualFolder(string name, string collectionType, string[] mediaPaths, bool refreshLibrary);
+        void RemoveVirtualFolder(string name, bool refreshLibrary);
+        void AddMediaPath(string virtualFolderName, string path);
+        void RemoveMediaPath(string virtualFolderName, string path);
+
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetGenres(InternalItemsQuery query);
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetMusicGenres(InternalItemsQuery query);
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetGameGenres(InternalItemsQuery query);
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetStudios(InternalItemsQuery query);
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetArtists(InternalItemsQuery query);
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetAlbumArtists(InternalItemsQuery query);
     }
 }

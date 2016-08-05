@@ -14,7 +14,7 @@ using System.Linq;
 using System.Security;
 using System.Text;
 using System.Xml;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.LocalMetadata.Savers
 {
@@ -426,17 +426,13 @@ namespace MediaBrowser.LocalMetadata.Savers
                 }
             }
 
-            var hasLanguage = item as IHasPreferredMetadataLanguage;
-            if (hasLanguage != null)
+            if (!string.IsNullOrEmpty(item.PreferredMetadataLanguage))
             {
-                if (!string.IsNullOrEmpty(hasLanguage.PreferredMetadataLanguage))
-                {
-                    builder.Append("<Language>" + SecurityElement.Escape(hasLanguage.PreferredMetadataLanguage) + "</Language>");
-                }
-                if (!string.IsNullOrEmpty(hasLanguage.PreferredMetadataCountryCode))
-                {
-                    builder.Append("<CountryCode>" + SecurityElement.Escape(hasLanguage.PreferredMetadataCountryCode) + "</CountryCode>");
-                }
+                builder.Append("<Language>" + SecurityElement.Escape(item.PreferredMetadataLanguage) + "</Language>");
+            }
+            if (!string.IsNullOrEmpty(item.PreferredMetadataCountryCode))
+            {
+                builder.Append("<CountryCode>" + SecurityElement.Escape(item.PreferredMetadataCountryCode) + "</CountryCode>");
             }
 
             // Use original runtime here, actual file runtime later in MediaInfo
@@ -597,36 +593,28 @@ namespace MediaBrowser.LocalMetadata.Savers
                 builder.Append("</Studios>");
             }
 
-            var hasTags = item as IHasTags;
-            if (hasTags != null)
+            if (item.Tags.Count > 0)
             {
-                if (hasTags.Tags.Count > 0)
+                builder.Append("<Tags>");
+
+                foreach (var tag in item.Tags)
                 {
-                    builder.Append("<Tags>");
-
-                    foreach (var tag in hasTags.Tags)
-                    {
-                        builder.Append("<Tag>" + SecurityElement.Escape(tag) + "</Tag>");
-                    }
-
-                    builder.Append("</Tags>");
+                    builder.Append("<Tag>" + SecurityElement.Escape(tag) + "</Tag>");
                 }
+
+                builder.Append("</Tags>");
             }
 
-            var hasKeywords = item as IHasKeywords;
-            if (hasKeywords != null)
+            if (item.Keywords.Count > 0)
             {
-                if (hasKeywords.Keywords.Count > 0)
+                builder.Append("<PlotKeywords>");
+
+                foreach (var tag in item.Keywords)
                 {
-                    builder.Append("<PlotKeywords>");
-
-                    foreach (var tag in hasKeywords.Keywords)
-                    {
-                        builder.Append("<PlotKeyword>" + SecurityElement.Escape(tag) + "</PlotKeyword>");
-                    }
-
-                    builder.Append("</PlotKeywords>");
+                    builder.Append("<PlotKeyword>" + SecurityElement.Escape(tag) + "</PlotKeyword>");
                 }
+
+                builder.Append("</PlotKeywords>");
             }
 
             var people = libraryManager.GetPeople(item);
@@ -738,6 +726,9 @@ namespace MediaBrowser.LocalMetadata.Savers
                             break;
                         case Video3DFormat.HalfTopAndBottom:
                             builder.Append("<Format3D>HTAB</Format3D>");
+                            break;
+                        case Video3DFormat.MVC:
+                            builder.Append("<Format3D>MVC</Format3D>");
                             break;
                     }
                 }

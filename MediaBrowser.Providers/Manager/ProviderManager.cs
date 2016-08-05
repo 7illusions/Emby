@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Common.Net;
+﻿using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -20,6 +19,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Model.Serialization;
 
 namespace MediaBrowser.Providers.Manager
 {
@@ -54,12 +55,11 @@ namespace MediaBrowser.Providers.Manager
         private readonly IFileSystem _fileSystem;
 
         private IMetadataService[] _metadataServices = { };
-        private IItemIdentityProvider[] _identityProviders = { };
-        private IItemIdentityConverter[] _identityConverters = { };
         private IMetadataProvider[] _metadataProviders = { };
         private IEnumerable<IMetadataSaver> _savers;
         private IImageSaver[] _imageSavers;
         private readonly IServerApplicationPaths _appPaths;
+        private readonly IJsonSerializer _json;
 
         private IExternalId[] _externalIds;
 
@@ -73,7 +73,7 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="libraryMonitor">The directory watchers.</param>
         /// <param name="logManager">The log manager.</param>
         /// <param name="fileSystem">The file system.</param>
-        public ProviderManager(IHttpClient httpClient, IServerConfigurationManager configurationManager, ILibraryMonitor libraryMonitor, ILogManager logManager, IFileSystem fileSystem, IServerApplicationPaths appPaths, Func<ILibraryManager> libraryManagerFactory)
+        public ProviderManager(IHttpClient httpClient, IServerConfigurationManager configurationManager, ILibraryMonitor libraryMonitor, ILogManager logManager, IFileSystem fileSystem, IServerApplicationPaths appPaths, Func<ILibraryManager> libraryManagerFactory, IJsonSerializer json)
         {
             _logger = logManager.GetLogger("ProviderManager");
             _httpClient = httpClient;
@@ -82,6 +82,7 @@ namespace MediaBrowser.Providers.Manager
             _fileSystem = fileSystem;
             _appPaths = appPaths;
             _libraryManagerFactory = libraryManagerFactory;
+            _json = json;
         }
 
         /// <summary>
@@ -89,22 +90,17 @@ namespace MediaBrowser.Providers.Manager
         /// </summary>
         /// <param name="imageProviders">The image providers.</param>
         /// <param name="metadataServices">The metadata services.</param>
-        /// <param name="identityProviders">The identity providers.</param>
-        /// <param name="identityConverters">The identity converters.</param>
         /// <param name="metadataProviders">The metadata providers.</param>
         /// <param name="metadataSavers">The metadata savers.</param>
         /// <param name="imageSavers">The image savers.</param>
         /// <param name="externalIds">The external ids.</param>
         public void AddParts(IEnumerable<IImageProvider> imageProviders, IEnumerable<IMetadataService> metadataServices,
-                             IEnumerable<IItemIdentityProvider> identityProviders, IEnumerable<IItemIdentityConverter> identityConverters,
                              IEnumerable<IMetadataProvider> metadataProviders, IEnumerable<IMetadataSaver> metadataSavers,
                              IEnumerable<IImageSaver> imageSavers, IEnumerable<IExternalId> externalIds)
         {
             ImageProviders = imageProviders.ToArray();
 
             _metadataServices = metadataServices.OrderBy(i => i.Order).ToArray();
-            _identityProviders = identityProviders.ToArray();
-            _identityConverters = identityConverters.ToArray();
             _metadataProviders = metadataProviders.ToArray();
             _imageSavers = imageSavers.ToArray();
             _externalIds = externalIds.OrderBy(i => i.Name).ToArray();
@@ -248,17 +244,17 @@ namespace MediaBrowser.Providers.Manager
             });
         }
 
-        public IEnumerable<IImageProvider> GetImageProviders(IHasImages item)
+		public IEnumerable<IImageProvider> GetImageProviders(IHasImages item, ImageRefreshOptions refreshOptions)
         {
-            return GetImageProviders(item, GetMetadataOptions(item), false);
+            return GetImageProviders(item, GetMetadataOptions(item), refreshOptions, false);
         }
 
-        private IEnumerable<IImageProvider> GetImageProviders(IHasImages item, MetadataOptions options, bool includeDisabled)
+		private IEnumerable<IImageProvider> GetImageProviders(IHasImages item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
         {
             // Avoid implicitly captured closure
             var currentOptions = options;
 
-            return ImageProviders.Where(i => CanRefresh(i, item, options, includeDisabled))
+			return ImageProviders.Where(i => CanRefresh(i, item, options, refreshOptions, includeDisabled))
             .OrderBy(i =>
             {
                 // See if there's a user-defined order
@@ -298,24 +294,11 @@ namespace MediaBrowser.Providers.Manager
                 .ThenBy(GetDefaultOrder);
         }
 
-        public IEnumerable<IItemIdentityProvider<TLookupInfo, TIdentity>> GetItemIdentityProviders<TLookupInfo, TIdentity>()
-            where TLookupInfo : ItemLookupInfo
-            where TIdentity : IItemIdentity
-        {
-            return _identityProviders.OfType<IItemIdentityProvider<TLookupInfo, TIdentity>>();
-        }
-
-        public IEnumerable<IItemIdentityConverter<TIdentity>> GetItemIdentityConverters<TIdentity>()
-            where TIdentity : IItemIdentity
-        {
-            return _identityConverters.OfType<IItemIdentityConverter<TIdentity>>();
-        }
-
         private IEnumerable<IRemoteImageProvider> GetRemoteImageProviders(IHasImages item, bool includeDisabled)
         {
             var options = GetMetadataOptions(item);
 
-            return GetImageProviders(item, options, includeDisabled).OfType<IRemoteImageProvider>();
+			return GetImageProviders(item, options, new ImageRefreshOptions(new DirectoryService(_fileSystem)), includeDisabled).OfType<IRemoteImageProvider>();
         }
 
         private bool CanRefresh(IMetadataProvider provider, IHasMetadata item, MetadataOptions options, bool includeDisabled, bool checkIsOwnedItem)
@@ -359,14 +342,17 @@ namespace MediaBrowser.Providers.Manager
             return true;
         }
 
-        private bool CanRefresh(IImageProvider provider, IHasImages item, MetadataOptions options, bool includeDisabled)
+		private bool CanRefresh(IImageProvider provider, IHasImages item, MetadataOptions options, ImageRefreshOptions refreshOptions, bool includeDisabled)
         {
             if (!includeDisabled)
             {
                 // If locked only allow local providers
                 if (item.IsLocked && !(provider is ILocalImageProvider))
                 {
-                    return false;
+					if (refreshOptions.ImageRefreshMode != ImageRefreshMode.FullRefresh) 
+					{
+						return false;
+					}
                 }
 
                 if (provider is IRemoteImageProvider || provider is IDynamicImageProvider)
@@ -502,7 +488,7 @@ namespace MediaBrowser.Providers.Manager
                 ItemType = typeof(T).Name
             };
 
-            var imageProviders = GetImageProviders(dummy, options, true).ToList();
+			var imageProviders = GetImageProviders(dummy, options, new ImageRefreshOptions(new DirectoryService(_fileSystem)), true).ToList();
 
             AddMetadataPlugins(summary.Plugins, dummy, options);
             AddImagePlugins(summary.Plugins, dummy, imageProviders);
@@ -700,7 +686,7 @@ namespace MediaBrowser.Providers.Manager
 
                             // Manual edit occurred
                             // Even if save local is off, save locally anyway if the metadata file already exists
-							if (fileSaver == null || !isEnabledFor || !_fileSystem.FileExists(fileSaver.GetSavePath(item)))
+                            if (fileSaver == null || !isEnabledFor || !_fileSystem.FileExists(fileSaver.GetSavePath(item)))
                             {
                                 return false;
                             }
@@ -756,17 +742,37 @@ namespace MediaBrowser.Providers.Manager
                 searchInfo.SearchInfo.MetadataCountryCode = ConfigurationManager.Configuration.MetadataCountryCode;
             }
 
+            var resultList = new List<RemoteSearchResult>();
+
             foreach (var provider in providers)
             {
                 try
                 {
                     var results = await GetSearchResults(provider, searchInfo.SearchInfo, cancellationToken).ConfigureAwait(false);
 
-                    var list = results.ToList();
-
-                    if (list.Count > 0)
+                    foreach (var result in results)
                     {
-                        return list.Take(10);
+                        var existingMatch = resultList.FirstOrDefault(i => i.ProviderIds.Any(p => string.Equals(result.GetProviderId(p.Key), p.Value, StringComparison.OrdinalIgnoreCase)));
+
+                        if (existingMatch == null)
+                        {
+                            resultList.Add(result);
+                        }
+                        else
+                        {
+                            foreach (var providerId in result.ProviderIds)
+                            {
+                                if (!existingMatch.ProviderIds.ContainsKey(providerId.Key))
+                                {
+                                    existingMatch.ProviderIds.Add(providerId.Key, providerId.Value);
+                                }
+                            }
+
+                            if (string.IsNullOrWhiteSpace(existingMatch.ImageUrl))
+                            {
+                                existingMatch.ImageUrl = result.ImageUrl;
+                            }
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -775,8 +781,9 @@ namespace MediaBrowser.Providers.Manager
                 }
             }
 
-            // Nothing found
-            return new List<RemoteSearchResult>();
+            //_logger.Debug("Returning search results {0}", _json.SerializeToString(resultList));
+
+            return resultList;
         }
 
         private async Task<IEnumerable<RemoteSearchResult>> GetSearchResults<TLookupType>(IRemoteSearchProvider<TLookupType> provider, TLookupType searchInfo,
@@ -823,7 +830,7 @@ namespace MediaBrowser.Providers.Manager
             });
         }
 
-        public IEnumerable<ExternalUrl> GetExternalUrls(IHasProviderIds item)
+        public IEnumerable<ExternalUrl> GetExternalUrls(BaseItem item)
         {
             return GetExternalIds(item)
                 .Select(i =>
@@ -846,7 +853,7 @@ namespace MediaBrowser.Providers.Manager
                     Url = string.Format(i.UrlFormatString, value)
                 };
 
-            }).Where(i => i != null);
+            }).Where(i => i != null).Concat(item.GetRelatedUrls());
         }
 
         public IEnumerable<ExternalIdInfo> GetExternalIdInfos(IHasProviderIds item)
@@ -880,6 +887,11 @@ namespace MediaBrowser.Providers.Manager
 
         private void StartRefreshTimer()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             lock (_refreshTimerLock)
             {
                 if (_refreshTimer == null)
@@ -913,10 +925,10 @@ namespace MediaBrowser.Providers.Manager
                     return;
                 }
 
-                var item = libraryManager.GetItemById(refreshItem.Item1);
-                if (item != null)
+                try
                 {
-                    try
+                    var item = libraryManager.GetItemById(refreshItem.Item1);
+                    if (item != null)
                     {
                         // Try to throttle this a little bit.
                         await Task.Delay(100).ConfigureAwait(false);
@@ -928,10 +940,10 @@ namespace MediaBrowser.Providers.Manager
 
                         await task.ConfigureAwait(false);
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.ErrorException("Error refreshing item", ex);
-                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.ErrorException("Error refreshing item", ex);
                 }
             }
 
@@ -970,7 +982,7 @@ namespace MediaBrowser.Providers.Manager
                 {
                     var folder = (Folder)child;
 
-                    await folder.ValidateChildren(new Progress<double>(), CancellationToken.None).ConfigureAwait(false);
+                    await folder.ValidateChildren(new Progress<double>(), CancellationToken.None, options, true).ConfigureAwait(false);
                 }
             }
         }
@@ -986,8 +998,8 @@ namespace MediaBrowser.Providers.Manager
                                         .ToList();
 
             var musicArtists = albums
-                .Select(i => i.Parent)
-                .OfType<MusicArtist>()
+                .Select(i => i.MusicArtist)
+                .Where(i => i != null)
                 .ToList();
 
             var musicArtistRefreshTasks = musicArtists.Select(i => i.ValidateChildren(new Progress<double>(), cancellationToken, options, true));
@@ -1014,6 +1026,7 @@ namespace MediaBrowser.Providers.Manager
         public void Dispose()
         {
             _disposed = true;
+            StopRefreshTimer();
         }
     }
 }

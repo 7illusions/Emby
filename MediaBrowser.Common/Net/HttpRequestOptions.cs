@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 
 namespace MediaBrowser.Common.Net
@@ -15,6 +16,8 @@ namespace MediaBrowser.Common.Net
         /// </summary>
         /// <value>The URL.</value>
         public string Url { get; set; }
+
+        public DecompressionMethods? DecompressionMethod { get; set; }
 
         /// <summary>
         /// Gets or sets the accept header.
@@ -87,6 +90,7 @@ namespace MediaBrowser.Common.Net
         public bool BufferContent { get; set; }
 
         public bool LogRequest { get; set; }
+        public bool LogErrors { get; set; }
 
         public bool LogErrorResponseBody { get; set; }
         public bool EnableKeepAlive { get; set; }
@@ -95,6 +99,7 @@ namespace MediaBrowser.Common.Net
         public TimeSpan CacheLength { get; set; }
 
         public int TimeoutMs { get; set; }
+        public bool PreferIpv4 { get; set; }
 
         private string GetHeaderValue(string name)
         {
@@ -116,6 +121,7 @@ namespace MediaBrowser.Common.Net
             RequestHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             LogRequest = true;
+            LogErrors = true;
             CacheMode = CacheMode.None;
 
             TimeoutMs = 20000;

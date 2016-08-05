@@ -1,14 +1,9 @@
-﻿var SupporterKeyPage = {
+﻿define(['fetchHelper', 'jQuery', 'registrationservices'], function (fetchHelper, $, registrationServices) {
 
-    onPageShow: function () {
-        SupporterKeyPage.load(this);
-    },
-
-    load: function (page) {
-
+    function load(page) {
         Dashboard.showLoadingMsg();
 
-        ApiClient.getPluginSecurityInfo().done(function (info) {
+        ApiClient.getPluginSecurityInfo().then(function (info) {
 
             $('#txtSupporterKey', page).val(info.SupporterKey);
 
@@ -22,266 +17,158 @@
 
             Dashboard.hideLoadingMsg();
         });
-    },
+    }
 
-    updateSupporterKey: function () {
+    function loadUserInfo(page) {
 
-        Dashboard.showLoadingMsg();
-        var form = this;
+        Dashboard.getPluginSecurityInfo().then(function (info) {
 
-        var key = $('#txtSupporterKey', form).val();
-
-        var info = {
-            SupporterKey: key
-        };
-
-        ApiClient.updatePluginSecurityInfo(info).done(function () {
-
-            Dashboard.resetPluginSecurityInfo();
-            Dashboard.hideLoadingMsg();
-
-            if (key) {
-
-                Dashboard.alert({
-                    message: Globalize.translate('MessageKeyUpdated'),
-                    title: Globalize.translate('HeaderConfirmation')
-                });
-
+            if (info.IsMBSupporter) {
+                $('.supporterContainer', page).addClass('hide');
             } else {
-                Dashboard.alert({
-                    message: Globalize.translate('MessageKeyRemoved'),
-                    title: Globalize.translate('HeaderConfirmation')
-                });
+                $('.supporterContainer', page).removeClass('hide');
             }
-
-            var page = $(form).parents('.page');
-
-            SupporterKeyPage.load(page);
         });
+    }
 
-        return false;
-    },
-
-    linkSupporterKeys: function () {
-
-        Dashboard.showLoadingMsg();
-        var form = this;
-
-        var email = $('#txtNewEmail', form).val();
-        var newkey = $('#txtNewKey', form).val();
-        var oldkey = $('#txtOldKey', form).val();
-
-        var info = {
-            email: email,
-            newkey: newkey,
-            oldkey: oldkey
-        };
-
-        var url = "http://mb3admin.com/admin/service/supporter/linkKeys";
-        Logger.log(url);
-        $.post(url, info).done(function (res) {
-            var result = JSON.parse(res);
-            Dashboard.hideLoadingMsg();
-            if (result.Success) {
-                Dashboard.alert(Globalize.translate('MessageKeysLinked'));
-            } else {
-                Dashboard.showError(result.ErrorMessage);
-            }
-            Logger.log(result);
-
-        });
-
-        return false;
-    },
-
-    retrieveSupporterKey: function () {
-
+    function retrieveSupporterKey() {
         Dashboard.showLoadingMsg();
         var form = this;
 
         var email = $('#txtEmail', form).val();
 
-        var url = "http://mb3admin.com/admin/service/supporter/retrievekey?email=" + email;
-        Logger.log(url);
-        $.post(url).done(function (res) {
-            var result = JSON.parse(res);
+        var url = "https://mb3admin.com/admin/service/supporter/retrievekey?email=" + email;
+        console.log(url);
+        fetchHelper.ajax({
+
+            url: url,
+            type: 'POST',
+            dataType: 'json'
+
+        }).then(function (result) {
+
             Dashboard.hideLoadingMsg();
             if (result.Success) {
-                Dashboard.alert(Globalize.translate('MessageKeyEmailedTo').replace("{0}", email));
+                require(['toast'], function (toast) {
+                    toast(Globalize.translate('MessageKeyEmailedTo').replace("{0}", email));
+                });
             } else {
-                Dashboard.showError(result.ErrorMessage);
+                require(['toast'], function (toast) {
+                    toast(result.ErrorMessage);
+                });
             }
-            Logger.log(result);
+            console.log(result);
 
         });
 
         return false;
     }
 
-};
+    var SupporterKeyPage = {
 
-$(document).on('pageshowready', "#supporterKeyPage", SupporterKeyPage.onPageShow);
+        updateSupporterKey: function () {
 
-(function () {
+            Dashboard.showLoadingMsg();
+            var form = this;
 
-    var connectSupporterInfo;
+            var key = $('#txtSupporterKey', form).val();
 
-    function showAddUserForm(page) {
+            var info = {
+                SupporterKey: key
+            };
 
-        $('.popupAddUser', page).popup('open');
+            ApiClient.updatePluginSecurityInfo(info).then(function () {
 
-        $('#selectUserToAdd', page).html(connectSupporterInfo.EligibleUsers.map(function (u) {
+                Dashboard.resetPluginSecurityInfo();
+                Dashboard.hideLoadingMsg();
 
-            return '<option value="' + u.ConnectUserId + '">' + u.Name + '</option>';
+                if (key) {
 
-        }).join(''));
-    }
+                    Dashboard.alert({
+                        message: Globalize.translate('MessageKeyUpdated'),
+                        title: Globalize.translate('HeaderConfirmation')
+                    });
 
-    function addUser(page, id) {
+                } else {
+                    Dashboard.alert({
+                        message: Globalize.translate('MessageKeyRemoved'),
+                        title: Globalize.translate('HeaderConfirmation')
+                    });
+                }
 
-        Dashboard.showLoadingMsg();
+                var page = $(form).parents('.page')[0];
 
-        ApiClient.ajax({
-            type: "POST",
-            url: ApiClient.getUrl('Connect/Supporters', {
-                Id: id
-            })
+                load(page);
+            });
 
-        }).done(function () {
+            return false;
+        },
 
-            $('.popupAddUser', page).popup('close');
-            loadConnectSupporters(page);
-        });
-    }
+        linkSupporterKeys: function () {
 
-    function removeUser(page, id) {
+            Dashboard.showLoadingMsg();
+            var form = this;
 
-        Dashboard.confirm(Globalize.translate('MessageConfirmRemoveConnectSupporter'), Globalize.translate('HeaderConfirmRemoveUser'), function (result) {
+            var email = $('#txtNewEmail', form).val();
+            var newkey = $('#txtNewKey', form).val();
+            var oldkey = $('#txtOldKey', form).val();
 
-            if (result) {
+            var url = "https://mb3admin.com/admin/service/supporter/linkKeys";
+            console.log(url);
+            fetchHelper.ajax({
 
-                Dashboard.showLoadingMsg();
+                url: url,
+                type: 'POST',
+                dataType: 'json',
+                query: {
+                    email: email,
+                    newkey: newkey,
+                    oldkey: oldkey
+                }
 
-                ApiClient.ajax({
-                    type: "DELETE",
-                    url: ApiClient.getUrl('Connect/Supporters', {
-                        Id: id
-                    })
+            }).then(function (result) {
 
-                }).done(function () {
+                Dashboard.hideLoadingMsg();
+                if (result.Success) {
+                    require(['toast'], function (toast) {
+                        toast(Globalize.translate('MessageKeysLinked'));
+                    });
+                } else {
+                    require(['toast'], function (toast) {
+                        toast(result.ErrorMessage);
+                    });
+                }
+                console.log(result);
 
-                    loadConnectSupporters(page);
-                });
-            }
+            });
 
-        });
-    }
-
-    function getUserHtml(user) {
-
-        var html = '';
-
-        html += '<li>';
-        html += '<a href="#">';
-        var imgUrl = user.ImageUrl || 'css/images/userflyoutdefault.png';
-        html += '<img src="' + imgUrl + '" />';
-        html += '<h3>';
-        html += (user.DisplayName || user.Name);
-        html += '</h3>';
-        html += '<p>';
-        html += user.Email;
-        html += '</p>';
-        html += '</a>';
-        html += '<a href="#" data-icon="delete" class="btnRemoveUser" data-id="' + user.Id + '">';
-        html += '</a>';
-        html += '</li>';
-
-        return html;
-    }
-
-    function renderUsers(page, result) {
-
-        $('.linkSupporterKeyMessage', page).html(Globalize.translate('MessageLinkYourSupporterKey', result.MaxUsers));
-
-        var html = '';
-
-        if (result.Users.length) {
-
-            html += '<ul data-role="listview" data-inset="true">';
-
-            html += '<li data-role="list-divider">' + Globalize.translate('HeaderUsers');
-
-            html += result.Users.map(getUserHtml).join('');
-
-            html += '</ul>';
+            return false;
         }
+    };
 
-        var elem = $('.supporters', page).html(html).trigger('create');
+    function onSupporterLinkClick(e) {
 
-        $('.btnRemoveUser', elem).on('click', function () {
-
-            removeUser(page, this.getAttribute('data-id'));
-
-        });
-    }
-
-    function loadConnectSupporters(page) {
-
-        Dashboard.showLoadingMsg();
-
-        Dashboard.suppressAjaxErrors = true;
-
-        ApiClient.ajax({
-            type: "GET",
-            url: ApiClient.getUrl('Connect/Supporters'),
-            dataType: "json"
-
-        }).done(function (result) {
-
-            connectSupporterInfo = result;
-            renderUsers(page, result);
-
-            Dashboard.hideLoadingMsg();
-
-        }).fail(function () {
-
-            $('.supporters', page).html('<p>' + Globalize.translate('MessageErrorLoadingSupporterInfo') + '</p>');
-
-        }).always(function () {
-
-            Dashboard.suppressAjaxErrors = false;
-
-        });
-
+        registrationServices.showPremiereInfo();
+        e.preventDefault();
+        e.stopPropagation();
     }
 
     $(document).on('pageinit', "#supporterKeyPage", function () {
 
         var page = this;
-        $('#btnAddConnectUser', page).on('click', function () {
-            showAddUserForm(page);
-        });
+        $('#supporterKeyForm', this).on('submit', SupporterKeyPage.updateSupporterKey);
+        $('#lostKeyForm', this).on('submit', retrieveSupporterKey);
+        $('#linkKeysForm', this).on('submit', SupporterKeyPage.linkSupporterKeys);
 
-        $('#supporterKeyForm').on('submit', SupporterKeyPage.updateSupporterKey);
-        $('#lostKeyForm').on('submit', SupporterKeyPage.retrieveSupporterKey);
-        $('#linkKeysForm').on('submit', SupporterKeyPage.linkSupporterKeys);
-        $('.popupAddUserForm').on('submit', SupporterKeyPage.onAddConnectUserSubmit).on('submit', SupporterKeyPage.onAddConnectUserSubmit);
+        page.querySelector('.benefits').innerHTML = Globalize.translate('HeaderSupporterBenefit', '<a class="lnkPremiere" href="http://emby.media/premiere" target="_blank">', '</a>');
 
-    }).on('pageshowready', "#supporterKeyPage", function () {
+        page.querySelector('.lnkPremiere').addEventListener('click', onSupporterLinkClick);
+
+    }).on('pageshow', "#supporterKeyPage", function () {
 
         var page = this;
-        loadConnectSupporters(page);
+        loadUserInfo(page);
+        load(page);
     });
 
-    window.SupporterKeyPage.onAddConnectUserSubmit = function () {
-
-        var page = $(this).parents('.page');
-
-        var id = $('#selectUserToAdd', page).val();
-
-        addUser(page, id);
-
-        return false;
-    };
-
-})();
+});

@@ -1,4 +1,4 @@
-﻿(function ($, document, Dashboard, LibraryBrowser) {
+﻿define(['libraryBrowser'], function (libraryBrowser) {
 
     function notifications() {
 
@@ -37,19 +37,26 @@
                 return;
             }
 
-            promise.done(function (summary) {
+            promise.then(function (summary) {
 
-                var item = $('.btnNotificationsInner').removeClass('levelNormal').removeClass('levelWarning').removeClass('levelError').html(summary.UnreadCount);
+                var btnNotificationsInner = document.querySelector('.btnNotificationsInner');
+                if (btnNotificationsInner) {
 
-                if (summary.UnreadCount) {
-                    item.addClass('level' + summary.MaxUnreadNotificationLevel);
+                    btnNotificationsInner.classList.remove('levelNormal');
+                    btnNotificationsInner.classList.remove('levelWarning');
+                    btnNotificationsInner.classList.remove('levelError');
+                    btnNotificationsInner.innerHTML = summary.UnreadCount;
+
+                    if (summary.UnreadCount) {
+                        btnNotificationsInner.classList.add('level' + summary.MaxUnreadNotificationLevel);
+                    }
                 }
             });
         };
 
         self.markNotificationsRead = function (ids, callback) {
 
-            ApiClient.markNotificationsRead(Dashboard.getCurrentUserId(), ids, true).done(function () {
+            ApiClient.markNotificationsRead(Dashboard.getCurrentUserId(), ids, true).then(function () {
 
                 self.getNotificationsSummaryPromise = null;
 
@@ -75,7 +82,7 @@
         var apiClient = window.ApiClient;
 
         if (apiClient) {
-            return apiClient.getNotifications(Dashboard.getCurrentUserId(), { StartIndex: startIndex, Limit: limit }).done(function (result) {
+            return apiClient.getNotifications(Dashboard.getCurrentUserId(), { StartIndex: startIndex, Limit: limit }).then(function (result) {
 
                 listUnreadNotifications(result.Notifications, result.TotalRecordCount, startIndex, limit, elem, showPaging);
 
@@ -99,7 +106,7 @@
 
             var query = { StartIndex: startIndex, Limit: limit };
 
-            html += LibraryBrowser.getQueryPagingHtml({
+            html += libraryBrowser.getQueryPagingHtml({
                 startIndex: query.StartIndex,
                 limit: query.Limit,
                 totalRecordCount: totalRecordCount,
@@ -108,15 +115,17 @@
             });
         }
 
-        for (var i = 0, length = list.length; i < length; i++) {
+        require(['humanedate', 'paper-fab', 'paper-item-body', 'paper-icon-item'], function () {
+            for (var i = 0, length = list.length; i < length; i++) {
 
-            var notification = list[i];
+                var notification = list[i];
 
-            html += getNotificationHtml(notification);
+                html += getNotificationHtml(notification);
 
-        }
+            }
 
-        elem.html(html).trigger('create');
+            elem.html(html).trigger('create');
+        });
     }
 
     function getNotificationHtml(notification) {
@@ -129,7 +138,11 @@
 
         itemHtml += '<paper-icon-item>';
 
-        itemHtml += '<paper-fab class="listAvatar blue" icon="dvr" item-icon></paper-fab>';
+        if (notification.Level == "Error") {
+            itemHtml += '<paper-fab mini class="" style="background:#cc3333;" icon="error" item-icon></paper-fab>';
+        } else {
+            itemHtml += '<paper-fab mini  class="blue" icon="dvr" item-icon></paper-fab>';
+        }
 
         itemHtml += '<paper-item-body three-line>';
 
@@ -171,37 +184,27 @@
     }
 
     function initializeApiClient(apiClient) {
-        $(apiClient).off("websocketmessage", onWebSocketMessage).on("websocketmessage", onWebSocketMessage);
+        Events.off(apiClient, "websocketmessage", onWebSocketMessage);
+        Events.on(apiClient, "websocketmessage", onWebSocketMessage);
     }
 
-    $(document).on('headercreated', function (e, apiClient) {
-        $('.btnNotifications').on('click', function () {
-            Dashboard.navigate('notificationlist.html');
-        });
+    if (window.ApiClient) {
+        initializeApiClient(window.ApiClient);
+    }
+
+    Events.on(ConnectionManager, 'apiclientcreated', function (e, apiClient) {
+        initializeApiClient(apiClient);
     });
 
-    Dashboard.ready(function () {
-
-        if (window.ApiClient) {
-            initializeApiClient(window.ApiClient);
-        }
-
-        $(ConnectionManager).on('apiclientcreated', function (e, apiClient) {
-            initializeApiClient(apiClient);
-        });
-
-        Events.on(ConnectionManager, 'localusersignedin', function () {
-            needsRefresh = true;
-        });
-
-        Events.on(ConnectionManager, 'localusersignedout', function () {
-            needsRefresh = true;
-        });
+    Events.on(ConnectionManager, 'localusersignedin', function () {
+        needsRefresh = true;
     });
 
-    pageClassOn('pageshowready', "type-interior", function () {
+    Events.on(ConnectionManager, 'localusersignedout', function () {
+        needsRefresh = true;
+    });
 
-        var page = $(this);
+    pageClassOn('pageshow', "type-interior", function () {
 
         if (needsRefresh) {
             Notifications.updateNotificationCount();
@@ -209,4 +212,4 @@
 
     });
 
-})(jQuery, document, Dashboard, LibraryBrowser);
+});

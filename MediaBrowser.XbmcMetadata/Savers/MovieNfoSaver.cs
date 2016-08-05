@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -11,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Xml;
+using CommonIO;
 
 namespace MediaBrowser.XbmcMetadata.Savers
 {
@@ -29,7 +29,7 @@ namespace MediaBrowser.XbmcMetadata.Savers
         {
             var list = new List<string>();
 
-            if (item.VideoType == VideoType.Dvd)
+            if (item.VideoType == VideoType.Dvd && !item.IsPlaceHolder)
             {
                 var path = item.ContainingFolderPath;
 
@@ -44,6 +44,13 @@ namespace MediaBrowser.XbmcMetadata.Savers
             }
             else
             {
+                // http://kodi.wiki/view/NFO_files/Movies
+                // movie.nfo will override all and any .nfo files in the same folder as the media files if you use the "Use foldernames for lookups" setting. If you don't, then moviename.nfo is used
+                //if (!item.IsInMixedFolder && item.ItemType == typeof(Movie))
+                //{
+                //    list.Add(Path.Combine(item.ContainingFolderPath, "movie.nfo"));
+                //}
+
                 list.Add(Path.ChangeExtension(item.Path, ".nfo"));
             }
 
@@ -100,9 +107,9 @@ namespace MediaBrowser.XbmcMetadata.Savers
 
             if (movie != null)
             {
-                if (!string.IsNullOrEmpty(movie.TmdbCollectionName))
+                if (!string.IsNullOrEmpty(movie.CollectionName))
                 {
-                    writer.WriteElementString("set", movie.TmdbCollectionName);
+                    writer.WriteElementString("set", movie.CollectionName);
                 }
             }
         }

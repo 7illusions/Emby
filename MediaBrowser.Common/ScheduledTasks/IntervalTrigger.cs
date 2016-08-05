@@ -1,7 +1,9 @@
 ﻿using MediaBrowser.Model.Events;
 using MediaBrowser.Model.Tasks;
 using System;
+using System.Linq;
 using System.Threading;
+using MediaBrowser.Model.Logging;
 
 namespace MediaBrowser.Common.ScheduledTasks
 {
@@ -30,43 +32,43 @@ namespace MediaBrowser.Common.ScheduledTasks
         /// </value>
         public TaskExecutionOptions TaskOptions { get; set; }
 
-        /// <summary>
-        /// Gets or sets the first run delay.
-        /// </summary>
-        /// <value>The first run delay.</value>
-        public TimeSpan FirstRunDelay { get; set; }
-
-        public IntervalTrigger()
-        {
-            FirstRunDelay = TimeSpan.FromHours(1);
-        }
+        private DateTime _lastStartDate;
 
         /// <summary>
         /// Stars waiting for the trigger action
         /// </summary>
         /// <param name="lastResult">The last result.</param>
         /// <param name="isApplicationStartup">if set to <c>true</c> [is application startup].</param>
-        public void Start(TaskResult lastResult, bool isApplicationStartup)
+        public void Start(TaskResult lastResult, ILogger logger, string taskName, bool isApplicationStartup)
         {
             DisposeTimer();
 
-            var triggerDate = lastResult != null ?
-                            lastResult.EndTimeUtc.Add(Interval) :
-                            DateTime.UtcNow.Add(FirstRunDelay);
+            DateTime triggerDate;
+
+            if (lastResult == null)
+            {
+                // Task has never been completed before
+                triggerDate = DateTime.UtcNow.AddHours(1);
+            }
+            else
+            {
+                triggerDate = new[] { lastResult.EndTimeUtc, _lastStartDate }.Max().Add(Interval);
+            }
 
             if (DateTime.UtcNow > triggerDate)
             {
-                if (isApplicationStartup)
-                {
-                    triggerDate = DateTime.UtcNow.AddMinutes(1);
-                }
-                else
-                {
-                    triggerDate = DateTime.UtcNow.AddSeconds(10);
-                }
+                triggerDate = DateTime.UtcNow.AddMinutes(1);
             }
 
-            Timer = new Timer(state => OnTriggered(), null, triggerDate - DateTime.UtcNow, TimeSpan.FromMilliseconds(-1));
+            var dueTime = triggerDate - DateTime.UtcNow;
+            var maxDueTime = TimeSpan.FromDays(7);
+
+            if (dueTime > maxDueTime)
+            {
+                dueTime = maxDueTime;
+            }
+
+            Timer = new Timer(state => OnTriggered(), null, dueTime, TimeSpan.FromMilliseconds(-1));
         }
 
         /// <summary>
@@ -98,8 +100,11 @@ namespace MediaBrowser.Common.ScheduledTasks
         /// </summary>
         private void OnTriggered()
         {
+            DisposeTimer();
+
             if (Triggered != null)
             {
+                _lastStartDate = DateTime.UtcNow;
                 Triggered(this, new GenericEventArgs<TaskExecutionOptions>(TaskOptions));
             }
         }

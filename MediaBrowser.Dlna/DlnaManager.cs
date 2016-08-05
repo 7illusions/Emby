@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Dlna;
 using MediaBrowser.Controller.Drawing;
@@ -17,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using CommonIO;
 
 namespace MediaBrowser.Dlna
 {
@@ -28,6 +28,8 @@ namespace MediaBrowser.Dlna
         private readonly ILogger _logger;
         private readonly IJsonSerializer _jsonSerializer;
         private readonly IServerApplicationHost _appHost;
+
+        private readonly Dictionary<string, Tuple<InternalProfileInfo, DeviceProfile>> _profiles = new Dictionary<string, Tuple<InternalProfileInfo, DeviceProfile>>(StringComparer.Ordinal);
 
         public DlnaManager(IXmlSerializer xmlSerializer,
             IFileSystem fileSystem,
@@ -43,50 +45,40 @@ namespace MediaBrowser.Dlna
             _appHost = appHost;
         }
 
-        public IEnumerable<DeviceProfile> GetProfiles()
+        public void InitProfiles()
         {
-            ExtractProfilesIfNeeded();
+            try
+            {
+                ExtractSystemProfiles();
+                LoadProfiles();
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorException("Error extracting DLNA profiles.", ex);
+            }
+        }
 
+        private void LoadProfiles()
+        {
             var list = GetProfiles(UserProfilesPath, DeviceProfileType.User)
                 .OrderBy(i => i.Name)
                 .ToList();
 
             list.AddRange(GetProfiles(SystemProfilesPath, DeviceProfileType.System)
                 .OrderBy(i => i.Name));
-
-            return list;
         }
 
-        private bool _extracted;
-        private readonly object _syncLock = new object();
-        private void ExtractProfilesIfNeeded()
+        public IEnumerable<DeviceProfile> GetProfiles()
         {
-            if (!_extracted)
+            lock (_profiles)
             {
-                lock (_syncLock)
-                {
-                    if (!_extracted)
-                    {
-                        try
-                        {
-                            ExtractSystemProfiles();
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.ErrorException("Error extracting DLNA profiles.", ex);
-                        }
-
-                        _extracted = true;
-                    }
-
-                }
+                var list = _profiles.Values.ToList();
+                return list.Select(i => i.Item2).OrderBy(i => i.Name);
             }
         }
 
         public DeviceProfile GetDefaultProfile()
         {
-            ExtractProfilesIfNeeded();
-
             return new DefaultProfile();
         }
 
@@ -209,6 +201,10 @@ namespace MediaBrowser.Dlna
                 throw new ArgumentNullException("headers");
             }
 
+            //_logger.Debug("GetProfile. Headers: " + _jsonSerializer.SerializeToString(headers));
+            // Convert to case insensitive
+            headers = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
+
             var profile = GetProfiles().FirstOrDefault(i => i.Identification != null && IsMatch(headers, i.Identification));
 
             if (profile != null)
@@ -220,7 +216,7 @@ namespace MediaBrowser.Dlna
                 string userAgent = null;
                 headers.TryGetValue("User-Agent", out userAgent);
 
-                var msg = "No matching device profile found. The default will be used. ";
+                var msg = "No matching device profile via headers found. The default will be used. ";
                 if (!string.IsNullOrEmpty(userAgent))
                 {
                     msg += "User-agent: " + userAgent + ". ";
@@ -248,9 +244,12 @@ namespace MediaBrowser.Dlna
                     case HeaderMatchType.Equals:
                         return string.Equals(value, header.Value, StringComparison.OrdinalIgnoreCase);
                     case HeaderMatchType.Substring:
-                        return value.IndexOf(header.Value, StringComparison.OrdinalIgnoreCase) != -1;
+                        var isMatch = value.IndexOf(header.Value, StringComparison.OrdinalIgnoreCase) != -1;
+                        //_logger.Debug("IsMatch-Substring value: {0} testValue: {1} isMatch: {2}", value, header.Value, isMatch);
+                        return isMatch;
                     case HeaderMatchType.Regex:
-                        return Regex.IsMatch(value, header.Value, RegexOptions.IgnoreCase);
+                        // Reports of IgnoreCase not working on linux so try it a couple different ways.
+                        return Regex.IsMatch(value, header.Value, RegexOptions.IgnoreCase) || Regex.IsMatch(value.ToUpper(), header.Value.ToUpper(), RegexOptions.IgnoreCase);
                     default:
                         throw new ArgumentException("Unrecognized HeaderMatchType");
                 }
@@ -279,7 +278,7 @@ namespace MediaBrowser.Dlna
         {
             try
             {
-				return _fileSystem.GetFiles(path)
+                return _fileSystem.GetFiles(path)
                     .Where(i => string.Equals(i.Extension, ".xml", StringComparison.OrdinalIgnoreCase))
                     .Select(i => ParseProfileXmlFile(i.FullName, type))
                     .Where(i => i != null)
@@ -293,20 +292,31 @@ namespace MediaBrowser.Dlna
 
         private DeviceProfile ParseProfileXmlFile(string path, DeviceProfileType type)
         {
-            try
+            lock (_profiles)
             {
-                var profile = (DeviceProfile)_xmlSerializer.DeserializeFromFile(typeof(DeviceProfile), path);
+                Tuple<InternalProfileInfo, DeviceProfile> profileTuple;
+                if (_profiles.TryGetValue(path, out profileTuple))
+                {
+                    return profileTuple.Item2;
+                }
 
-                profile.Id = path.ToLower().GetMD5().ToString("N");
-                profile.ProfileType = type;
+                try
+                {
+                    var profile = (DeviceProfile)_xmlSerializer.DeserializeFromFile(typeof(DeviceProfile), path);
 
-                return profile;
-            }
-            catch (Exception ex)
-            {
-                _logger.ErrorException("Error parsing profile xml: {0}", ex, path);
+                    profile.Id = path.ToLower().GetMD5().ToString("N");
+                    profile.ProfileType = type;
 
-                return null;
+                    _profiles[path] = new Tuple<InternalProfileInfo, DeviceProfile>(GetInternalProfileInfo(_fileSystem.GetFileInfo(path), type), profile);
+
+                    return profile;
+                }
+                catch (Exception ex)
+                {
+                    _logger.ErrorException("Error parsing profile xml: {0}", ex, path);
+
+                    return null;
+                }
             }
         }
 
@@ -317,19 +327,21 @@ namespace MediaBrowser.Dlna
                 throw new ArgumentNullException("id");
             }
 
-            var info = GetProfileInfosInternal().First(i => string.Equals(i.Info.Id, id));
+            var info = GetProfileInfosInternal().First(i => string.Equals(i.Info.Id, id, StringComparison.OrdinalIgnoreCase));
 
             return ParseProfileXmlFile(info.Path, info.Info.Type);
         }
 
         private IEnumerable<InternalProfileInfo> GetProfileInfosInternal()
         {
-            ExtractProfilesIfNeeded();
-
-            return GetProfileInfos(UserProfilesPath, DeviceProfileType.User)
-                .Concat(GetProfileInfos(SystemProfilesPath, DeviceProfileType.System))
-                .OrderBy(i => i.Info.Type == DeviceProfileType.User ? 0 : 1)
-                .ThenBy(i => i.Info.Name);
+            lock (_profiles)
+            {
+                var list = _profiles.Values.ToList();
+                return list
+                    .Select(i => i.Item1)
+                    .OrderBy(i => i.Info.Type == DeviceProfileType.User ? 0 : 1)
+                    .ThenBy(i => i.Info.Name);
+            }
         }
 
         public IEnumerable<DeviceProfileInfo> GetProfileInfos()
@@ -341,25 +353,30 @@ namespace MediaBrowser.Dlna
         {
             try
             {
-				return _fileSystem.GetFiles(path)
+                return _fileSystem.GetFiles(path)
                     .Where(i => string.Equals(i.Extension, ".xml", StringComparison.OrdinalIgnoreCase))
-                    .Select(i => new InternalProfileInfo
-                    {
-                        Path = i.FullName,
-
-                        Info = new DeviceProfileInfo
-                        {
-                            Id = i.FullName.ToLower().GetMD5().ToString("N"),
-                            Name = _fileSystem.GetFileNameWithoutExtension(i),
-                            Type = type
-                        }
-                    })
+                    .Select(i => GetInternalProfileInfo(i, type))
                     .ToList();
             }
             catch (DirectoryNotFoundException)
             {
                 return new List<InternalProfileInfo>();
             }
+        }
+
+        private InternalProfileInfo GetInternalProfileInfo(FileSystemMetadata file, DeviceProfileType type)
+        {
+            return new InternalProfileInfo
+            {
+                Path = file.FullName,
+
+                Info = new DeviceProfileInfo
+                {
+                    Id = file.FullName.ToLower().GetMD5().ToString("N"),
+                    Name = _fileSystem.GetFileNameWithoutExtension(file),
+                    Type = type
+                }
+            };
         }
 
         private void ExtractSystemProfiles()
@@ -383,7 +400,7 @@ namespace MediaBrowser.Dlna
 
                     if (!fileInfo.Exists || fileInfo.Length != stream.Length)
                     {
-						_fileSystem.CreateDirectory(systemProfilesPath);
+                        _fileSystem.CreateDirectory(systemProfilesPath);
 
                         using (var fileStream = _fileSystem.GetFileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
                         {
@@ -394,12 +411,12 @@ namespace MediaBrowser.Dlna
             }
 
             // Not necessary, but just to make it easy to find
-			_fileSystem.CreateDirectory(UserProfilesPath);
+            _fileSystem.CreateDirectory(UserProfilesPath);
         }
 
         public void DeleteProfile(string id)
         {
-            var info = GetProfileInfosInternal().First(i => string.Equals(id, i.Info.Id));
+            var info = GetProfileInfosInternal().First(i => string.Equals(id, i.Info.Id, StringComparison.OrdinalIgnoreCase));
 
             if (info.Info.Type == DeviceProfileType.System)
             {
@@ -407,6 +424,11 @@ namespace MediaBrowser.Dlna
             }
 
             _fileSystem.DeleteFile(info.Path);
+
+            lock (_profiles)
+            {
+                _profiles.Remove(info.Path);
+            }
         }
 
         public void CreateProfile(DeviceProfile profile)
@@ -421,7 +443,7 @@ namespace MediaBrowser.Dlna
             var newFilename = _fileSystem.GetValidFilename(profile.Name) + ".xml";
             var path = Path.Combine(UserProfilesPath, newFilename);
 
-            _xmlSerializer.SerializeToFile(profile, path);
+            SaveProfile(profile, path, DeviceProfileType.User);
         }
 
         public void UpdateProfile(DeviceProfile profile)
@@ -447,7 +469,16 @@ namespace MediaBrowser.Dlna
             {
                 _fileSystem.DeleteFile(current.Path);
             }
-            
+
+            SaveProfile(profile, path, DeviceProfileType.User);
+        }
+
+        private void SaveProfile(DeviceProfile profile, string path, DeviceProfileType type)
+        {
+            lock (_profiles)
+            {
+                _profiles[path] = new Tuple<InternalProfileInfo, DeviceProfile>(GetInternalProfileInfo(_fileSystem.GetFileInfo(path), type), profile);
+            }
             _xmlSerializer.SerializeToFile(profile, path);
         }
 
@@ -480,7 +511,9 @@ namespace MediaBrowser.Dlna
             var profile = GetProfile(headers) ??
                           GetDefaultProfile();
 
-            return new DescriptionXmlBuilder(profile, serverUuId, serverAddress, _appHost.FriendlyName, serverUuId.GetMD5().ToString("N")).GetXml();
+            var serverId = _appHost.SystemId;
+
+            return new DescriptionXmlBuilder(profile, serverUuId, serverAddress, _appHost.FriendlyName, serverId).GetXml();
         }
 
         public ImageStream GetIcon(string filename)

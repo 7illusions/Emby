@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Localization;
@@ -15,7 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
-using MediaBrowser.Common.IO;
+using CommonIO;
 
 namespace MediaBrowser.Providers.TV
 {
@@ -28,6 +27,8 @@ namespace MediaBrowser.Providers.TV
         private readonly IFileSystem _fileSystem;
 
         private readonly CultureInfo _usCulture = new CultureInfo("en-US");
+        private static readonly SemaphoreSlim _resourceLock = new SemaphoreSlim(1, 1);
+        public static bool IsRunning = false;
 
         public MissingEpisodeProvider(ILogger logger, IServerConfigurationManager config, ILibraryManager libraryManager, ILocalizationManager localization, IFileSystem fileSystem)
         {
@@ -38,13 +39,16 @@ namespace MediaBrowser.Providers.TV
             _fileSystem = fileSystem;
         }
 
-        public async Task Run(IEnumerable<IGrouping<string, Series>> series, CancellationToken cancellationToken)
+        public async Task Run(List<IGrouping<string, Series>> series, bool addNewItems, CancellationToken cancellationToken)
         {
+            await _resourceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            IsRunning = true;
+
             foreach (var seriesGroup in series)
             {
                 try
                 {
-                    await Run(seriesGroup, cancellationToken).ConfigureAwait(false);
+                    await Run(seriesGroup, addNewItems, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -52,20 +56,27 @@ namespace MediaBrowser.Providers.TV
                 }
                 catch (DirectoryNotFoundException)
                 {
-                    _logger.Warn("Series files missing for series id {0}", seriesGroup.Key);
+                    //_logger.Warn("Series files missing for series id {0}", seriesGroup.Key);
                 }
                 catch (Exception ex)
                 {
                     _logger.ErrorException("Error in missing episode provider for series id {0}", ex, seriesGroup.Key);
                 }
             }
+
+            IsRunning = false;
+            _resourceLock.Release();
         }
 
-        private async Task Run(IGrouping<string, Series> group, CancellationToken cancellationToken)
+        private async Task Run(IGrouping<string, Series> group, bool addNewItems, CancellationToken cancellationToken)
         {
             var tvdbId = group.Key;
 
-            var seriesDataPath = TvdbSeriesProvider.GetSeriesDataPath(_config.ApplicationPaths, tvdbId);
+            // Todo: Support series by imdb id
+            var seriesProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            seriesProviderIds[MetadataProviders.Tvdb.ToString()] = tvdbId;
+
+            var seriesDataPath = TvdbSeriesProvider.GetSeriesDataPath(_config.ApplicationPaths, seriesProviderIds);
 
             var episodeFiles = Directory.EnumerateFiles(seriesDataPath, "*.xml", SearchOption.TopDirectoryOnly)
                 .Select(Path.GetFileNameWithoutExtension)
@@ -107,7 +118,7 @@ namespace MediaBrowser.Providers.TV
 
             var hasNewEpisodes = false;
 
-            if (_config.Configuration.EnableInternetProviders)
+            if (_config.Configuration.EnableInternetProviders && addNewItems)
             {
                 var seriesConfig = _config.Configuration.MetadataOptions.FirstOrDefault(i => string.Equals(i.ItemType, typeof(Series).Name, StringComparison.OrdinalIgnoreCase));
 
@@ -124,9 +135,7 @@ namespace MediaBrowser.Providers.TV
                 {
                     var directoryService = new DirectoryService(_fileSystem);
 
-                    await series.RefreshMetadata(new MetadataRefreshOptions(directoryService)
-                    {
-                    }, cancellationToken).ConfigureAwait(false);
+                    await series.RefreshMetadata(new MetadataRefreshOptions(directoryService), cancellationToken).ConfigureAwait(false);
 
                     await series.ValidateChildren(new Progress<double>(), cancellationToken, new MetadataRefreshOptions(directoryService), true)
                         .ConfigureAwait(false);
@@ -310,7 +319,11 @@ namespace MediaBrowser.Providers.TV
             {
                 _logger.Info("Removing missing/unaired episode {0} {1}x{2}", episodeToRemove.Series.Name, episodeToRemove.ParentIndexNumber, episodeToRemove.IndexNumber);
 
-                await _libraryManager.DeleteItem(episodeToRemove).ConfigureAwait(false);
+                await episodeToRemove.Delete(new DeleteOptions
+                {
+                    DeleteFileLocation = true
+
+                }).ConfigureAwait(false);
 
                 hasChanges = true;
             }
@@ -365,7 +378,7 @@ namespace MediaBrowser.Providers.TV
 
                     // Season does not have a number
                     // Remove if there are no episodes directly in series without a season number
-                    return i.Season.Series.GetRecursiveChildren().OfType<Episode>().All(s => s.ParentIndexNumber.HasValue || !s.IsInSeasonFolder);
+                    return i.Season.Series.GetRecursiveChildren().OfType<Episode>().All(s => s.ParentIndexNumber.HasValue || s.IsInSeasonFolder);
                 })
                 .ToList();
 
@@ -375,7 +388,11 @@ namespace MediaBrowser.Providers.TV
             {
                 _logger.Info("Removing virtual season {0} {1}", seasonToRemove.Series.Name, seasonToRemove.IndexNumber);
 
-                await _libraryManager.DeleteItem(seasonToRemove).ConfigureAwait(false);
+                await seasonToRemove.Delete(new DeleteOptions
+                {
+                    DeleteFileLocation = true
+
+                }).ConfigureAwait(false);
 
                 hasChanges = true;
             }
@@ -399,7 +416,7 @@ namespace MediaBrowser.Providers.TV
             if (season == null)
             {
                 var provider = new DummySeasonProvider(_config, _logger, _localization, _libraryManager, _fileSystem);
-                season = await provider.AddSeason(series, seasonNumber, cancellationToken).ConfigureAwait(false);
+                season = await provider.AddSeason(series, seasonNumber, true, cancellationToken).ConfigureAwait(false);
             }
 
             var name = string.Format("Episode {0}", episodeNumber.ToString(_usCulture));
@@ -409,16 +426,17 @@ namespace MediaBrowser.Providers.TV
                 Name = name,
                 IndexNumber = episodeNumber,
                 ParentIndexNumber = seasonNumber,
-                Id = (series.Id + seasonNumber.ToString(_usCulture) + name).GetMBId(typeof(Episode))
+                Id = _libraryManager.GetNewItemId((series.Id + seasonNumber.ToString(_usCulture) + name), typeof(Episode)),
+                IsVirtualItem = true,
+                SeasonId = season == null ? (Guid?)null : season.Id,
+                SeriesId = series.Id
             };
 
             episode.SetParent(season);
 
             await season.AddChild(episode, cancellationToken).ConfigureAwait(false);
 
-			await episode.RefreshMetadata(new MetadataRefreshOptions(_fileSystem)
-            {
-            }, cancellationToken).ConfigureAwait(false);
+            await episode.RefreshMetadata(new MetadataRefreshOptions(_fileSystem), cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>

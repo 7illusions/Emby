@@ -74,7 +74,7 @@ namespace MediaBrowser.Server.Implementations.EntryPoints
                 // Go up one level for indicators
                 if (baseItem != null)
                 {
-                    var parent = baseItem.Parent;
+                    var parent = baseItem.GetParent();
 
                     if (parent != null)
                     {
@@ -119,7 +119,7 @@ namespace MediaBrowser.Server.Implementations.EntryPoints
                         .DistinctBy(i => i.Id)
                         .Select(i =>
                         {
-                            var dto = _userDataManager.GetUserDataDto(i, user);
+                            var dto = _userDataManager.GetUserDataDto(i, user).Result;
                             dto.ItemId = i.Id.ToString("N");
                             return dto;
                         })

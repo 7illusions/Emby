@@ -1,294 +1,377 @@
-﻿(function ($, document) {
+﻿define(['libraryBrowser', 'alphaPicker', 'listView', 'cardBuilder', 'emby-itemscontainer'], function (libraryBrowser, alphaPicker, listView, cardBuilder) {
 
-    var view = LibraryBrowser.getDefaultItemsView('Poster', 'Poster');
+    return function (view, params) {
 
-    var currentItem;
+        var currentItem;
 
-    var data = {};
+        var data;
 
-    function getPageData() {
-        var key = getSavedQueryKey();
-        var pageData = data[key];
+        function getPageData() {
+            var pageData = data;
 
-        if (!pageData) {
-            pageData = data[key] = {
-                query: {
-                    SortBy: "SortName",
-                    SortOrder: "Ascending",
-                    Fields: "DateCreated,PrimaryImageAspectRatio,MediaSourceCount,SyncInfo",
-                    ImageTypeLimit: 1,
-                    EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
-                    StartIndex: 0,
-                    Limit: LibraryBrowser.getDefaultPageSize()
-                }
-            };
+            if (!pageData) {
+                pageData = data = {
+                    query: {
+                        SortBy: "IsFolder,SortName",
+                        SortOrder: "Ascending",
+                        Fields: "DateCreated,PrimaryImageAspectRatio,MediaSourceCount",
+                        ImageTypeLimit: 1,
+                        EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
+                        StartIndex: 0,
+                        Limit: libraryBrowser.getDefaultPageSize()
+                    }
+                };
 
-            pageData.query.Filters = "";
-            pageData.query.NameStartsWithOrGreater = '';
-            pageData.view = LibraryBrowser.getDefaultItemsView('Poster', 'Poster');
+                pageData.query.Filters = "";
+                pageData.query.NameStartsWithOrGreater = '';
+                var key = getSavedQueryKey();
+                pageData.view = libraryBrowser.getSavedView(key) || 'Poster';
 
-            pageData.query.ParentId = getParameterByName('parentId');
-            LibraryBrowser.loadSavedQueryValues(key, pageData.query);
+                pageData.query.ParentId = params.parentId || null;
+                libraryBrowser.loadSavedQueryValues(key, pageData.query);
+            }
+            return pageData;
         }
-        return pageData;
-    }
 
-    function getQuery() {
+        function getQuery() {
 
-        return getPageData().query;
-    }
-    function getSavedQueryKey() {
+            return getPageData().query;
+        }
+        function getSavedQueryKey() {
 
-        return getWindowUrl();
-    }
-
-    function reloadItems(page) {
-
-        Dashboard.showLoadingMsg();
-
-        var query = getQuery();
-        var userId = Dashboard.getCurrentUserId();
-
-        var parentItemPromise = query.ParentId ?
-           ApiClient.getItem(userId, query.ParentId) :
-           ApiClient.getRootFolder(userId);
-
-        var itemsPromise = ApiClient.getItems(userId, query);
-
-        $.when(parentItemPromise, itemsPromise).done(function (r1, r2) {
-
-            var item = r1[0];
-            currentItem = item;
-            var result = r2[0];
-
-            // Scroll back up so they can see the results from the beginning
-            window.scrollTo(0, 0);
-
-            var view = getPageData().view;
-
-            var html = '';
-            var pagingHtml = LibraryBrowser.getQueryPagingHtml({
-                startIndex: query.StartIndex,
-                limit: query.Limit,
-                totalRecordCount: result.TotalRecordCount,
-                viewButton: true,
-                showLimit: false,
-                addLayoutButton: true,
-                currentLayout: view,
-                viewIcon: 'filter-list',
-                sortButton: true,
-                layouts: 'Poster,PosterCard'
-            });
-
-            page.querySelector('.listTopPaging').innerHTML = pagingHtml;
-
-            updateFilterControls(page);
-
-            var context = getParameterByName('context');
-
-            var posterOptions = {
-                items: result.Items,
-                shape: "auto",
-                centerText: true,
-                lazy: true
-            };
-
-            if (view == "Backdrop") {
-
-                posterOptions.shape = 'backdrop';
-                posterOptions.showTitle = true;
-                posterOptions.preferBackdrop = true;
-
-                html = LibraryBrowser.getPosterViewHtml(posterOptions);
+            if (!view.savedQueryKey) {
+                view.savedQueryKey = libraryBrowser.getSavedQueryKey('itemsv1');
             }
-            else if (view == "Poster") {
+            return view.savedQueryKey;
+        }
 
-                posterOptions.showTitle = context == 'photos' ? 'auto' : true;
-                posterOptions.overlayText = context == 'photos';
+        function onViewStyleChange() {
 
-                html = LibraryBrowser.getPosterViewHtml(posterOptions);
+            var viewStyle = getPageData(view).view;
+
+            var itemsContainer = view.querySelector('#items');
+
+            if (viewStyle == "List") {
+
+                itemsContainer.classList.add('vertical-list');
+                itemsContainer.classList.remove('vertical-wrap');
             }
-            else if (view == "PosterCard") {
+            else {
 
-                posterOptions.showTitle = true;
-                posterOptions.showYear = true;
-                posterOptions.cardLayout = true;
-                posterOptions.centerText = false;
-
-                html = LibraryBrowser.getPosterViewHtml(posterOptions);
+                itemsContainer.classList.remove('vertical-list');
+                itemsContainer.classList.add('vertical-wrap');
             }
+            itemsContainer.innerHTML = '';
+        }
 
-            var elem = page.querySelector('#items');
-            elem.innerHTML = html + pagingHtml;
-            ImageLoader.lazyChildren(elem);
+        function reloadItems() {
 
-            $('.btnNextPage', page).on('click', function () {
-                query.StartIndex += query.Limit;
-                reloadItems(page);
-            });
+            Dashboard.showLoadingMsg();
 
-            $('.btnPreviousPage', page).on('click', function () {
-                query.StartIndex -= query.Limit;
-                reloadItems(page);
-            });
+            var query = getQuery();
+            var userId = Dashboard.getCurrentUserId();
 
-            $('.btnChangeLayout', page).on('layoutchange', function (e, layout) {
-                getPageData().view = layout;
-                LibraryBrowser.saveViewSetting(getSavedQueryKey(), layout);
-                reloadItems(page);
-            });
+            var parentItemPromise = query.ParentId ?
+               ApiClient.getItem(userId, query.ParentId) :
+               ApiClient.getRootFolder(userId);
 
-            // On callback make sure to set StartIndex = 0
-            $('.btnSort', page).on('click', function () {
-                LibraryBrowser.showSortMenu({
-                    items: [{
-                        name: Globalize.translate('OptionNameSort'),
-                        id: 'SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionCommunityRating'),
-                        id: 'CommunityRating,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionCriticRating'),
-                        id: 'CriticRating,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionDateAdded'),
-                        id: 'DateCreated,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionDatePlayed'),
-                        id: 'DatePlayed,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionParentalRating'),
-                        id: 'OfficialRating,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionPlayCount'),
-                        id: 'PlayCount,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionReleaseDate'),
-                        id: 'PremiereDate,SortName'
-                    },
-                    {
-                        name: Globalize.translate('OptionRuntime'),
-                        id: 'Runtime,SortName'
-                    }],
-                    callback: function () {
-                        reloadItems(page);
-                    },
-                    query: query
+            var itemsPromise = ApiClient.getItems(userId, query);
+
+            Promise.all([parentItemPromise, itemsPromise]).then(function (responses) {
+
+                var item = responses[0];
+                currentItem = item;
+                var result = responses[1];
+
+                // Scroll back up so they can see the results from the beginning
+                window.scrollTo(0, 0);
+
+                var viewStyle = getPageData(view).view;
+
+                var html = '';
+                var pagingHtml = libraryBrowser.getQueryPagingHtml({
+                    startIndex: query.StartIndex,
+                    limit: query.Limit,
+                    totalRecordCount: result.TotalRecordCount,
+                    showLimit: false,
+                    addLayoutButton: false,
+                    currentLayout: viewStyle,
+                    sortButton: false,
+                    filterButton: false
                 });
+
+                view.querySelector('.paging').innerHTML = pagingHtml;
+
+                updateFilterControls();
+
+                var context = params.context;
+
+                var posterOptions = {
+                    items: result.Items,
+                    shape: "auto",
+                    centerText: true,
+                    lazy: true,
+                    coverImage: item.Type == 'PhotoAlbum'
+                };
+
+                if (viewStyle == "Backdrop") {
+
+                    posterOptions.shape = 'backdrop';
+                    posterOptions.showTitle = true;
+                    posterOptions.preferBackdrop = true;
+
+                    html = cardBuilder.getCardsHtml(posterOptions);
+                }
+                else if (viewStyle == "PosterCard") {
+
+                    posterOptions.showTitle = true;
+                    posterOptions.showYear = true;
+                    posterOptions.cardLayout = true;
+                    posterOptions.centerText = false;
+
+                    html = cardBuilder.getCardsHtml(posterOptions);
+                }
+                else if (viewStyle == "List") {
+
+                    html = listView.getListViewHtml({
+                        items: result.Items,
+                        sortBy: query.SortBy
+                    });
+                }
+                else if (viewStyle == "Thumb") {
+
+                    posterOptions.preferThumb = true;
+                    posterOptions.shape = "backdrop";
+                    html = cardBuilder.getCardsHtml(posterOptions);
+                } else {
+
+                    // Poster
+                    posterOptions.showTitle = context == 'photos' ? 'auto' : true;
+                    posterOptions.overlayText = context == 'photos';
+
+                    html = cardBuilder.getCardsHtml(posterOptions);
+                }
+
+                if (currentItem.CollectionType == 'boxsets') {
+                    view.querySelector('.btnNewCollection').classList.remove('hide');
+                    if (!result.Items.length) {
+                        html = '<p style="text-align:center;">' + Globalize.translate('MessageNoCollectionsAvailable') + '</p>';
+                    }
+                } else {
+                    view.querySelector('.btnNewCollection').classList.add('hide');
+                }
+
+                var elem = view.querySelector('#items');
+                elem.innerHTML = html + pagingHtml;
+                ImageLoader.lazyChildren(elem);
+
+                var i, length;
+                var elems = view.querySelectorAll('.paging');
+                for (i = 0, length = elems.length; i < length; i++) {
+                    elems[i].innerHTML = pagingHtml;
+                }
+
+                function onNextPageClick() {
+                    query.StartIndex += query.Limit;
+                    reloadItems(view);
+                }
+
+                function onPreviousPageClick() {
+                    query.StartIndex -= query.Limit;
+                    reloadItems(view);
+                }
+
+                elems = view.querySelectorAll('.btnNextPage');
+                for (i = 0, length = elems.length; i < length; i++) {
+                    elems[i].addEventListener('click', onNextPageClick);
+                }
+
+                elems = view.querySelectorAll('.btnPreviousPage');
+                for (i = 0, length = elems.length; i < length; i++) {
+                    elems[i].addEventListener('click', onPreviousPageClick);
+                }
+
+                libraryBrowser.saveQueryValues(params.parentId, query);
+
+                var name = item.Name;
+
+                if (item.IndexNumber != null) {
+                    name = item.IndexNumber + " - " + name;
+                }
+                if (item.ParentIndexNumber != null) {
+                    name = item.ParentIndexNumber + "." + name;
+                }
+
+                LibraryMenu.setTitle(name);
+
+                view.dispatchEvent(new CustomEvent("displayingitem", {
+                    detail: {
+                        item: item
+                    },
+                    bubbles: true
+                }));
+
+                Dashboard.hideLoadingMsg();
             });
-
-            LibraryBrowser.saveQueryValues(getParameterByName('parentId'), query);
-
-            var name = item.Name;
-
-            if (item.IndexNumber != null) {
-                name = item.IndexNumber + " - " + name;
-            }
-            if (item.ParentIndexNumber != null) {
-                name = item.ParentIndexNumber + "." + name;
-            }
-
-            LibraryMenu.setTitle(name);
-
-            $(page).trigger('displayingitem', [{
-
-                item: item
-            }]);
-
-            LibraryBrowser.setLastRefreshed(page);
-            Dashboard.hideLoadingMsg();
-        });
-    }
-
-    function updateFilterControls(page) {
-
-        var query = getQuery();
-
-        $('.chkStandardFilter', page).each(function () {
-
-            var filters = "," + (query.Filters || "");
-            var filterName = this.getAttribute('data-filter');
-
-            this.checked = filters.indexOf(',' + filterName) != -1;
-
-        });
-
-        $('.alphabetPicker', page).alphaValue(query.NameStartsWithOrGreater);
-    }
-
-    function onListItemClick(e) {
-
-        var query = getQuery();
-        var page = $(this).parents('.page');
-        var info = LibraryBrowser.getListItemInfo(this);
-
-        if (info.mediaType == 'Photo') {
-            require(['scripts/photos'], function () {
-                Photos.startSlideshow(page, query, info.id);
-            });
-            return false;
         }
-    }
 
-    $(document).on('pageinit', "#itemListPage", function () {
+        function showFilterMenu() {
 
-        var page = this;
+            require(['components/filterdialog/filterdialog'], function (filterDialogFactory) {
 
-        $('.chkStandardFilter', this).on('change', function () {
+                var filterDialog = new filterDialogFactory({
+                    query: getQuery()
+                });
 
+                Events.on(filterDialog, 'filterchange', function () {
+                    reloadItems();
+                });
+
+                filterDialog.show();
+            });
+        }
+
+        var alphaPickerElement = view.querySelector('.alphaPicker');
+        alphaPickerElement.addEventListener('alphavaluechanged', function (e) {
+            var newValue = e.detail.value;
             var query = getQuery();
-            var filterName = this.getAttribute('data-filter');
-            var filters = query.Filters || "";
+            query.NameStartsWithOrGreater = newValue;
+            query.StartIndex = 0;
+            reloadItems(view);
+        });
 
-            filters = (',' + filters).replace(',' + filterName, '').substring(1);
+        self.alphaPicker = new alphaPicker({
+            element: alphaPickerElement,
+            valueChangeEvent: 'click'
+        });
 
-            if (this.checked) {
-                filters = filters ? (filters + ',' + filterName) : filterName;
+        function parentWithClass(elem, className) {
+
+            while (!elem.classList || !elem.classList.contains(className)) {
+                elem = elem.parentNode;
+
+                if (!elem) {
+                    return null;
+                }
             }
 
-            query.StartIndex = 0;
-            query.Filters = filters;
+            return elem;
+        }
 
-            reloadItems(page);
+        view.addEventListener('click', function (e) {
+
+            var mediaItem = parentWithClass(e.target, 'mediaItem');
+            if (mediaItem) {
+                var query = getQuery();
+                var info = libraryBrowser.getListItemInfo(mediaItem);
+
+                if (info.mediaType == 'Photo') {
+                    require(['scripts/photos'], function () {
+                        Photos.startSlideshow(view, query, info.id);
+                    });
+                    e.preventDefault();
+                    return false;
+                }
+            }
         });
 
-        $('.alphabetPicker', this).on('alphaselect', function (e, character) {
+        function updateFilterControls() {
 
             var query = getQuery();
-            query.NameStartsWithOrGreater = character;
-            query.StartIndex = 0;
 
-            reloadItems(page);
+            self.alphaPicker.value(query.NameStartsWithOrGreater);
+        }
 
-        }).on('alphaclear', function (e) {
+        var btnSelectView = view.querySelector('.btnSelectView');
+        btnSelectView.addEventListener('click', function (e) {
 
-            var query = getQuery();
-            query.NameStartsWithOrGreater = '';
-
-            reloadItems(page);
+            libraryBrowser.showLayoutMenu(e.target, getPageData().view, 'List,Poster,PosterCard,Thumb'.split(','));
         });
 
-        $(page).on('click', '.mediaItem', onListItemClick);
+        btnSelectView.addEventListener('layoutchange', function (e) {
+            var layout = e.detail.viewStyle;
+            getPageData().view = layout;
+            libraryBrowser.saveViewSetting(getSavedQueryKey(), layout);
+            onViewStyleChange();
+            reloadItems(view);
+        });
 
-    }).on('pagebeforeshow', "#itemListPage", function () {
+        onViewStyleChange();
 
-        var page = this;
+        view.querySelector('.btnFilter').addEventListener('click', function () {
+            showFilterMenu();
+        });
 
-        reloadItems(page);
-        updateFilterControls(page);
-        LibraryMenu.setBackButtonVisible(getParameterByName('context'));
+        // On callback make sure to set StartIndex = 0
+        view.querySelector('.btnSort').addEventListener('click', function () {
+            libraryBrowser.showSortMenu({
+                items: [{
+                    name: Globalize.translate('OptionNameSort'),
+                    id: 'IsFolder,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionCommunityRating'),
+                    id: 'CommunityRating,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionCriticRating'),
+                    id: 'CriticRating,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionDateAdded'),
+                    id: 'DateCreated,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionDatePlayed'),
+                    id: 'DatePlayed,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionParentalRating'),
+                    id: 'OfficialRating,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionPlayCount'),
+                    id: 'PlayCount,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionReleaseDate'),
+                    id: 'PremiereDate,SortName'
+                },
+                {
+                    name: Globalize.translate('OptionRuntime'),
+                    id: 'Runtime,SortName'
+                }],
+                callback: function () {
+                    reloadItems(view);
+                },
+                query: getQuery()
+            });
+        });
 
-    }).on('pagebeforehide', "#itemListPage", function () {
+        // The button is created dynamically
+        view.querySelector('.btnNewCollection').addEventListener('click', function () {
 
-        currentItem = null;
+            require(['collectionEditor'], function (collectionEditor) {
 
-    });
+                var serverId = ApiClient.serverInfo().Id;
+                new collectionEditor().show({
+                    items: [],
+                    serverId: serverId
+                });
 
-})(jQuery, document);
+            });
+        });
+
+        view.addEventListener('viewbeforeshow', function (e) {
+            reloadItems(view);
+            updateFilterControls();
+            LibraryMenu.setBackButtonVisible(params.context);
+        });
+
+        view.addEventListener('viewdestroy', function (e) {
+            if (self.alphaPicker) {
+                self.alphaPicker.destroy();
+            }
+        });
+    };
+});
