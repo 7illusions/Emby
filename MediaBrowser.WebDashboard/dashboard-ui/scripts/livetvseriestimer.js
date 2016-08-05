@@ -1,23 +1,25 @@
-﻿(function (window, $, document) {
+﻿define(['datetime', 'jQuery'], function (datetime, $) {
 
     var currentItem;
 
     function deleteTimer(page, id) {
 
-        Dashboard.confirm(Globalize.translate('MessageConfirmRecordingCancellation'), Globalize.translate('HeaderConfirmRecordingCancellation'), function (result) {
+        require(['confirm'], function (confirm) {
 
-            if (result) {
+            confirm(Globalize.translate('MessageConfirmRecordingCancellation'), Globalize.translate('HeaderConfirmRecordingCancellation')).then(function () {
 
                 Dashboard.showLoadingMsg();
 
-                ApiClient.cancelLiveTvTimer(id).done(function () {
+                ApiClient.cancelLiveTvTimer(id).then(function () {
 
-                    Dashboard.alert(Globalize.translate('MessageRecordingCancelled'));
+                    Dashboard.hideLoadingMsg();
+                    require(['toast'], function (toast) {
+                        toast(Globalize.translate('MessageRecordingCancelled'));
+                    });
 
                     reload(page);
                 });
-            }
-
+            });
         });
     }
 
@@ -50,7 +52,7 @@
             $('.time', page).html(Globalize.translate('LabelAnytime')).trigger('create');
         }
         else if (item.ChannelId) {
-            $('.time', page).html(LibraryBrowser.getDisplayTime(item.StartDate)).trigger('create');
+            $('.time', page).html(datetime.getDisplayTime(item.StartDate)).trigger('create');
         }
 
         Dashboard.hideLoadingMsg();
@@ -103,7 +105,7 @@
 
         var form = this;
 
-        ApiClient.getLiveTvSeriesTimer(currentItem.Id).done(function (item) {
+        ApiClient.getLiveTvSeriesTimer(currentItem.Id).then(function (item) {
 
             item.PrePaddingSeconds = $('#txtPrePaddingMinutes', form).val() * 60;
             item.PostPaddingSeconds = $('#txtPostPaddingMinutes', form).val() * 60;
@@ -114,8 +116,11 @@
 
             item.Days = getDays(form);
 
-            ApiClient.updateLiveTvSeriesTimer(item).done(function () {
-                Dashboard.alert(Globalize.translate('MessageRecordingSaved'));
+            ApiClient.updateLiveTvSeriesTimer(item).then(function () {
+                Dashboard.hideLoadingMsg();
+                require(['toast'], function (toast) {
+                    toast(Globalize.translate('MessageRecordingSaved'));
+                });
             });
         });
 
@@ -124,104 +129,21 @@
 
     }
 
-    function renderRecordings(page, result) {
-
-        $('.recordingsTab', page).html(LibraryBrowser.getPosterViewHtml({
-
-            items: result.Items,
-            shape: "detailPageSquare",
-            showTitle: true,
-            centerText: true,
-            coverImage: true
-
-        }));
-    }
-
     function renderSchedule(page, result) {
 
         var timers = result.Items;
 
-        var html = '';
+        LiveTvHelpers.getTimersHtml(timers).then(function(html) {
+            var elem = $('.scheduleTab', page).html(html)[0];
 
-        html += '<ul data-role="listview" data-inset="true" data-split-icon="delete">';
+            ImageLoader.lazyChildren(elem);
 
-        var index = '';
+            $('.btnDeleteTimer', elem).on('click', function () {
 
-        for (var i = 0, length = timers.length; i < length; i++) {
+                var id = this.getAttribute('data-timerid');
 
-            var timer = timers[i];
-
-            var startDateText = LibraryBrowser.getFutureDateText(parseISO8601Date(timer.StartDate, { toLocal: true }));
-
-            if (startDateText != index) {
-                html += '<li data-role="list-divider">' + startDateText + '</li>';
-                index = startDateText;
-            }
-
-            html += '<li><a href="livetvtimer.html?id=' + timer.Id + '">';
-
-            var program = timer.ProgramInfo || {};
-            var imgUrl;
-
-            var programImages = program.ImageTags || {};
-            if (programImages.Primary) {
-
-                imgUrl = ApiClient.getScaledImageUrl(program.Id, {
-                    height: 80,
-                    tag: programImages.Primary,
-                    type: "Primary"
-                });
-            } else {
-                imgUrl = "css/images/items/searchhintsv2/tv.png";
-            }
-
-            html += '<img src="css/images/items/searchhintsv2/tv.png" style="display:none;">';
-            html += '<div class="ui-li-thumb" style="background-image:url(\'' + imgUrl + '\');width:5em;height:5em;background-repeat:no-repeat;background-position:center center;background-size: cover;"></div>';
-
-            html += '<h3>';
-            html += program.EpisodeTitle || timer.Name;
-            html += '</h3>';
-
-            html += '<p>';
-
-            if (program.IsLive) {
-                html += '<span class="liveTvProgram">' + Globalize.translate('LabelLiveProgram') + '&nbsp;&nbsp;</span>';
-            }
-            else if (program.IsPremiere) {
-                html += '<span class="premiereTvProgram">' + Globalize.translate('LabelPremiereProgram') + '&nbsp;&nbsp;</span>';
-            }
-            else if (program.IsSeries && !program.IsRepeat) {
-                html += '<span class="newTvProgram">' + Globalize.translate('LabelNewProgram') + '&nbsp;&nbsp;</span>';
-            }
-
-            html += LibraryBrowser.getDisplayTime(timer.StartDate);
-            html += ' - ' + LibraryBrowser.getDisplayTime(timer.EndDate);
-            html += '</p>';
-
-
-            if (timer.SeriesTimerId) {
-                html += '<div class="ui-li-aside" style="right:0;">';
-                html += '<div class="timerCircle seriesTimerCircle"></div>';
-                html += '<div class="timerCircle seriesTimerCircle"></div>';
-                html += '<div class="timerCircle seriesTimerCircle"></div>';
-                html += '</div>';
-            }
-
-            html += '</a>';
-
-            html += '<a data-timerid="' + timer.Id + '" href="#" title="' + Globalize.translate('ButonCancelRecording') + '" class="btnCancelTimer">' + Globalize.translate('ButonCancelRecording') + '</a>';
-
-            html += '</li>';
-        }
-
-        html += '</ul>';
-
-        var elem = $('.scheduleTab', page).html(html).trigger('create');
-
-        $('.btnCancelTimer', elem).on('click', function () {
-
-            deleteTimer(page, this.getAttribute('data-timerid'));
-
+                deleteTimer(page, id);
+            });
         });
     }
 
@@ -231,20 +153,9 @@
 
         var id = getParameterByName('id');
 
-        ApiClient.getLiveTvSeriesTimer(id).done(function (result) {
+        ApiClient.getLiveTvSeriesTimer(id).then(function (result) {
 
             renderTimer(page, result);
-
-        });
-
-        ApiClient.getLiveTvRecordings({
-
-            userId: Dashboard.getCurrentUserId(),
-            seriesTimerId: id
-
-        }).done(function (recordingResult) {
-
-            renderRecordings(page, recordingResult);
 
         });
 
@@ -252,7 +163,7 @@
 
             seriesTimerId: id
 
-        }).done(function (timerResult) {
+        }).then(function (timerResult) {
 
             renderSchedule(page, timerResult);
 
@@ -286,4 +197,4 @@
         currentItem = null;
     });
 
-})(window, jQuery, document);
+});

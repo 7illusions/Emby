@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Library.Validators
 {
@@ -29,17 +30,19 @@ namespace MediaBrowser.Server.Implementations.Library.Validators
         private readonly ILogger _logger;
 
         private readonly IServerConfigurationManager _config;
+        private readonly IFileSystem _fileSystem;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PeopleValidator" /> class.
         /// </summary>
         /// <param name="libraryManager">The library manager.</param>
         /// <param name="logger">The logger.</param>
-        public PeopleValidator(ILibraryManager libraryManager, ILogger logger, IServerConfigurationManager config)
+        public PeopleValidator(ILibraryManager libraryManager, ILogger logger, IServerConfigurationManager config, IFileSystem fileSystem)
         {
             _libraryManager = libraryManager;
             _logger = logger;
             _config = config;
+            _fileSystem = fileSystem;
         }
 
         private bool DownloadMetadata(PersonInfo i, PeopleMetadataOptions options)
@@ -86,7 +89,7 @@ namespace MediaBrowser.Server.Implementations.Library.Validators
 
             var peopleOptions = _config.Configuration.PeopleMetadataOptions;
 
-            var people = _libraryManager.GetAllPeople();
+            var people = _libraryManager.GetPeople(new InternalPeopleQuery());
 
             var dict = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
@@ -109,8 +112,9 @@ namespace MediaBrowser.Server.Implementations.Library.Validators
             }
 
             var numComplete = 0;
-            var validIds = new List<Guid>();
-            
+
+            _logger.Debug("Will refresh {0} people", dict.Count);
+
             foreach (var person in dict)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -119,15 +123,29 @@ namespace MediaBrowser.Server.Implementations.Library.Validators
                 {
                     var item = _libraryManager.GetPerson(person.Key);
 
-                    validIds.Add(item.Id);
-                    
-                    var options = new MetadataRefreshOptions
+                    var hasMetdata = !string.IsNullOrWhiteSpace(item.Overview);
+                    var performFullRefresh = !hasMetdata && (DateTime.UtcNow - item.DateLastRefreshed).TotalDays >= 90;
+                    performFullRefresh = false;
+
+                    var defaultMetadataRefreshMode = performFullRefresh
+                        ? MetadataRefreshMode.FullRefresh
+                        : MetadataRefreshMode.Default;
+
+                    var imageRefreshMode = performFullRefresh
+                        ? ImageRefreshMode.FullRefresh
+                        : ImageRefreshMode.Default;
+
+                    var options = new MetadataRefreshOptions(_fileSystem)
                     {
-                         MetadataRefreshMode = person.Value ? MetadataRefreshMode.Default : MetadataRefreshMode.ValidationOnly,
-                         ImageRefreshMode = person.Value ? ImageRefreshMode.Default : ImageRefreshMode.ValidationOnly
+                        MetadataRefreshMode = person.Value ? defaultMetadataRefreshMode : MetadataRefreshMode.ValidationOnly,
+                        ImageRefreshMode = person.Value ? imageRefreshMode : ImageRefreshMode.ValidationOnly
                     };
 
                     await item.RefreshMetadata(options, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -140,28 +158,6 @@ namespace MediaBrowser.Server.Implementations.Library.Validators
                 percent /= people.Count;
 
                 progress.Report(100 * percent);
-            }
-
-            var allIds = _libraryManager.GetItemIds(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { typeof(Person).Name }
-            });
-
-            var invalidIds = allIds
-                .Except(validIds)
-                .ToList();
-
-            foreach (var id in invalidIds)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var item = _libraryManager.GetItemById(id);
-
-                await _libraryManager.DeleteItem(item, new DeleteOptions
-                {
-                    DeleteFileLocation = false
-
-                }).ConfigureAwait(false);
             }
 
             progress.Report(100);

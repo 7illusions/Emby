@@ -1,4 +1,4 @@
-﻿(function ($, document) {
+﻿define(['jQuery', 'listView'], function ($, listView) {
 
     var data = {};
     function getPageData() {
@@ -8,12 +8,12 @@
         if (!pageData) {
             pageData = data[key] = {
                 query: {
-                    Fields: "PrimaryImageAspectRatio,SyncInfo",
+                    Fields: "PrimaryImageAspectRatio",
                     EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
                     StartIndex: 0,
-                    Limit: LibraryBrowser.getDefaultPageSize()
+                    Limit: 200
                 },
-                view: LibraryBrowser.getSavedView(key) || LibraryBrowser.getDefaultItemsView('List', 'List')
+                view: LibraryBrowser.getSavedView(key) || 'List'
             };
 
             pageData.query.ParentId = LibraryMenu.getTopParentId();
@@ -29,9 +29,8 @@
 
     function getSavedQueryKey() {
 
-        return getWindowUrl();
+        return LibraryBrowser.getSavedQueryKey();
     }
-
 
     function reloadItems(page, item) {
 
@@ -41,7 +40,7 @@
 
         query.UserId = Dashboard.getCurrentUserId();
 
-        ApiClient.getJSON(ApiClient.getUrl('Playlists/' + item.Id + '/Items', query)).done(function (result) {
+        ApiClient.getJSON(ApiClient.getUrl('Playlists/' + item.Id + '/Items', query)).then(function (result) {
 
             // Scroll back up so they can see the results from the beginning
             window.scrollTo(0, 0);
@@ -57,37 +56,24 @@
 
             });
 
-            var view = getPageData().view;
-
-            if (view == "List") {
-
-                html = LibraryBrowser.getListViewHtml({
-                    items: result.Items,
-                    sortBy: query.SortBy,
-                    showIndex: false,
-                    showRemoveFromPlaylist: true,
-                    playFromHere: true,
-                    defaultAction: 'playallfromhere',
-                    smallIcon: true
-
-                });
-            }
-
-            var elem = page.querySelector('#childrenContent .itemsContainer');
-            elem.innerHTML = html;
-            $(elem).trigger('create');
-            ImageLoader.lazyChildren(elem);
-
-            $(elem).off('needsrefresh').on('needsrefresh', function () {
-
-                reloadItems(page, item);
-
-            }).off('removefromplaylist').on('removefromplaylist', function (e, playlistItemId) {
-
-                removeFromPlaylist(page, item, [playlistItemId]);
-
+            html += listView.getListViewHtml({
+                items: result.Items,
+                sortBy: query.SortBy,
+                showIndex: false,
+                showRemoveFromPlaylist: true,
+                playFromHere: true,
+                action: 'playallfromhere',
+                smallIcon: true,
+                dragHandle: true,
+                playlistId: item.Id
             });
 
+            var elem = page.querySelector('#childrenContent .itemsContainer');
+            elem.classList.add('vertical-list');
+            elem.classList.remove('vertical-wrap');
+            elem.innerHTML = html;
+
+            ImageLoader.lazyChildren(elem);
 
             $('.btnNextPage', elem).on('click', function () {
                 query.StartIndex += query.Limit;
@@ -103,27 +89,28 @@
         });
     }
 
-    function removeFromPlaylist(page, item, ids) {
+    function init(page, item) {
 
-        ApiClient.ajax({
+        var elem = page.querySelector('#childrenContent .itemsContainer');
 
-            url: ApiClient.getUrl('Playlists/' + item.Id + '/Items', {
-                EntryIds: ids.join(',')
-            }),
+        elem.enableDragReordering(true);
 
-            type: 'DELETE'
-
-        }).done(function () {
+        elem.addEventListener('needsrefresh', function () {
 
             reloadItems(page, item);
         });
-
     }
 
     window.PlaylistViewer = {
         render: function (page, item) {
+
+            if (!page.playlistInit) {
+                page.playlistInit = true;
+                init(page, item);
+            }
+
             reloadItems(page, item);
         }
     };
 
-})(jQuery, document);
+});

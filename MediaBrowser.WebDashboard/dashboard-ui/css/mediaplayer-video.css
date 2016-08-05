@@ -1,5 +1,4 @@
-﻿.videoBackdrop {
-    /* Allows popups to be closed, because their z-index is 1099 */
+﻿#mediaPlayer {
     z-index: 1098;
     position: fixed;
     background-color: transparent;
@@ -17,7 +16,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #222;
+    background-color: #000;
     color: #fff;
 }
 
@@ -49,10 +48,6 @@
         background-color: rgba(0, 0, 0, .7);
     }
 
-.videoControlButtons {
-    padding: 0 .5em;
-}
-
 .videoTopControls {
     padding: 0 1em;
     background-color: rgba(0, 0, 0, .5);
@@ -69,15 +64,24 @@
     padding-top: .5em;
 }
 
-    .videoAdvancedControls iron-icon {
-        width: 32px;
-        height: 32px;
-    }
-
 .nowPlayingInfo {
     text-align: center;
     padding: 1.5em 1em 2em 1em;
 }
+
+.guide {
+    height: 400px;
+    overflow: auto;
+    background-color: #000 !important;
+}
+
+    .guide .tvGuideHeader {
+        position: static !important;
+    }
+
+    .guide .programContainer {
+        margin-top: 0 !important;
+    }
 
 #videoPlayer .nowPlayingImage img {
     height: auto !important;
@@ -96,12 +100,40 @@
     display: inline-block;
     width: 70%;
     font-weight: normal;
-    font-size: 14px;
 }
 
-@media all and (max-width: 1200px) {
-    #videoPlayer .nowPlayingTabs {
-        font-size: 13px;
+.videoPositionSliderContainer {
+    width: 300px;
+    vertical-align: middle;
+}
+
+@media all and (max-width: 600px) {
+    .videoPositionSliderContainer {
+        width: 220px;
+    }
+}
+
+@media all and (max-width: 440px) {
+    .videoPositionSliderContainer {
+        width: 180px;
+    }
+}
+
+@media all and (max-width: 400px) {
+    .videoPositionSliderContainer {
+        width: 150px;
+    }
+}
+
+@media all and (max-width: 350px) {
+    .videoPositionSliderContainer {
+        width: 120px;
+    }
+}
+
+@media all and (max-width: 320px) {
+    .videoPositionSliderContainer {
+        width: 100px;
     }
 }
 
@@ -185,10 +217,6 @@
     max-height: 100%;
 }
 
-    /* Hack for safari because it doesn't allow clickable content over the video surface. */
-    /*.itemVideo { (;top: 9%!important;height: 91% !important;); }
-.itemVideo { [;top: 9%!important;height: 91% !important;]; }*/
-
     #videoPlayer .inactive {
         display: none !important;
     }
@@ -202,7 +230,6 @@
 @media all and (max-width: 1200px), all and (max-height: 720px) {
     .videoControls .currentTime {
         margin-right: 0;
-        min-width: 120px;
     }
 }
 
@@ -219,6 +246,12 @@
     }
 
     .videoTopControlsLogo {
+        display: none !important;
+    }
+}
+
+@media all and (max-width: 500px) {
+    .videoControls .currentTime {
         display: none !important;
     }
 }
@@ -312,4 +345,36 @@
         -webkit-transform: scale(1);
         opacity: 0;
     }
+}
+
+video::-webkit-media-text-track-container {
+}
+
+video::-webkit-media-text-track-background {
+    /*Style the text background*/
+}
+
+#videoPlayer:not(.idlePlayer) video:not([controls])::-webkit-media-text-track-display {
+    /*Style the text itself*/
+    margin-top: -2.5em;
+}
+
+
+.videoSubtitles {
+    position: fixed;
+    bottom: 10%;
+    text-align: center;
+    left: 0;
+    right: 0;
+    color: #fff;
+    font-size: 200%;
+    z-index: 9999999;
+}
+
+.videoSubtitlesInner {
+    max-width: 70%;
+    background-color: rgba(0,0,0,.8);
+    padding: .25em;
+    margin: auto;
+    display: inline-block;
 }

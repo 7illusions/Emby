@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities;
+﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -7,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CommonIO;
 
 namespace MediaBrowser.LocalMetadata.Images
 {
@@ -60,14 +60,14 @@ namespace MediaBrowser.LocalMetadata.Images
             return new List<LocalImageInfo>();
         }
 
-        private List<LocalImageInfo> GetFilesFromParentFolder(string filenameWithoutExtension, IEnumerable<FileSystemInfo> parentPathFiles)
+        private List<LocalImageInfo> GetFilesFromParentFolder(string filenameWithoutExtension, IEnumerable<FileSystemMetadata> parentPathFiles)
         {
             var thumbName = filenameWithoutExtension + "-thumb";
 
             return parentPathFiles
               .Where(i =>
               {
-                  if ((i.Attributes & FileAttributes.Directory) == FileAttributes.Directory)
+                  if (i.IsDirectory)
                   {
                       return false;
                   }
@@ -91,7 +91,7 @@ namespace MediaBrowser.LocalMetadata.Images
               })
               .Select(i => new LocalImageInfo
               {
-                  FileInfo = (FileInfo)i,
+                  FileInfo = i,
                   Type = ImageType.Primary
               })
               .ToList();

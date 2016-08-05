@@ -11,6 +11,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Model.Entities;
 
 namespace MediaBrowser.Server.Implementations.ScheduledTasks
 {
@@ -39,6 +41,7 @@ namespace MediaBrowser.Server.Implementations.ScheduledTasks
         private readonly IApplicationPaths _appPaths;
 
         private readonly IEncodingManager _encodingManager;
+        private readonly IFileSystem _fileSystem;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ChapterImagesTask" /> class.
@@ -46,13 +49,14 @@ namespace MediaBrowser.Server.Implementations.ScheduledTasks
         /// <param name="logManager">The log manager.</param>
         /// <param name="libraryManager">The library manager.</param>
         /// <param name="itemRepo">The item repo.</param>
-        public ChapterImagesTask(ILogManager logManager, ILibraryManager libraryManager, IItemRepository itemRepo, IApplicationPaths appPaths, IEncodingManager encodingManager)
+        public ChapterImagesTask(ILogManager logManager, ILibraryManager libraryManager, IItemRepository itemRepo, IApplicationPaths appPaths, IEncodingManager encodingManager, IFileSystem fileSystem)
         {
             _logger = logManager.GetLogger(GetType().Name);
             _libraryManager = libraryManager;
             _itemRepo = itemRepo;
             _appPaths = appPaths;
             _encodingManager = encodingManager;
+            _fileSystem = fileSystem;
         }
 
         /// <summary>
@@ -82,8 +86,13 @@ namespace MediaBrowser.Server.Implementations.ScheduledTasks
         /// <returns>Task.</returns>
         public async Task Execute(CancellationToken cancellationToken, IProgress<double> progress)
         {
-            var videos = _libraryManager.RootFolder.GetRecursiveChildren(i => i is Video)
-                .Cast<Video>()
+            var videos = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                MediaTypes = new[] { MediaType.Video },
+                IsFolder = false,
+                Recursive = true
+            })
+                .OfType<Video>()
                 .ToList();
 
             var numComplete = 0;
@@ -94,7 +103,7 @@ namespace MediaBrowser.Server.Implementations.ScheduledTasks
 
             try
             {
-                previouslyFailedImages = File.ReadAllText(failHistoryPath)
+                previouslyFailedImages = _fileSystem.ReadAllText(failHistoryPath)
                     .Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries)
                     .ToList();
             }
@@ -115,33 +124,40 @@ namespace MediaBrowser.Server.Implementations.ScheduledTasks
 
                 var extract = !previouslyFailedImages.Contains(key, StringComparer.OrdinalIgnoreCase);
 
-                var chapters = _itemRepo.GetChapters(video.Id).ToList();
-
-                var success = await _encodingManager.RefreshChapterImages(new ChapterImageRefreshOptions
+                try
                 {
-                    SaveChapters = true,
-                    ExtractImages = extract,
-                    Video = video,
-                    Chapters = chapters
+                    var chapters = _itemRepo.GetChapters(video.Id).ToList();
 
-                }, CancellationToken.None);
+                    var success = await _encodingManager.RefreshChapterImages(new ChapterImageRefreshOptions
+                    {
+                        SaveChapters = true,
+                        ExtractImages = extract,
+                        Video = video,
+                        Chapters = chapters
 
-                if (!success)
-                {
-                    previouslyFailedImages.Add(key);
+                    }, CancellationToken.None);
 
-                    var parentPath = Path.GetDirectoryName(failHistoryPath);
+                    if (!success)
+                    {
+                        previouslyFailedImages.Add(key);
 
-                    Directory.CreateDirectory(parentPath);
+                        var parentPath = Path.GetDirectoryName(failHistoryPath);
 
-                    File.WriteAllText(failHistoryPath, string.Join("|", previouslyFailedImages.ToArray()));
+                        _fileSystem.CreateDirectory(parentPath);
+
+                        _fileSystem.WriteAllText(failHistoryPath, string.Join("|", previouslyFailedImages.ToArray()));
+                    }
+
+                    numComplete++;
+                    double percent = numComplete;
+                    percent /= videos.Count;
+
+                    progress.Report(100 * percent);
                 }
-
-                numComplete++;
-                double percent = numComplete;
-                percent /= videos.Count;
-
-                progress.Report(100 * percent);
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
             }
         }
 

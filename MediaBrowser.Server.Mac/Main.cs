@@ -21,6 +21,8 @@ using Microsoft.Win32;
 using MonoMac.AppKit;
 using MonoMac.Foundation;
 using MonoMac.ObjCRuntime;
+using CommonIO;
+using MediaBrowser.Server.Implementations.Logging;
 
 namespace MediaBrowser.Server.Mac
 {
@@ -89,11 +91,12 @@ namespace MediaBrowser.Server.Mac
 			// Allow all https requests
 			ServicePointManager.ServerCertificateValidationCallback = new RemoteCertificateValidationCallback(delegate { return true; });
 
-			var fileSystem = new CommonFileSystem(logManager.GetLogger("FileSystem"), false, true);
+			var fileSystem = new ManagedFileSystem(new PatternsLogger(logManager.GetLogger("FileSystem")), false, true);
+            fileSystem.AddShortcutHandler(new MbLinkShortcutHandler(fileSystem));
 
-			var nativeApp = new NativeApp();
+			var nativeApp = new NativeApp(logManager.GetLogger("App"));
 
-			AppHost = new ApplicationHost(appPaths, logManager, options, fileSystem, "MBServer.Mono", nativeApp);
+			AppHost = new ApplicationHost(appPaths, logManager, options, fileSystem, "Emby.Server.Mac.pkg", nativeApp);
 
 			if (options.ContainsOption("-v")) {
 				Console.WriteLine (AppHost.ApplicationVersion.ToString());

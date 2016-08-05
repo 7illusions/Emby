@@ -1,12 +1,13 @@
-﻿(function () {
+﻿define(['jQuery'], function ($) {
 
     function deleteDevice(page, id) {
 
         var msg = Globalize.translate('DeleteDeviceConfirmation');
 
-        Dashboard.confirm(msg, Globalize.translate('HeaderDeleteDevice'), function (result) {
+        require(['confirm'], function (confirm) {
 
-            if (result) {
+            confirm(msg, Globalize.translate('HeaderDeleteDevice')).then(function () {
+
                 Dashboard.showLoadingMsg();
 
                 ApiClient.ajax({
@@ -15,11 +16,12 @@
                         Id: id
                     })
 
-                }).done(function () {
+                }).then(function () {
 
                     loadData(page);
                 });
-            }
+            });
+
         });
     }
 
@@ -27,14 +29,16 @@
 
         var html = '';
 
-        html += '<div class="paperList">';
+        if (devices.length) {
+            html += '<div class="paperList">';
+        }
 
         html += devices.map(function (d) {
 
             var deviceHtml = '';
             deviceHtml += '<paper-icon-item>';
 
-            deviceHtml += '<paper-fab class="listAvatar" style="background:#999;" icon="tablet-android" item-icon></paper-fab>';
+            deviceHtml += '<paper-fab mini style="background:#999;" icon="tablet-android" item-icon></paper-fab>';
 
             deviceHtml += '<paper-item-body three-line>';
             deviceHtml += '<a class="clearLink" href="device.html?id=' + d.Id + '">';
@@ -58,14 +62,17 @@
             deviceHtml += '</a>';
             deviceHtml += '</paper-item-body>';
 
-            deviceHtml += '<paper-icon-button icon="delete" data-id="' + d.Id + '" title="' + Globalize.translate('ButtonDelete') + '" class="btnDeleteDevice"></paper-icon-button>';
+            deviceHtml += '<button type="button" is="paper-icon-button-light" class="btnDeleteDevice" data-id="' + d.Id + '" title="' + Globalize.translate('ButtonDelete') + '"><iron-icon icon="delete"></iron-icon></button>';
+
             deviceHtml += '</paper-icon-item>';
 
             return deviceHtml;
 
         }).join('');
 
-        html += '</div>';
+        if (devices.length) {
+            html += '</div>';
+        }
 
         var elem = $('.devicesList', page).html(html).trigger('create');
 
@@ -82,15 +89,17 @@
             
             SupportsPersistentIdentifier: true
 
-        })).done(function (result) {
+        })).then(function (result) {
 
-            load(page, result.Items);
+            require(['paper-fab', 'paper-item-body', 'paper-icon-item'], function () {
+                load(page, result.Items);
+            });
 
             Dashboard.hideLoadingMsg();
         });
     }
 
-    $(document).on('pageshowready', "#devicesPage", function () {
+    $(document).on('pageshow', "#devicesPage", function () {
 
         var page = this;
 
@@ -98,4 +107,4 @@
 
     });
 
-})();
+});

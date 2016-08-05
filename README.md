@@ -3,7 +3,7 @@ Emby Server
 
 Emby Server is a home media server built on top of other popular open source technologies such as **Service Stack**, **jQuery**, **jQuery mobile**, and **Mono**.
 
-It features a REST-based api with built-in documention to facilitate client development. We also have client libraries for our api to enable rapid development.
+It features a REST-based API with built-in documention to facilitate client development. We also have client libraries for our API to enable rapid development.
 
 ## Emby Apps
 
@@ -12,8 +12,8 @@ It features a REST-based api with built-in documention to facilitate client deve
 - [Android TV](https://play.google.com/store/apps/details?id=tv.emby.embyatv "Android TV")
 - [Amazon Fire TV](http://www.amazon.com/Emby-for-Fire-TV/dp/B00VVJKTW8 "Amazon Fire TV")
 - [HTML5](http://app.emby.media "HTML5")
-- [iPad](https://itunes.apple.com/us/app/media-browser-client/id879475585 "iPad")
-- [iPhone](https://itunes.apple.com/us/app/media-browser-for-ios/id705058087?mt=8 "iPhone")
+- [iPad](https://itunes.apple.com/us/app/emby/id992180193?ls=1&mt=8 "iPad")
+- [iPhone](https://itunes.apple.com/us/app/emby/id992180193?ls=1&mt=8 "iPhone")
 - [Kodi](http://emby.media/download/ "Kodi")
 - [Media Portal](http://www.team-mediaportal.com/ "Media Portal")
 - [Roku](https://www.roku.com/channels#!details/44191/emby "Roku")

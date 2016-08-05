@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller;
+﻿using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Entities;
@@ -10,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Api.Library
 {
@@ -46,6 +46,12 @@ namespace MediaBrowser.Api.Library
         /// </summary>
         /// <value><c>true</c> if [refresh library]; otherwise, <c>false</c>.</value>
         public bool RefreshLibrary { get; set; }
+
+        /// <summary>
+        /// Gets or sets the path.
+        /// </summary>
+        /// <value>The path.</value>
+        public string[] Paths { get; set; }
     }
 
     [Route("/Library/VirtualFolders", "DELETE")]
@@ -184,55 +190,7 @@ namespace MediaBrowser.Api.Library
         /// <param name="request">The request.</param>
         public void Post(AddVirtualFolder request)
         {
-            if (string.IsNullOrWhiteSpace(request.Name))
-            {
-                throw new ArgumentNullException("request");
-            }
-
-            var name = _fileSystem.GetValidFilename(request.Name);
-
-            var rootFolderPath = _appPaths.DefaultUserViewsPath;
-
-            var virtualFolderPath = Path.Combine(rootFolderPath, name);
-
-            if (Directory.Exists(virtualFolderPath))
-            {
-                throw new ArgumentException("There is already a media collection with the name " + name + ".");
-            }
-
-            _libraryMonitor.Stop();
-
-            try
-            {
-                Directory.CreateDirectory(virtualFolderPath);
-
-                if (!string.IsNullOrEmpty(request.CollectionType))
-                {
-                    var path = Path.Combine(virtualFolderPath, request.CollectionType + ".collection");
-
-                    File.Create(path);
-                }
-            }
-            finally
-            {
-                Task.Run(() =>
-                {
-                    // No need to start if scanning the library because it will handle it
-                    if (request.RefreshLibrary)
-                    {
-                        _libraryManager.ValidateMediaLibrary(new Progress<double>(), CancellationToken.None);
-                    }
-                    else
-                    {
-                        // Need to add a delay here or directory watchers may still pick up the changes
-                        var task = Task.Delay(1000);
-                        // Have to block here to allow exceptions to bubble
-                        Task.WaitAll(task);
-                        
-                        _libraryMonitor.Start();
-                    }
-                });
-            }
+            _libraryManager.AddVirtualFolder(request.Name, request.CollectionType, request.Paths, request.RefreshLibrary);
         }
 
         /// <summary>
@@ -256,12 +214,12 @@ namespace MediaBrowser.Api.Library
             var currentPath = Path.Combine(rootFolderPath, request.Name);
             var newPath = Path.Combine(rootFolderPath, request.NewName);
 
-            if (!Directory.Exists(currentPath))
+			if (!_fileSystem.DirectoryExists(currentPath))
             {
                 throw new DirectoryNotFoundException("The media collection does not exist");
             }
 
-            if (!string.Equals(currentPath, newPath, StringComparison.OrdinalIgnoreCase) && Directory.Exists(newPath))
+			if (!string.Equals(currentPath, newPath, StringComparison.OrdinalIgnoreCase) && _fileSystem.DirectoryExists(newPath))
             {
                 throw new ArgumentException("There is already a media collection with the name " + newPath + ".");
             }
@@ -276,11 +234,11 @@ namespace MediaBrowser.Api.Library
                     //Create an unique name
                     var temporaryName = Guid.NewGuid().ToString();
                     var temporaryPath = Path.Combine(rootFolderPath, temporaryName);
-                    Directory.Move(currentPath, temporaryPath);
+					_fileSystem.MoveDirectory(currentPath, temporaryPath);
                     currentPath = temporaryPath;
                 }
 
-                Directory.Move(currentPath, newPath);
+				_fileSystem.MoveDirectory(currentPath, newPath);
             }
             finally
             {
@@ -310,46 +268,7 @@ namespace MediaBrowser.Api.Library
         /// <param name="request">The request.</param>
         public void Delete(RemoveVirtualFolder request)
         {
-            if (string.IsNullOrWhiteSpace(request.Name))
-            {
-                throw new ArgumentNullException("request");
-            }
-
-            var rootFolderPath = _appPaths.DefaultUserViewsPath;
-
-            var path = Path.Combine(rootFolderPath, request.Name);
-
-            if (!Directory.Exists(path))
-            {
-                throw new DirectoryNotFoundException("The media folder does not exist");
-            }
-
-            _libraryMonitor.Stop();
-
-            try
-            {
-                _fileSystem.DeleteDirectory(path, true);
-            }
-            finally
-            {
-                Task.Run(() =>
-                {
-                    // No need to start if scanning the library because it will handle it
-                    if (request.RefreshLibrary)
-                    {
-                        _libraryManager.ValidateMediaLibrary(new Progress<double>(), CancellationToken.None);
-                    }
-                    else
-                    {
-                        // Need to add a delay here or directory watchers may still pick up the changes
-                        var task = Task.Delay(1000);
-                        // Have to block here to allow exceptions to bubble
-                        Task.WaitAll(task);
-
-                        _libraryMonitor.Start();
-                    }
-                });
-            }
+            _libraryManager.RemoveVirtualFolder(request.Name, request.RefreshLibrary);
         }
 
         /// <summary>
@@ -367,7 +286,7 @@ namespace MediaBrowser.Api.Library
 
             try
             {
-                LibraryHelpers.AddMediaPath(_fileSystem, request.Name, request.Path, _appPaths);
+                _libraryManager.AddMediaPath(request.Name, request.Path);
             }
             finally
             {
@@ -406,7 +325,7 @@ namespace MediaBrowser.Api.Library
 
             try
             {
-                LibraryHelpers.RemoveMediaPath(_fileSystem, request.Name, request.Path, _appPaths);
+                _libraryManager.RemoveMediaPath(request.Name, request.Path);
             }
             finally
             {

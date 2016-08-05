@@ -17,9 +17,9 @@
         VideoTimestamp = 12,
         IsAnamorphic = 13,
         RefFrames = 14,
-        IsCabac = 15,
         NumAudioStreams = 16,
         NumVideoStreams = 17,
-        IsSecondaryAudio
+        IsSecondaryAudio = 18,
+        VideoCodecTag = 19
     }
 }

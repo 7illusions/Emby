@@ -1,4 +1,5 @@
-﻿(function ($, document) {
+﻿define(['jQuery', 'libraryBrowser'], function ($, libraryBrowser) {
+
     var defaultSortBy = "SortName";
     var topItems = 5;
 
@@ -130,12 +131,7 @@
                 break;
             case "LockDataImage":
                 if (rRow.HasLockData) {
-                    html += '<img src="css/images/editor/lock.png"  style="width:18px"/>';
-                }
-                break;
-            case "UnidentifiedImage":
-                if (rRow.IsUnidentified) {
-                    html += '<div class="libraryReportIndicator"><div class="ui-icon-alert ui-btn-icon-notext"></div></div>';
+                    html += '<i class="md-icon">lock</i>';
                 }
                 break;
             case "TagsPrimaryImage":
@@ -173,14 +169,11 @@
                 break;
             case "StatusImage":
                 if (rRow.HasLockData) {
-                    html += '<img src="css/images/editor/lock.png"  style="width:18px"/>';
-                }
-                if (rRow.IsUnidentified) {
-                    html += '<div class="libraryReportIndicator"><div class="ui-icon-alert ui-btn-icon-notext"></div></div>';
+                    html += '<i class="md-icon">lock</i>';
                 }
 
                 if (!rRow.HasLocalTrailer && rRow.RowType === "Movie") {
-                    html += '<img src="css/images/editor/missingtrailer.png" title="Missing local trailer."  style="width:18px"/>';
+                    html += '<i title="Missing local trailer." class="md-icon">videocam</i>';
                 }
 
                 if (!rRow.HasImageTagsPrimary) {
@@ -226,7 +219,7 @@
             html += '</div>';
 
             html += '<div class="detailSectionContent">';
-            html += '<div class="childrenItemsContainer itemsContainer fullWidthItemsContainer" style="text-align: left;">';
+            html += '<div class="childrenItemsContainer itemsContainer" style="text-align: left;">';
             html += '<ul class="itemsListview ui-listview" >';
 
             var l = group.Items.length - 1;
@@ -282,7 +275,7 @@
         var url = "";
 
         url = ApiClient.getUrl("Reports/Headers", query);
-        ApiClient.getJSON(url).done(function (result) {
+        ApiClient.getJSON(url).then(function (result) {
             var selected = "None";
 
             $('#selectReportGroup', page).find('option').remove().end();
@@ -298,7 +291,7 @@
                     }
                 }
             });
-            $('#selectPageSize', page).val(selected).selectmenu('refresh');
+            $('#selectPageSize', page).val(selected);
 
         });
     }
@@ -318,7 +311,7 @@
             $('#tabFilter', page).hide();
         }
 
-        var pagingHtml = LibraryBrowser.getQueryPagingHtml({
+        var pagingHtml = libraryBrowser.getQueryPagingHtml({
             startIndex: query.StartIndex,
             limit: query.Limit,
             totalRecordCount: result.TotalRecordCount,
@@ -331,7 +324,7 @@
 
 
             $('.listTopPaging', page).html(pagingHtml).trigger('create');
-           // page.querySelector('.listTopPaging').innerHTML = pagingHtml;
+            // page.querySelector('.listTopPaging').innerHTML = pagingHtml;
             $('.listTopPaging', page).show();
 
             $('.listBottomPaging', page).html(pagingHtml).trigger('create');
@@ -446,7 +439,7 @@
                 break;
         }
 
-        ApiClient.getJSON(url).done(function (result) {
+        ApiClient.getJSON(url).then(function (result) {
             updateFilterControls(page);
             renderItems(page, result);
         });
@@ -504,22 +497,35 @@
         $('#chkThemeSong', page).checked(query.HasThemeSong == true).checkboxradio('refresh');
         $('#chkThemeVideo', page).checked(query.HasThemeVideo == true).checkboxradio('refresh');
 
-        $('#selectPageSize', page).val(query.Limit).selectmenu('refresh');
+        $('#selectPageSize', page).val(query.Limit);
 
         //Management
         $('#chkMissingRating', page).checked(query.HasOfficialRating == false).checkboxradio('refresh');
         $('#chkMissingOverview', page).checked(query.HasOverview == false).checkboxradio('refresh');
-        $('#chkYearMismatch', page).checked(query.IsYearMismatched == true).checkboxradio('refresh');
-
-        $('#chkIsUnidentified', page).checked(query.IsUnidentified == true).checkboxradio('refresh');
         $('#chkIsLocked', page).checked(query.IsLocked == true).checkboxradio('refresh');
+        $('#chkMissingImdbId', page).checked(query.HasImdbId == false).checkboxradio('refresh');
+        $('#chkMissingTmdbId', page).checked(query.HasTmdbId == false).checkboxradio('refresh');
+        $('#chkMissingTvdbId', page).checked(query.HasTvdbId == false).checkboxradio('refresh');
 
         //Episodes
         $('#chkSpecialEpisode', page).checked(query.ParentIndexNumber == 0).checkboxradio('refresh');
         $('#chkMissingEpisode', page).checked(query.IsMissing == true).checkboxradio('refresh');
         $('#chkFutureEpisode', page).checked(query.IsUnaired == true).checkboxradio('refresh');
 
-        $('#selectIncludeItemTypes').val(query.IncludeItemTypes).selectmenu('refresh');
+        $('#selectIncludeItemTypes').val(query.IncludeItemTypes);
+
+        // isfavorite
+        if (query.IsFavorite == true) {
+            $('#isFavorite').val("true");
+        }
+        else if (query.IsFavorite == false) {
+            $('#isFavorite').val("false");
+        }
+        else {
+            $('#isFavorite').val("-");
+        }
+
+
     }
 
     var filtersLoaded;
@@ -604,6 +610,21 @@
 
         $('#selectPageSize', page).on('change', function () {
             query.Limit = parseInt(this.value);
+            query.StartIndex = 0;
+            reloadItems(page);
+        });
+
+        $('#isFavorite', page).on('change', function () {
+
+            if (this.value == "true") {
+                query.IsFavorite = true;
+            }
+            else if (this.value == "false") {
+                query.IsFavorite = false;
+            }
+            else {
+                query.IsFavorite = null;
+            }
             query.StartIndex = 0;
             reloadItems(page);
         });
@@ -767,18 +788,26 @@
             reloadItems(page);
         });
 
-        $('#chkYearMismatch', page).on('change', function () {
+        $('#chkMissingImdbId', page).on('change', function () {
 
             query.StartIndex = 0;
-            query.IsYearMismatched = this.checked ? true : null;
+            query.HasImdbId = this.checked ? false : null;
 
             reloadItems(page);
         });
 
-        $('#chkIsUnidentified', page).on('change', function () {
+        $('#chkMissingTmdbId', page).on('change', function () {
 
             query.StartIndex = 0;
-            query.IsUnidentified = this.checked ? true : null;
+            query.HasTmdbId = this.checked ? false : null;
+
+            reloadItems(page);
+        });
+
+        $('#chkMissingTvdbId', page).on('change', function () {
+
+            query.StartIndex = 0;
+            query.HasTvdbId = this.checked ? false : null;
 
             reloadItems(page);
         });
@@ -846,8 +875,18 @@
             query.StartIndex = 0;
             reloadItems(page);
         });
+
+        $(page.getElementsByClassName('viewTabButton')).on('click', function () {
+
+            var parent = $(this).parents('.viewPanel');
+            $('.viewTabButton', parent).removeClass('ui-btn-active');
+            this.classList.add('ui-btn-active');
+
+            $('.viewTab', parent).addClass('hide');
+            $('.' + this.getAttribute('data-tab'), parent).removeClass('hide');
+        });
     })
-	.on('pageshowready', "#libraryReportManagerPage", function () {
+	.on('pageshow', "#libraryReportManagerPage", function () {
 
 	    query.UserId = Dashboard.getCurrentUserId();
 	    var page = this;
@@ -855,17 +894,13 @@
 
 	    QueryReportFilters.onPageShow(page, query);
 	    QueryReportColumns.onPageShow(page, query);
-	    $('#selectIncludeItemTypes', page).val(query.IncludeItemTypes).selectmenu('refresh').trigger('change');
+	    $('#selectIncludeItemTypes', page).val(query.IncludeItemTypes).trigger('change');
 
 	    updateFilterControls(page);
 
 	    filtersLoaded = false;
 	    updateFilterControls(this);
 	});
-
-})(jQuery, document);
-
-(function (window) {
 
     function renderOptions(page, selector, cssClass, items) {
 
@@ -1044,7 +1079,7 @@
             ReportView: itemQuery.ReportView
 
 
-        })).done(function (result) {
+        })).then(function (result) {
 
             renderFilters(page, result);
 
@@ -1060,7 +1095,7 @@
             IncludeItemTypes: itemQuery.IncludeItemTypes,
             ReportView: itemQuery.ReportView
 
-        })).done(function (result) {
+        })).then(function (result) {
 
             renderColumnss(page, result);
             var filters = "";
@@ -1098,4 +1133,4 @@
         loadColumns: loadColumns,
         onPageShow: onPageReportColumnsShow
     };
-})(window);
+});

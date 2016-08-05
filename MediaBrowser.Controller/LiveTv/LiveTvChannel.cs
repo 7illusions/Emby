@@ -4,27 +4,24 @@ using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.LiveTv;
 using MediaBrowser.Model.MediaInfo;
-using MediaBrowser.Model.Users;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace MediaBrowser.Controller.LiveTv
 {
-    public class LiveTvChannel : BaseItem, IHasMediaSources, ILiveTvItem
+    public class LiveTvChannel : BaseItem, IHasMediaSources
     {
-        /// <summary>
-        /// Gets the user data key.
-        /// </summary>
-        /// <returns>System.String.</returns>
-        protected override string CreateUserDataKey()
+        public override List<string> GetUserDataKeys()
         {
-            return GetClientTypeName() + "-" + Name;
+            var list = base.GetUserDataKeys();
+
+            list.Insert(0, GetClientTypeName() + "-" + Name);
+            return list;
         }
 
-        protected override bool GetBlockUnratedValue(UserPolicy config)
+        public override UnratedItem GetBlockUnratedType()
         {
-            return config.BlockUnratedItems.Contains(UnratedItem.LiveTvChannel);
+            return UnratedItem.LiveTvChannel;
         }
 
         /// <summary>
@@ -40,6 +37,22 @@ namespace MediaBrowser.Controller.LiveTv
             }
         }
 
+        [IgnoreDataMember]
+        public override SourceType SourceType
+        {
+            get { return SourceType.LiveTV; }
+            set { }
+        }
+
+        [IgnoreDataMember]
+        public override bool EnableRememberingTrackSelections
+        {
+            get
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// Gets or sets the number.
         /// </summary>
@@ -47,41 +60,12 @@ namespace MediaBrowser.Controller.LiveTv
         public string Number { get; set; }
 
         /// <summary>
-        /// Gets or sets the external identifier.
-        /// </summary>
-        /// <value>The external identifier.</value>
-        public string ExternalId { get; set; }
-        
-        /// <summary>
         /// Gets or sets the type of the channel.
         /// </summary>
         /// <value>The type of the channel.</value>
         public ChannelType ChannelType { get; set; }
 
-        /// <summary>
-        /// Gets or sets the name of the service.
-        /// </summary>
-        /// <value>The name of the service.</value>
-        public string ServiceName { get; set; }
-
-        /// <summary>
-        /// Supply the image path if it can be accessed directly from the file system
-        /// </summary>
-        /// <value>The image path.</value>
-        public string ProviderImagePath { get; set; }
-
-        /// <summary>
-        /// Supply the image url if it can be downloaded
-        /// </summary>
-        /// <value>The image URL.</value>
-        public string ProviderImageUrl { get; set; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether this instance has image.
-        /// </summary>
-        /// <value><c>null</c> if [has image] contains no value, <c>true</c> if [has image]; otherwise, <c>false</c>.</value>
-        public bool? HasProviderImage { get; set; }
-
+        [IgnoreDataMember]
         public override LocationType LocationType
         {
             get

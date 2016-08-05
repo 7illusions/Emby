@@ -1,6 +1,4 @@
 ﻿using MediaBrowser.Common.Events;
-using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
@@ -18,7 +16,6 @@ using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Events;
 using MediaBrowser.Model.Logging;
-using MediaBrowser.Model.Querying;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Users;
 using System;
@@ -30,6 +27,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Library
 {
@@ -262,7 +260,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 await UpdateInvalidLoginAttemptCount(user, user.Policy.InvalidLoginAttemptCount + 1).ConfigureAwait(false);
             }
 
-            _logger.Info("Authentication request for {0} {1}.", user.Name, (success ? "has succeeded" : "has been denied"));
+            _logger.Info("Authentication request for {0} {1}.", user.Name, success ? "has succeeded" : "has been denied");
 
             return success;
         }
@@ -354,6 +352,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 users.Add(user);
 
                 user.Policy.IsAdministrator = true;
+                user.Policy.EnableContentDeletion = true;
                 user.Policy.EnableRemoteControlOfOtherUsers = true;
                 await UpdateUserPolicy(user, user.Policy, false).ConfigureAwait(false);
             }
@@ -402,10 +401,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
                 try
                 {
-                    _dtoServiceFactory().AttachPrimaryImageAspectRatio(dto, user, new List<ItemFields>
-                    {
-                        ItemFields.PrimaryImageAspectRatio
-                    });
+                    _dtoServiceFactory().AttachPrimaryImageAspectRatio(dto, user);
                 }
                 catch (Exception ex)
                 {
@@ -454,7 +450,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task.</returns>
         public Task RefreshUsersMetadata(CancellationToken cancellationToken)
         {
-            var tasks = Users.Select(user => user.RefreshMetadata(new MetadataRefreshOptions(), cancellationToken)).ToList();
+            var tasks = Users.Select(user => user.RefreshMetadata(new MetadataRefreshOptions(_fileSystem), cancellationToken)).ToList();
 
             return Task.WhenAll(tasks);
         }
@@ -733,7 +729,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
             var text = new StringBuilder();
 
-            var localAddress = _appHost.LocalApiUrl ?? string.Empty;
+            var localAddress = _appHost.GetLocalApiUrl().Result ?? string.Empty;
 
             text.AppendLine("Use your web browser to visit:");
             text.AppendLine(string.Empty);
@@ -745,7 +741,7 @@ namespace MediaBrowser.Server.Implementations.Library
             text.AppendLine(string.Empty);
             text.AppendLine("The pin code will expire at " + expiration.ToLocalTime().ToShortDateString() + " " + expiration.ToLocalTime().ToShortTimeString());
 
-            File.WriteAllText(path, text.ToString(), Encoding.UTF8);
+			_fileSystem.WriteAllText(path, text.ToString(), Encoding.UTF8);
 
             var result = new PasswordPinCreationResult
             {
@@ -919,7 +915,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
             var path = GetPolifyFilePath(user);
 
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
+			_fileSystem.CreateDirectory(Path.GetDirectoryName(path));
 
             lock (_policySyncLock)
             {
@@ -1006,7 +1002,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 config = _jsonSerializer.DeserializeFromString<UserConfiguration>(json);
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
+			_fileSystem.CreateDirectory(Path.GetDirectoryName(path));
 
             lock (_configSyncLock)
             {

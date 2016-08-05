@@ -1,22 +1,21 @@
-﻿(function ($, document) {
+﻿define(['datetime', 'jQuery'], function (datetime, $) {
 
     function revoke(page, key) {
 
-        Dashboard.confirm(Globalize.translate('MessageConfirmRevokeApiKey'), Globalize.translate('HeaderConfirmRevokeApiKey'), function (result) {
+        require(['confirm'], function (confirm) {
 
-            if (result) {
-
+            confirm(Globalize.translate('MessageConfirmRevokeApiKey'), Globalize.translate('HeaderConfirmRevokeApiKey')).then(function () {
                 Dashboard.showLoadingMsg();
 
                 ApiClient.ajax({
                     type: "DELETE",
                     url: ApiClient.getUrl('Auth/Keys/' + key)
 
-                }).done(function () {
+                }).then(function () {
 
                     loadData(page);
                 });
-            }
+            });
 
         });
     }
@@ -60,9 +59,9 @@
 
             html += '<td style="vertical-align:middle;">';
 
-            var date = parseISO8601Date(item.DateCreated, { toLocal: true });
+            var date = datetime.parseISO8601Date(item.DateCreated, true);
 
-            html += date.toLocaleDateString() + ' ' + LibraryBrowser.getDisplayTime(date);
+            html += datetime.toLocaleDateString(date) + ' ' + datetime.getDisplayTime(date);
 
             html += '</td>';
 
@@ -86,58 +85,73 @@
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getUsers().done(function (users) {
+        ApiClient.getUsers().then(function (users) {
 
-            ApiClient.getJSON(ApiClient.getUrl('Auth/Keys')).done(function (result) {
+            ApiClient.getJSON(ApiClient.getUrl('Auth/Keys')).then(function (result) {
 
                 renderKeys(page, result.Items, users);
             });
         });
     }
 
-    function onSubmit() {
-        var form = this;
-        var page = $(form).parents('.page');
+    function showNewKeyPrompt(page) {
+        require(['prompt'], function (prompt) {
+            
+            // HeaderNewApiKeyHelp not used
 
-        Dashboard.showLoadingMsg();
+            prompt({
+                title: Globalize.translate('HeaderNewApiKey'),
+                label: Globalize.translate('LabelAppName'),
+                description: Globalize.translate('LabelAppNameExample')
 
-        ApiClient.ajax({
-            type: "POST",
-            url: ApiClient.getUrl('Auth/Keys/', {
+            }).then(function (value) {
 
-                App: $('#txtAppName', form).val()
+                ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl('Auth/Keys', {
 
-            })
+                        App: value
 
-        }).done(function () {
+                    })
 
-            $('.newKeyPanel', page).panel('close');
+                }).then(function () {
 
-            loadData(page);
+                    loadData(page);
+                });
+            });
+
         });
-
-        return false;
     }
 
-    $(document).on('pageinit', "#serverSecurityPage", function () {
+    function getTabs() {
+        return [
+        {
+            href: 'dashboardhosting.html',
+            name: Globalize.translate('TabHosting')
+        },
+         {
+             href: 'serversecurity.html',
+             name: Globalize.translate('TabSecurity')
+         }];
+    }
+
+    pageIdOn('pageinit', "serverSecurityPage", function () {
 
         var page = this;
 
         $('.btnNewKey', page).on('click', function () {
 
-            $('.newKeyPanel', page).panel('toggle');
-
-            $('#txtAppName', page).val('').focus();
+            showNewKeyPrompt(page);
 
         });
 
-        $('.newKeyForm').off('submit', onSubmit).on('submit', onSubmit);
+    });
+    pageIdOn('pagebeforeshow', "serverSecurityPage", function () {
 
-    }).on('pageshowready', "#serverSecurityPage", function () {
-
+        LibraryMenu.setTabs('adminadvanced', 1, getTabs);
         var page = this;
 
         loadData(page);
     });
 
-})(jQuery, document);
+});

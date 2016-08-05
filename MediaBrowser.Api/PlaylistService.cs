@@ -40,8 +40,25 @@ namespace MediaBrowser.Api
         /// Gets or sets the user id.
         /// </summary>
         /// <value>The user id.</value>
-        [ApiMember(Name = "UserId", Description = "User Id", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        [ApiMember(Name = "UserId", Description = "User Id", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "POST")]
         public string UserId { get; set; }
+    }
+
+    [Route("/Playlists/{Id}/Items/{ItemId}/Move/{NewIndex}", "POST", Summary = "Moves a playlist item")]
+    public class MoveItem : IReturnVoid
+    {
+        [ApiMember(Name = "ItemId", Description = "ItemId", IsRequired = true, DataType = "string", ParameterType = "query", Verb = "POST")]
+        public string ItemId { get; set; }
+
+        [ApiMember(Name = "Id", IsRequired = true, DataType = "string", ParameterType = "path", Verb = "POST")]
+        public string Id { get; set; }
+
+        /// <summary>
+        /// Gets or sets the user id.
+        /// </summary>
+        /// <value>The user id.</value>
+        [ApiMember(Name = "NewIndex", Description = "NewIndex", IsRequired = true, DataType = "string", ParameterType = "query", Verb = "POST")]
+        public int NewIndex { get; set; }
     }
 
     [Route("/Playlists/{Id}/Items", "DELETE", Summary = "Removes items from a playlist")]
@@ -105,6 +122,13 @@ namespace MediaBrowser.Api
             _libraryManager = libraryManager;
         }
 
+        public void Post(MoveItem request)
+        {
+            var task = _playlistManager.MoveItem(request.Id, request.ItemId, request.NewIndex);
+
+            Task.WaitAll(task);
+        }
+
         public async Task<object> Post(CreatePlaylist request)
         {
             var result = await _playlistManager.CreatePlaylist(new PlaylistCreationRequest
@@ -133,7 +157,7 @@ namespace MediaBrowser.Api
             Task.WaitAll(task);
         }
 
-        public object Get(GetPlaylistItems request)
+        public async Task<object> Get(GetPlaylistItems request)
         {
             var playlist = (Playlist)_libraryManager.GetItemById(request.Id);
             var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
@@ -154,7 +178,7 @@ namespace MediaBrowser.Api
 
             var dtoOptions = GetDtoOptions(request);
 
-            var dtos = _dtoService.GetBaseItemDtos(items.Select(i => i.Item2), dtoOptions, user)
+            var dtos = (await _dtoService.GetBaseItemDtos(items.Select(i => i.Item2), dtoOptions, user).ConfigureAwait(false))
                    .ToArray();
 
             var index = 0;

@@ -6,11 +6,23 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using MediaBrowser.Controller.Power;
+using MediaBrowser.Server.Implementations.Persistence;
+using MediaBrowser.Server.Startup.Common.FFMpeg;
+using System.Diagnostics;
+using MediaBrowser.Model.System;
 
 namespace MediaBrowser.Server.Mac
 {
     public abstract class BaseMonoApp : INativeApp
     {
+        protected ILogger Logger { get; private set; }
+
+        protected BaseMonoApp(ILogger logger)
+        {
+            Logger = logger;
+        }
+
         /// <summary>
         /// Shutdowns this instance.
         /// </summary>
@@ -36,6 +48,29 @@ namespace MediaBrowser.Server.Mac
             }
         }
 
+        public void PreventSystemStandby()
+        {
+
+        }
+
+        public void AllowSystemStandby()
+        {
+
+        }
+        
+        public IDbConnector GetDbConnector()
+        {
+            return new DbConnector(Logger);
+        }
+
+		public virtual bool SupportsLibraryMonitor
+		{
+			get
+			{
+				return true;
+			}
+		}
+
         /// <summary>
         /// Gets a value indicating whether this instance can self update.
         /// </summary>
@@ -53,11 +88,6 @@ namespace MediaBrowser.Server.Mac
             get { return false; }
         }
 
-        public void PreventSystemStandby()
-        {
-
-        }
-
         public List<Assembly> GetAssembliesWithParts()
         {
             var list = new List<Assembly>();
@@ -67,7 +97,7 @@ namespace MediaBrowser.Server.Mac
             return list;
         }
 
-        public void AuthorizeServer(int udpPort, int httpServerPort, int httpsPort, string tempDirectory)
+		public void AuthorizeServer(int udpPort, int httpServerPort, int httpsPort, string applicationPath, string tempDirectory)
         {
         }
 
@@ -97,10 +127,83 @@ namespace MediaBrowser.Server.Mac
         {
         }
 
+        public void LaunchUrl(string url)
+        {
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = url
+                },
+
+                EnableRaisingEvents = true,
+            };
+
+            process.Exited += ProcessExited;
+
+			process.Start();
+        }
+
+        /// <summary>
+        /// Processes the exited.
+        /// </summary>
+        /// <param name="sender">The sender.</param>
+        /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
+        private static void ProcessExited(object sender, EventArgs e)
+        {
+            ((Process)sender).Dispose();
+        }
+
+        public FFMpegInstallInfo GetFfmpegInstallInfo()
+        {
+            return GetInfo(Environment);
+        }
+
+        public static FFMpegInstallInfo GetInfo(NativeEnvironment environment)
+        {
+            var info = new FFMpegInstallInfo();
+
+            info.ArchiveType = "7z";
+
+            switch (environment.SystemArchitecture)
+            {
+                case Architecture.X64:
+                    info.Version = "20160124";
+                    break;
+                case Architecture.X86:
+                    info.Version = "20150110";
+                    break;
+            }
+
+            info.DownloadUrls = GetDownloadUrls(environment);
+
+            return info;
+        }
+
+        private static string[] GetDownloadUrls(NativeEnvironment environment)
+        {
+            switch (environment.SystemArchitecture)
+            {
+                case Architecture.X64:
+                    return new[]
+                    {
+                                "https://github.com/MediaBrowser/Emby.Resources/raw/master/ffmpeg/osx/ffmpeg-x64-2.8.5.7z"
+                            };
+            }
+
+            // No version available 
+            return new string[] { };
+        }
+
         public INetworkManager CreateNetworkManager(ILogger logger)
         {
             return new NetworkManager(logger);
         }
+
+		public IPowerManagement GetPowerManagement() 
+		{
+			return new NullPowerManagement ();
+		}
 
         private NativeEnvironment GetEnvironmentInfo()
         {
@@ -123,7 +226,7 @@ namespace MediaBrowser.Server.Mac
             }
             else if (string.Equals(uname.machine, "x86_64", StringComparison.OrdinalIgnoreCase))
             {
-                info.SystemArchitecture = Architecture.X86_X64;
+                info.SystemArchitecture = Architecture.X64;
             }
             else if (uname.machine.StartsWith("arm", StringComparison.OrdinalIgnoreCase))
             {
@@ -161,5 +264,13 @@ namespace MediaBrowser.Server.Mac
             public string sysname = string.Empty;
             public string machine = string.Empty;
         }
+
+		private class NullPowerManagement : IPowerManagement
+		{
+			public void ScheduleWake(DateTime utcTime) 
+			{
+				throw new NotImplementedException ();
+			}
+		}
     }
 }

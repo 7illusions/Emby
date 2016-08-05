@@ -1,17 +1,18 @@
-﻿(function ($, document) {
+﻿define(['jQuery', 'cardBuilder'], function ($, cardBuilder) {
 
     // The base query options
     var query = {
 
         UserId: Dashboard.getCurrentUserId(),
-        StartIndex: 0
+        StartIndex: 0,
+        Fields: "CanDelete,PrimaryImageAspectRatio"
     };
 
     function reloadItems(page) {
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getLiveTvRecordings(query).done(function (result) {
+        ApiClient.getLiveTvRecordings(query).then(function (result) {
 
             // Scroll back up so they can see the results from the beginning
             window.scrollTo(0, 0);
@@ -28,9 +29,9 @@
 
             updateFilterControls();
 
-            var screenWidth = $(window).width();
+            var screenWidth = window.innerWidth;
 
-            html += LibraryBrowser.getPosterViewHtml({
+            html += cardBuilder.getCardsHtml({
 
                 items: result.Items,
                 shape: "auto",
@@ -107,7 +108,7 @@
 
         if (query.GroupId) {
 
-            ApiClient.getLiveTvRecordingGroup(query.GroupId).done(function (group) {
+            ApiClient.getLiveTvRecordingGroup(query.GroupId).then(function (group) {
                 $('.listName', page).html(group.Name);
             });
 
@@ -118,4 +119,4 @@
         updateFilterControls(this);
     });
 
-})(jQuery, document);
+});

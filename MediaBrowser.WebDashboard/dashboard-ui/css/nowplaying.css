@@ -4,19 +4,24 @@
 
     .nowPlayingPage .btnCommand, .nowPlayingPage .btnPlayStateCommand {
         margin: 2px 1px;
-        width: 70px;
-        height: 70px;
     }
 
-.nowPlayingPageImage img {
-    max-height: 360px;
-    max-width: 360px;
+        .nowPlayingPage .btnCommand:not(.hide), .nowPlayingPage .btnPlayStateCommand:not(.hide) {
+            display: inline-block !important;
+        }
+
+.nowPlayingPageImage {
+    height: 360px;
+    width: 360px;
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: cover;
 }
 
 .nowPlayingPageTimeContainer {
     min-width: 200px;
     max-width: 280px;
-    margin: 0 auto 1em;
+    margin: 1.5em auto 1em;
 }
 
 .nowPlayingNavButtonContainer {
@@ -73,11 +78,31 @@
     box-shadow: 0 0 12px 7px #cc3333;
 }
 
+.playlistIndexIndicatorImage {
+    background-size: initial !important;
+    background-image: url(images/ani_equalizer_white.gif) !important;
+}
+
 @media all and (max-width: 700px) {
 
-    .nowPlayingPageImage img {
-        max-height: 160px;
-        max-width: 200px;
+    .nowPlayingPageImage {
+        height: 160px;
+        width: 160px;
+    }
+}
+
+.nowPlayingPage .btnCommand i, .nowPlayingPage .btnPlayStateCommand i {
+    width: 44px;
+    height: 44px;
+    font-size: 44px;
+}
+
+
+@media all and (max-width: 600px) and (orientation: portrait) {
+
+    .btnSlideshow {
+        display: block !important;
+        margin-top: 1em;
     }
 }
 
@@ -87,16 +112,17 @@
         margin: 2px 0;
     }
 
-    .nowPlayingPageImage img {
-        max-height: 160px;
-        max-width: 220px;
+    .nowPlayingPageImage {
+        height: 160px;
+        width: 160px;
     }
 }
 
 @media all and (max-height: 500px) {
 
-    .nowPlayingPageImage img {
-        max-height: 120px;
+    .nowPlayingPageImage {
+        height: 120px;
+        width: 120px;
     }
 }
 
@@ -108,7 +134,8 @@
 }
 
 .nowPlayingPageTitle {
-    margin: .5em 0;
+    margin: 1.5em auto .5em;
+    max-width: 50%;
 }
 
 .nowPlayingInfoButtons {
@@ -118,7 +145,7 @@
 @media all and (min-height: 600px) {
 
     .nowPlayingPageTitle {
-        margin: 1em 0;
+        margin-top: 2em;
     }
 
     .nowPlayingInfoButtons {
@@ -150,40 +177,6 @@
     }
 }
 
-@media (orientation: landscape) and (max-height: 400px) {
-    .nowPlayingPageTitle {
-        margin: 0 auto;
-        width: 50%;
-        position: absolute;
-        text-align: center;
-        left: 0;
-        right: 0;
-        top: -20px;
-    }
-
-    .nowPlayingPage .btnCommand, .nowPlayingPage .btnPlayStateCommand {
-        width: 60px;
-        height: 60px;
-    }
-}
-
-@media (orientation: portrait) and (max-height: 600px) {
-    .nowPlayingPageTitle {
-        margin: 0 auto;
-        width: 50%;
-        position: absolute;
-        text-align: center;
-        left: 0;
-        right: 0;
-        top: -20px;
-    }
-
-    .nowPlayingPage .btnCommand, .nowPlayingPage .btnPlayStateCommand {
-        width: 60px;
-        height: 60px;
-    }
-}
-
 .nowPlayingSelectedPlayer {
     display: inline-block;
     vertical-align: middle;
@@ -198,7 +191,15 @@
     }
 }
 
-.nowPlayingPageUserDataButtons iron-icon {
+.nowPlayingPageUserDataButtons paper-icon-button {
     width: 40px;
     height: 40px;
+}
+
+.hideVideoButtons .videoButton {
+    visibility: hidden;
+}
+
+.hideVolumeButtons .volumeButton {
+    visibility: hidden;
 }

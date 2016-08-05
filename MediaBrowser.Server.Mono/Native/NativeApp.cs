@@ -1,4 +1,5 @@
-﻿using MediaBrowser.Server.Startup.Common;
+﻿using MediaBrowser.Model.Logging;
+using MediaBrowser.Server.Startup.Common;
 
 namespace MediaBrowser.Server.Mono.Native
 {
@@ -7,6 +8,11 @@ namespace MediaBrowser.Server.Mono.Native
     /// </summary>
     internal class NativeApp : BaseMonoApp
     {
+        public NativeApp(StartupOptions startupOptions, ILogger logger)
+            : base(startupOptions, logger)
+        {
+        }
+
         /// <summary>
         /// Shutdowns this instance.
         /// </summary>
@@ -23,7 +29,8 @@ namespace MediaBrowser.Server.Mono.Native
         {
             get
             {
-                return true;
+                // A restart script must be provided
+                return StartupOptions.ContainsOption("-restartpath");
             }
         }
 

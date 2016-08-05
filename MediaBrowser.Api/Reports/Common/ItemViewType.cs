@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace MediaBrowser.Api.Reports
 {
     public enum ItemViewType
@@ -17,7 +13,6 @@ namespace MediaBrowser.Api.Reports
         TrailersImage,
         SpecialsImage,
         LockDataImage,
-        UnidentifiedImage,
         TagsPrimaryImage,
         TagsBackdropImage,
         TagsLogoImage,

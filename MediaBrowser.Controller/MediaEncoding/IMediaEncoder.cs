@@ -1,17 +1,19 @@
 ﻿using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
 using System;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Model.Dlna;
 
 namespace MediaBrowser.Controller.MediaEncoding
 {
     /// <summary>
     /// Interface IMediaEncoder
     /// </summary>
-    public interface IMediaEncoder
+    public interface IMediaEncoder : ITranscoderSupport
     {
+        string EncoderLocationType { get; }
+
         /// <summary>
         /// Gets the encoder path.
         /// </summary>
@@ -19,18 +21,20 @@ namespace MediaBrowser.Controller.MediaEncoding
         string EncoderPath { get; }
 
         /// <summary>
-        /// Gets the version.
+        /// Supportses the decoder.
         /// </summary>
-        /// <value>The version.</value>
-        string Version { get; }
+        /// <param name="decoder">The decoder.</param>
+        /// <returns><c>true</c> if XXXX, <c>false</c> otherwise.</returns>
+        bool SupportsDecoder(string decoder);
 
         /// <summary>
         /// Extracts the audio image.
         /// </summary>
         /// <param name="path">The path.</param>
+        /// <param name="imageStreamIndex">Index of the image stream.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{Stream}.</returns>
-        Task<Stream> ExtractAudioImage(string path, CancellationToken cancellationToken);
+        Task<string> ExtractAudioImage(string path, int? imageStreamIndex, CancellationToken cancellationToken);
 
         /// <summary>
         /// Extracts the video image.
@@ -41,7 +45,9 @@ namespace MediaBrowser.Controller.MediaEncoding
         /// <param name="offset">The offset.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task{Stream}.</returns>
-        Task<Stream> ExtractVideoImage(string[] inputFiles, MediaProtocol protocol, Video3DFormat? threedFormat, TimeSpan? offset, CancellationToken cancellationToken);
+        Task<string> ExtractVideoImage(string[] inputFiles, MediaProtocol protocol, Video3DFormat? threedFormat, TimeSpan? offset, CancellationToken cancellationToken);
+
+        Task<string> ExtractVideoImage(string[] inputFiles, MediaProtocol protocol, int? imageStreamIndex, CancellationToken cancellationToken);
 
         /// <summary>
         /// Extracts the video images on interval.
@@ -55,12 +61,12 @@ namespace MediaBrowser.Controller.MediaEncoding
         /// <param name="maxWidth">The maximum width.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task.</returns>
-        Task ExtractVideoImagesOnInterval(string[] inputFiles, 
-            MediaProtocol protocol, 
-            Video3DFormat? threedFormat, 
-            TimeSpan interval, 
-            string targetDirectory, 
-            string filenamePrefix, 
+        Task ExtractVideoImagesOnInterval(string[] inputFiles,
+            MediaProtocol protocol,
+            Video3DFormat? threedFormat,
+            TimeSpan interval,
+            string targetDirectory,
+            string filenamePrefix,
             int? maxWidth,
             CancellationToken cancellationToken);
 
@@ -123,5 +129,9 @@ namespace MediaBrowser.Controller.MediaEncoding
         /// <param name="path">The path.</param>
         /// <returns>System.String.</returns>
         string EscapeSubtitleFilterPath(string path);
+
+        Task Init();
+
+        Task UpdateEncoderPath(string path, string pathType);
     }
 }

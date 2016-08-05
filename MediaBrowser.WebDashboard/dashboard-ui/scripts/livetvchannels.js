@@ -1,122 +1,139 @@
-﻿(function ($, document) {
+﻿define(['cardBuilder', 'emby-itemscontainer'], function (cardBuilder) {
 
-    var query = {
+    return function (view, params, tabContent) {
 
-        StartIndex: 0,
-        EnableFavoriteSorting: true
-    };
+        var self = this;
+        var data = {};
 
-    function getChannelsHtml(channels) {
+        function getPageData(context) {
+            var key = getSavedQueryKey(context);
+            var pageData = data[key];
 
-        return LibraryBrowser.getListViewHtml({
-            items: channels,
-            smallIcon: true
-        });
-    }
+            if (!pageData) {
+                pageData = data[key] = {
+                    query: {
+                        StartIndex: 0,
+                        EnableFavoriteSorting: true,
+                        Limit: LibraryBrowser.getDefaultPageSize()
+                    }
+                };
 
-    function renderChannels(page, viewPanel, result) {
-
-        $('.listTopPaging', page).html(LibraryBrowser.getQueryPagingHtml({
-            startIndex: query.StartIndex,
-            limit: query.Limit,
-            totalRecordCount: result.TotalRecordCount,
-            viewButton: true,
-            showLimit: false,
-            viewPanelClass: 'channelViewPanel'
-
-        })).trigger('create');
-
-        updateFilterControls(viewPanel);
-
-        var html = getChannelsHtml(result.Items);
-
-        var elem = page.querySelector('#items');
-        elem.innerHTML = html;
-        ImageLoader.lazyChildren(elem);
-        $(elem).trigger('create');
-
-        $('.btnNextPage', page).on('click', function () {
-            query.StartIndex += query.Limit;
-            reloadItems(page, viewPanel);
-        });
-
-        $('.btnPreviousPage', page).on('click', function () {
-            query.StartIndex -= query.Limit;
-            reloadItems(page, viewPanel);
-        });
-
-        LibraryBrowser.saveQueryValues('movies', query);
-    }
-    
-    function reloadItems(page, viewPanel) {
-
-        Dashboard.showLoadingMsg();
-        
-        ApiClient.getLiveTvChannels(query).done(function (result) {
-
-            renderChannels(page, viewPanel, result);
-
-            Dashboard.hideLoadingMsg();
-
-            LibraryBrowser.setLastRefreshed(page);
-        });
-    }
-
-    function updateFilterControls(page) {
-
-        $('#chkFavorite', page).checked(query.IsFavorite == true).checkboxradio('refresh');
-        $('#chkLikes', page).checked(query.IsLiked == true).checkboxradio('refresh');
-        $('#chkDislikes', page).checked(query.IsDisliked == true).checkboxradio('refresh');
-        $('#selectPageSize', page).val(query.Limit).selectmenu('refresh');
-    }
-
-    window.LiveTvPage.initChannelsTab = function (page, tabContent) {
-
-        var viewPanel = page.querySelector('.channelViewPanel');
-
-        $('#chkFavorite', viewPanel).on('change', function () {
-
-            query.StartIndex = 0;
-            query.IsFavorite = this.checked ? true : null;
-
-            reloadItems(tabContent, viewPanel);
-        });
-
-
-        $('#chkLikes', viewPanel).on('change', function () {
-
-            query.StartIndex = 0;
-            query.IsLiked = this.checked ? true : null;
-
-            reloadItems(tabContent, viewPanel);
-        });
-
-        $('#chkDislikes', viewPanel).on('change', function () {
-
-            query.StartIndex = 0;
-            query.IsDisliked = this.checked ? true : null;
-
-            reloadItems(tabContent, viewPanel);
-        });
-
-        $('#selectPageSize', viewPanel).on('change', function () {
-            query.Limit = parseInt(this.value);
-            query.StartIndex = 0;
-            reloadItems(tabContent, viewPanel);
-        });
-    };
-
-    window.LiveTvPage.renderChannelsTab = function (page, tabContent) {
-
-        var viewPanel = page.querySelector('.channelViewPanel');
-
-        if (LibraryBrowser.needsRefresh(tabContent)) {
-            query.UserId = Dashboard.getCurrentUserId();
-            LibraryBrowser.loadSavedQueryValues('movies', query);
-            query.Limit = query.Limit || LibraryBrowser.getDefaultPageSize();
-            reloadItems(tabContent, viewPanel);
-            updateFilterControls(viewPanel);
+                LibraryBrowser.loadSavedQueryValues(key, pageData.query);
+            }
+            return pageData;
         }
+
+        function getQuery(context) {
+
+            return getPageData(context).query;
+        }
+
+        function getSavedQueryKey(context) {
+
+            if (!context.savedQueryKey) {
+                context.savedQueryKey = LibraryBrowser.getSavedQueryKey('channels');
+            }
+            return context.savedQueryKey;
+        }
+
+        function getChannelsHtml(channels) {
+
+            return cardBuilder.getCardsHtml({
+                items: channels,
+                shape: "square",
+                showTitle: true,
+                lazy: true,
+                cardLayout: true,
+                showDetailsMenu: true
+            });
+        }
+
+        function renderChannels(context, result) {
+
+            var query = getQuery(context);
+
+            context.querySelector('.paging').innerHTML = LibraryBrowser.getQueryPagingHtml({
+                startIndex: query.StartIndex,
+                limit: query.Limit,
+                totalRecordCount: result.TotalRecordCount,
+                showLimit: false,
+                updatePageSizeSetting: false,
+                filterButton: false
+            });
+
+            var html = getChannelsHtml(result.Items);
+
+            var elem = context.querySelector('#items');
+            elem.innerHTML = html;
+            ImageLoader.lazyChildren(elem);
+
+            var i, length;
+            var elems;
+
+            function onNextPageClick() {
+                query.StartIndex += query.Limit;
+                reloadItems(context);
+            }
+
+            function onPreviousPageClick() {
+                query.StartIndex -= query.Limit;
+                reloadItems(context);
+            }
+
+            elems = context.querySelectorAll('.btnNextPage');
+            for (i = 0, length = elems.length; i < length; i++) {
+                elems[i].addEventListener('click', onNextPageClick);
+            }
+
+            elems = context.querySelectorAll('.btnPreviousPage');
+            for (i = 0, length = elems.length; i < length; i++) {
+                elems[i].addEventListener('click', onPreviousPageClick);
+            }
+
+            LibraryBrowser.saveQueryValues(getSavedQueryKey(context), query);
+        }
+
+        function showFilterMenu(context) {
+
+            require(['components/filterdialog/filterdialog'], function (filterDialogFactory) {
+
+                var filterDialog = new filterDialogFactory({
+                    query: getQuery(context),
+                    mode: 'livetvchannels'
+                });
+
+                Events.on(filterDialog, 'filterchange', function () {
+                    reloadItems(context);
+                });
+
+                filterDialog.show();
+            });
+        }
+
+        function reloadItems(context) {
+
+            Dashboard.showLoadingMsg();
+
+            var query = getQuery(context);
+
+            query.UserId = Dashboard.getCurrentUserId();
+
+            ApiClient.getLiveTvChannels(query).then(function (result) {
+
+                renderChannels(context, result);
+
+                Dashboard.hideLoadingMsg();
+            });
+        }
+
+        tabContent.querySelector('.btnFilter').addEventListener('click', function () {
+            showFilterMenu(tabContent);
+        });
+
+        self.renderTab = function () {
+
+            reloadItems(tabContent);
+        };
     };
 
-})(jQuery, document);
+});

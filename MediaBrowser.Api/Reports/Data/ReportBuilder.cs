@@ -1,19 +1,10 @@
 ﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
-using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Localization;
-using MediaBrowser.Model.Channels;
-using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Querying;
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace MediaBrowser.Api.Reports
 {
@@ -105,7 +96,6 @@ namespace MediaBrowser.Api.Reports
 					{   
                         HeaderMetadata.Status,                     
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -122,7 +112,6 @@ namespace MediaBrowser.Api.Reports
 					{     
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -143,7 +132,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -161,7 +149,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -177,7 +164,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -198,7 +184,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -223,7 +208,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -241,7 +225,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -260,7 +243,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -284,7 +266,6 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -315,11 +296,9 @@ namespace MediaBrowser.Api.Reports
 					{
                         HeaderMetadata.Status,
                         HeaderMetadata.Locked,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
-						HeaderMetadata.Unidentified,
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
@@ -373,12 +352,6 @@ namespace MediaBrowser.Api.Reports
                 case HeaderMetadata.Locked:
                     option.Column = (i, r) => this.GetBoolString(r.HasLockData);
                     option.Header.ItemViewType = ItemViewType.LockDataImage;
-                    option.Header.CanGroup = false;
-                    option.Header.DisplayType = ReportDisplayType.Export;
-                    break;
-                case HeaderMetadata.Unidentified:
-                    option.Column = (i, r) => this.GetBoolString(r.IsUnidentified);
-                    option.Header.ItemViewType = ItemViewType.UnidentifiedImage;
                     option.Header.CanGroup = false;
                     option.Header.DisplayType = ReportDisplayType.Export;
                     break;
@@ -633,11 +606,10 @@ namespace MediaBrowser.Api.Reports
             {
                 Id = item.Id.ToString("N"),
                 HasLockData = item.IsLocked,
-                IsUnidentified = item.IsUnidentified,
                 HasLocalTrailer = hasTrailers != null ? hasTrailers.GetTrailerIds().Count() > 0 : false,
-                HasImageTagsPrimary = (item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Primary) > 0),
-                HasImageTagsBackdrop = (item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Backdrop) > 0),
-                HasImageTagsLogo = (item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Logo) > 0),
+                HasImageTagsPrimary = item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Primary) > 0,
+                HasImageTagsBackdrop = item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Backdrop) > 0,
+                HasImageTagsLogo = item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Logo) > 0,
                 HasSpecials = hasSpecialFeatures != null ? hasSpecialFeatures.SpecialFeatureIds.Count > 0 : false,
                 HasSubtitles = video != null ? video.HasSubtitles : false,
                 RowType = ReportHelper.GetRowType(item.GetClientTypeName())

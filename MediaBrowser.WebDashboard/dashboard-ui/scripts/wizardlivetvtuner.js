@@ -1,4 +1,4 @@
-﻿(function ($, document) {
+﻿define(['jQuery'], function ($) {
 
     function save(page) {
 
@@ -7,7 +7,7 @@
         var apiClient = ApiClient;
 
         // After saving chapter task, now save server config
-        apiClient.getJSON(apiClient.getUrl('Startup/Configuration')).done(function (config) {
+        apiClient.getJSON(apiClient.getUrl('Startup/Configuration')).then(function (config) {
 
             config.LiveTvTunerType = $('#selectTunerType', page).val();
             config.LiveTvTunerPath = $('.txtDevicePath', page).val();
@@ -18,12 +18,12 @@
                 data: config,
                 url: apiClient.getUrl('Startup/Configuration')
 
-            }).done(function () {
+            }).then(function () {
 
                 Dashboard.hideLoadingMsg();
                 navigateToNextPage(config);
 
-            }).fail(function () {
+            }, function () {
 
                 Dashboard.hideLoadingMsg();
                 Dashboard.alert({
@@ -41,9 +41,9 @@
 
         var apiClient = ApiClient;
 
-        apiClient.getJSON(apiClient.getUrl('Startup/Configuration')).done(function (config) {
+        apiClient.getJSON(apiClient.getUrl('Startup/Configuration')).then(function (config) {
 
-            $('#selectTunerType', page).val(config.LiveTvTunerType || 'hdhomerun').selectmenu("refresh");
+            $('#selectTunerType', page).val(config.LiveTvTunerType || 'hdhomerun');
             page.querySelector('.txtDevicePath').value = config.LiveTvTunerPath || '';
 
             Dashboard.hideLoadingMsg();
@@ -60,16 +60,8 @@
     }
 
     function skip() {
-        var apiClient = ApiClient;
-
-        apiClient.getJSON(apiClient.getUrl('Startup/Info')).done(function (info) {
-
-            if (info.SupportsRunningAsService) {
-                Dashboard.navigate('wizardservice.html');
-
-            } else {
-                Dashboard.navigate('wizardagreement.html');
-            }
+        require(['scripts/wizardcontroller'], function (wizardcontroller) {
+            wizardcontroller.navigateToComponents();
         });
     }
 
@@ -89,11 +81,11 @@
 
         $('.btnSkip', page).on('click', skip);
 
-    }).on('pageshowready', "#wizardTunerPage", function () {
+    }).on('pageshow', "#wizardTunerPage", function () {
 
         var page = this;
 
         reload(page);
     });
 
-})(jQuery, document, window);
+});

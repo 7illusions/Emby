@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities;
+﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Playlists;
@@ -13,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Playlists
 {
@@ -110,7 +110,7 @@ namespace MediaBrowser.Server.Implementations.Playlists
 
             try
             {
-                Directory.CreateDirectory(path);
+                _fileSystem.CreateDirectory(path);
 
                 var playlist = new Playlist
                 {
@@ -128,7 +128,7 @@ namespace MediaBrowser.Server.Implementations.Playlists
 
                 await parentFolder.AddChild(playlist, CancellationToken.None).ConfigureAwait(false);
 
-                await playlist.RefreshMetadata(new MetadataRefreshOptions { ForceSave = true }, CancellationToken.None)
+                await playlist.RefreshMetadata(new MetadataRefreshOptions(_fileSystem) { ForceSave = true }, CancellationToken.None)
                     .ConfigureAwait(false);
 
                 if (options.ItemIdList.Count > 0)
@@ -150,7 +150,7 @@ namespace MediaBrowser.Server.Implementations.Playlists
 
         private string GetTargetPath(string path)
         {
-            while (Directory.Exists(path))
+            while (_fileSystem.DirectoryExists(path))
             {
                 path += "1";
             }
@@ -158,7 +158,7 @@ namespace MediaBrowser.Server.Implementations.Playlists
             return path;
         }
 
-        private IEnumerable<BaseItem> GetPlaylistItems(IEnumerable<string> itemIds, string playlistMediaType, User user)
+        private Task<IEnumerable<BaseItem>> GetPlaylistItems(IEnumerable<string> itemIds, string playlistMediaType, User user)
         {
             var items = itemIds.Select(i => _libraryManager.GetItemById(i)).Where(i => i != null);
 
@@ -183,7 +183,7 @@ namespace MediaBrowser.Server.Implementations.Playlists
 
             var list = new List<LinkedChild>();
 
-            var items = GetPlaylistItems(itemIds, playlist.MediaType, user)
+            var items = (await GetPlaylistItems(itemIds, playlist.MediaType, user).ConfigureAwait(false))
                 .Where(i => i.SupportsAddingToPlaylist)
                 .ToList();
 
@@ -196,7 +196,7 @@ namespace MediaBrowser.Server.Implementations.Playlists
 
             await playlist.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
 
-            _providerManager.QueueRefresh(playlist.Id, new MetadataRefreshOptions
+            _providerManager.QueueRefresh(playlist.Id, new MetadataRefreshOptions(_fileSystem)
             {
                 ForceSave = true
             });
@@ -223,15 +223,50 @@ namespace MediaBrowser.Server.Implementations.Playlists
 
             await playlist.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
 
-            _providerManager.QueueRefresh(playlist.Id, new MetadataRefreshOptions
+            _providerManager.QueueRefresh(playlist.Id, new MetadataRefreshOptions(_fileSystem)
             {
                 ForceSave = true
             });
         }
 
+        public async Task MoveItem(string playlistId, string entryId, int newIndex)
+        {
+            var playlist = _libraryManager.GetItemById(playlistId) as Playlist;
+
+            if (playlist == null)
+            {
+                throw new ArgumentException("No Playlist exists with the supplied Id");
+            }
+
+            var children = playlist.GetManageableItems().ToList();
+
+            var oldIndex = children.FindIndex(i => string.Equals(entryId, i.Item1.Id, StringComparison.OrdinalIgnoreCase));
+
+            if (oldIndex == newIndex)
+            {
+                return;
+            }
+
+            var item = playlist.LinkedChildren[oldIndex];
+
+            playlist.LinkedChildren.Remove(item);
+
+            if (newIndex >= playlist.LinkedChildren.Count)
+            {
+                playlist.LinkedChildren.Add(item);
+            }
+            else
+            {
+                playlist.LinkedChildren.Insert(newIndex, item);
+            }
+
+            await playlist.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+        }
+
         public Folder GetPlaylistsFolder(string userId)
         {
             return _libraryManager.RootFolder.Children.OfType<PlaylistsFolder>()
+                .FirstOrDefault() ?? _libraryManager.GetUserRootFolder().Children.OfType<PlaylistsFolder>()
                 .FirstOrDefault();
         }
     }

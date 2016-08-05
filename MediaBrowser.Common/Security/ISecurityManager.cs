@@ -41,9 +41,9 @@ namespace MediaBrowser.Common.Security
         Task LoadAllRegistrationInfo();
 
         /// <summary>
-        /// Gets the supporter information.
+        /// Register and app store sale with our back-end
         /// </summary>
-        /// <returns>Task&lt;SupporterInfo&gt;.</returns>
-        Task<SupporterInfo> GetSupporterInfo();
+        /// <param name="parameters">Json parameters to pass to admin server</param>
+        Task RegisterAppStoreSale(string parameters);
     }
 }

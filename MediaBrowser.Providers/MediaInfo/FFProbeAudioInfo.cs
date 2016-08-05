@@ -11,7 +11,6 @@ using MediaBrowser.Model.Serialization;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -103,9 +102,8 @@ namespace MediaBrowser.Providers.MediaInfo
         {
             var mediaStreams = mediaInfo.MediaStreams;
 
-            audio.FormatName = mediaInfo.Container;
+            //audio.FormatName = mediaInfo.Container;
             audio.TotalBitrate = mediaInfo.Bitrate;
-            audio.HasEmbeddedImage = mediaStreams.Any(i => i.Type == MediaStreamType.EmbeddedImage);
 
             audio.RunTimeTicks = mediaInfo.RunTimeTicks;
             audio.Size = mediaInfo.Size;
@@ -126,9 +124,9 @@ namespace MediaBrowser.Providers.MediaInfo
         private async Task FetchDataFromTags(Audio audio, Model.MediaInfo.MediaInfo data)
         {
             // Only set Name if title was found in the dictionary
-            if (!string.IsNullOrEmpty(data.Title))
+            if (!string.IsNullOrEmpty(data.Name))
             {
-                audio.Name = data.Title;
+                audio.Name = data.Name;
             }
 
             if (!audio.LockedFields.Contains(MetadataFields.Cast))

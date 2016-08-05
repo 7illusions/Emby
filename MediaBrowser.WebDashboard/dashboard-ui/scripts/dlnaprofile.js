@@ -1,4 +1,4 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery'], function ($) {
 
     var currentProfile;
 
@@ -14,11 +14,11 @@
         var promise1 = getProfile();
         var promise2 = ApiClient.getUsers();
 
-        $.when(promise1, promise2).done(function (response1, response2) {
+        Promise.all([promise1, promise2]).then(function (responses) {
 
-            currentProfile = response1[0];
+            currentProfile = responses[0];
 
-            renderProfile(page, currentProfile, response2[0]);
+            renderProfile(page, currentProfile, responses[1]);
 
             Dashboard.hideLoadingMsg();
 
@@ -100,7 +100,7 @@
         var usersHtml = '<option></option>' + users.map(function (u) {
             return '<option value="' + u.Id + '">' + u.Name + '</option>';
         }).join('');
-        $('#selectUser', page).html(usersHtml).val(profile.UserId || '').selectmenu("refresh");
+        $('#selectUser', page).html(usersHtml).val(profile.UserId || '');
 
         renderSubProfiles(page, profile);
     }
@@ -152,7 +152,7 @@
 
         $('#txtIdentificationHeaderName', popup).val(header.Name || '');
         $('#txtIdentificationHeaderValue', popup).val(header.Value || '');
-        $('#selectMatchType', popup).val(header.Match || 'Equals').selectmenu('refresh');
+        $('#selectMatchType', popup).val(header.Match || 'Equals');
 
         popup.popup('open');
     }
@@ -164,6 +164,9 @@
         currentSubProfile.Match = $('#selectMatchType', page).val();
 
         if (isSubProfileNew) {
+
+            currentProfile.Identification = currentProfile.Identification || {};
+            currentProfile.Identification.Headers = currentProfile.Identification.Headers || [];
 
             currentProfile.Identification.Headers.push(currentSubProfile);
         }
@@ -189,7 +192,7 @@
 
             li += '</a>';
 
-            li += '<a class="btnDeleteXmlAttribute" href="#" data-index="' + index + '"></a>';
+            li += '<a class="btnDeleteXmlAttribute" href="#" data-icon="delete" data-index="' + index + '"></a>';
 
             li += '</li>';
 
@@ -256,7 +259,7 @@
 
             li += '</a>';
 
-            li += '<a class="btnDeleteProfile" href="#" data-index="' + index + '"></a>';
+            li += '<a class="btnDeleteProfile" href="#" data-icon="delete" data-index="' + index + '"></a>';
 
             li += '</li>';
 
@@ -294,8 +297,8 @@
         var popup = $('#subtitleProfilePopup', page);
 
         $('#txtSubtitleProfileFormat', popup).val(profile.Format || '');
-        $('#selectSubtitleProfileMethod', popup).val(profile.Method || '').selectmenu('refresh');
-        $('#selectSubtitleProfileDidlMode', popup).val(profile.DidlMode || '').selectmenu('refresh');
+        $('#selectSubtitleProfileMethod', popup).val(profile.Method || '');
+        $('#selectSubtitleProfileDidlMode', popup).val(profile.DidlMode || '');
 
         popup.popup('open');
     }
@@ -419,7 +422,7 @@
 
         var popup = $('#popupEditDirectPlayProfile', page);
 
-        $('#selectDirectPlayProfileType', popup).val(directPlayProfile.Type || 'Video').selectmenu('refresh').trigger('change');
+        $('#selectDirectPlayProfileType', popup).val(directPlayProfile.Type || 'Video').trigger('change');
         $('#txtDirectPlayContainer', popup).val(directPlayProfile.Container || '');
         $('#txtDirectPlayAudioCodec', popup).val(directPlayProfile.AudioCodec || '');
         $('#txtDirectPlayVideoCodec', popup).val(directPlayProfile.VideoCodec || '');
@@ -491,17 +494,17 @@
 
         var popup = $('#transcodingProfilePopup', page);
 
-        $('#selectTranscodingProfileType', popup).val(transcodingProfile.Type || 'Video').selectmenu('refresh').trigger('change');
+        $('#selectTranscodingProfileType', popup).val(transcodingProfile.Type || 'Video').trigger('change');
         $('#txtTranscodingContainer', popup).val(transcodingProfile.Container || '');
         $('#txtTranscodingAudioCodec', popup).val(transcodingProfile.AudioCodec || '');
         $('#txtTranscodingVideoCodec', popup).val(transcodingProfile.VideoCodec || '');
-        $('#selectTranscodingProtocol', popup).val(transcodingProfile.Protocol || 'Http').selectmenu('refresh');
+        $('#selectTranscodingProtocol', popup).val(transcodingProfile.Protocol || 'Http');
 
         $('#chkEnableMpegtsM2TsMode', popup).checked(transcodingProfile.EnableMpegtsM2TsMode || false).checkboxradio('refresh');
         $('#chkEstimateContentLength', popup).checked(transcodingProfile.EstimateContentLength || false).checkboxradio('refresh');
         $('#chkReportByteRangeRequests', popup).checked(transcodingProfile.TranscodeSeekInfo == 'Bytes').checkboxradio('refresh');
 
-        $('.radioTabButton:first', popup).checked(true).checkboxradio('refresh').trigger('change');
+        $('.radioTabButton:first', popup).trigger('click');
 
         popup.popup('open');
     }
@@ -614,10 +617,10 @@
 
         var popup = $('#containerProfilePopup', page);
 
-        $('#selectContainerProfileType', popup).val(containerProfile.Type || 'Video').selectmenu('refresh').trigger('change');
+        $('#selectContainerProfileType', popup).val(containerProfile.Type || 'Video').trigger('change');
         $('#txtContainerProfileContainer', popup).val(containerProfile.Container || '');
 
-        $('.radioTabButton:first', popup).checked(true).checkboxradio('refresh').trigger('change');
+        $('.radioTabButton:first', popup).trigger('click');
 
         popup.popup('open');
     }
@@ -716,10 +719,10 @@
 
         var popup = $('#codecProfilePopup', page);
 
-        $('#selectCodecProfileType', popup).val(codecProfile.Type || 'Video').selectmenu('refresh').trigger('change');
+        $('#selectCodecProfileType', popup).val(codecProfile.Type || 'Video').trigger('change');
         $('#txtCodecProfileCodec', popup).val(codecProfile.Codec || '');
 
-        $('.radioTabButton:first', popup).checked(true).checkboxradio('refresh').trigger('change');
+        $('.radioTabButton:first', popup).trigger('click');
 
         popup.popup('open');
     }
@@ -822,12 +825,12 @@
 
         var popup = $('#responseProfilePopup', page);
 
-        $('#selectResponseProfileType', popup).val(responseProfile.Type || 'Video').selectmenu('refresh').trigger('change');
+        $('#selectResponseProfileType', popup).val(responseProfile.Type || 'Video').trigger('change');
         $('#txtResponseProfileContainer', popup).val(responseProfile.Container || '');
         $('#txtResponseProfileAudioCodec', popup).val(responseProfile.AudioCodec || '');
         $('#txtResponseProfileVideoCodec', popup).val(responseProfile.VideoCodec || '');
 
-        $('.radioTabButton:first', popup).checked(true).checkboxradio('refresh').trigger('change');
+        $('.radioTabButton:first', popup).trigger('click');
 
         popup.popup('open');
     }
@@ -864,10 +867,12 @@
                 url: ApiClient.getUrl("Dlna/Profiles/" + id),
                 data: JSON.stringify(profile),
                 contentType: "application/json"
-            }).done(function () {
+            }).then(function () {
 
-                Dashboard.alert('Settings saved.');
-            });
+                require(['toast'], function (toast) {
+                    toast('Settings saved.');
+                });
+            }, Dashboard.processErrorResponse);
 
         } else {
 
@@ -876,11 +881,11 @@
                 url: ApiClient.getUrl("Dlna/Profiles"),
                 data: JSON.stringify(profile),
                 contentType: "application/json"
-            }).done(function () {
+            }).then(function () {
 
                 Dashboard.navigate('dlnaprofiles.html');
 
-            });
+            }, Dashboard.processErrorResponse);
 
         }
 
@@ -944,9 +949,13 @@
 
         var page = this;
 
-        $('.radioTabButton', page).on('change', function () {
+        $('.radioTabButton', page).on('click', function () {
 
-            var elem = $('.' + this.value, page);
+            $(this).siblings().removeClass('ui-btn-active');
+            $(this).addClass('ui-btn-active');
+
+            var value = this.tagName == 'A' ? this.getAttribute('data-value') : this.value;
+            var elem = $('.' + value, page);
             elem.siblings('.tabContent').hide();
 
             elem.show();
@@ -1066,12 +1075,11 @@
         $('.xmlAttributeForm').off('submit', DlnaProfilePage.onXmlAttributeFormSubmit).on('submit', DlnaProfilePage.onXmlAttributeFormSubmit);
         $('.subtitleProfileForm').off('submit', DlnaProfilePage.onSubtitleProfileFormSubmit).on('submit', DlnaProfilePage.onSubtitleProfileFormSubmit);
 
-    }).on('pageshowready', "#dlnaProfilePage", function () {
+    }).on('pageshow', "#dlnaProfilePage", function () {
 
         var page = this;
 
-        $('.radioTabButton', page).checked(false).checkboxradio('refresh');
-        $('#radioInfo', page).checked(true).checkboxradio('refresh').trigger('change');
+        $('#radioInfo', page).trigger('click');
 
         loadProfile(page);
     });
@@ -1169,4 +1177,4 @@
         }
     };
 
-})(jQuery, document, window);
+});

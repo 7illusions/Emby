@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
-using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
@@ -56,7 +55,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         public bool EnableMpegtsM2TsMode { get; set; }
         public TranscodeSeekInfo TranscodeSeekInfo { get; set; }
         public long? EncodingDurationTicks { get; set; }
-        public string LiveTvStreamId { get; set; }
+        public string LiveStreamId { get; set; }
         public long? RunTimeTicks;
 
         public string ItemType { get; set; }
@@ -65,6 +64,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
         public long? InputFileSize { get; set; }
         public string OutputAudioSync = "1";
         public string OutputVideoSync = "vfr";
+        public string AlbumCoverPath { get; set; }
 
         public string GetMimeType(string outputPath)
         {
@@ -368,6 +368,17 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
         }
 
+        public string TargetVideoCodecTag
+        {
+            get
+            {
+                var stream = VideoStream;
+                return !Options.Static
+                    ? null
+                    : stream == null ? null : stream.CodecTag;
+            }
+        }
+
         public bool? IsTargetAnamorphic
         {
             get
@@ -378,19 +389,6 @@ namespace MediaBrowser.MediaEncoding.Encoder
                 }
 
                 return false;
-            }
-        }
-
-        public bool? IsTargetCabac
-        {
-            get
-            {
-                if (Options.Static)
-                {
-                    return VideoStream == null ? null : VideoStream.IsCabac;
-                }
-
-                return true;
             }
         }
 

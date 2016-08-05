@@ -1,51 +1,78 @@
-﻿(function () {
+﻿define(['datetime', 'listViewStyle'], function (datetime) {
 
-    $(document).on('pageshowready', "#logPage", function () {
+    return function (view, params) {
 
-        var page = this;
+        view.querySelector('#chkDebugLog').addEventListener('change', function () {
 
-        var apiClient = ApiClient;
+            ApiClient.getServerConfiguration().then(function (config) {
 
-        apiClient.getJSON(apiClient.getUrl('System/Logs')).done(function (logs) {
+                config.EnableDebugLevelLogging = view.querySelector('#chkDebugLog').checked;
 
-            var html = '';
-
-            html += '<ul data-role="listview" data-inset="true">';
-
-            html += logs.map(function (log) {
-
-                var logUrl = apiClient.getUrl('System/Logs/Log', {
-                    name: log.Name
-                });
-
-                logUrl += "&api_key=" + apiClient.accessToken();
-
-                var logHtml = '<li><a href="' + logUrl + '" target="_blank">';
-
-                logHtml += '<h3>';
-                logHtml += log.Name;
-                logHtml += '</h3>';
-
-                var date = parseISO8601Date(log.DateModified, { toLocal: true });
-
-                var text = date.toLocaleDateString();
-
-                text += ' ' + LibraryBrowser.getDisplayTime(date);
-
-                logHtml += '<p>' + text + '</p>';
-
-                logHtml += '</li>';
-
-                return logHtml;
-
-            })
-                .join('');
-
-            html += '</ul>';
-
-            Events.trigger($('.serverLogs', page).html(html)[0], 'create');
-
+                ApiClient.updateServerConfiguration(config);
+            });
         });
-    });
 
-})();
+        view.addEventListener('viewbeforeshow', function () {
+
+            Dashboard.showLoadingMsg();
+
+            var apiClient = ApiClient;
+
+            apiClient.getJSON(apiClient.getUrl('System/Logs')).then(function (logs) {
+
+                var html = '';
+
+                html += '<div class="paperList">';
+
+                html += logs.map(function (log) {
+
+                    var logUrl = apiClient.getUrl('System/Logs/Log', {
+                        name: log.Name
+                    });
+
+                    logUrl += "&api_key=" + apiClient.accessToken();
+
+                    var logHtml = '';
+                    logHtml += '<div class="listItem">';
+
+                    logHtml += '<a item-icon class="clearLink" href="' + logUrl + '" target="_blank" style="margin-left:1em;">';
+                    logHtml += '<i class="md-icon listItemIcon">schedule</i>';
+                    logHtml += "</a>";
+
+                    logHtml += '<div class="listItemBody">';
+                    logHtml += '<a class="clearLink" href="' + logUrl + '" target="_blank">';
+
+                    logHtml += "<div>" + log.Name + "</div>";
+
+                    var date = datetime.parseISO8601Date(log.DateModified, true);
+
+                    var text = date.toLocaleDateString();
+
+                    text += ' ' + datetime.getDisplayTime(date);
+
+                    logHtml += '<div class="secondary">' + text + '</div>';
+
+                    logHtml += "</a>";
+                    logHtml += '</div>';
+
+                    logHtml += '</div>';
+
+                    return logHtml;
+
+                })
+                    .join('');
+
+                html += '</div>';
+
+                view.querySelector('.serverLogs').innerHTML = html;
+                Dashboard.hideLoadingMsg();
+            });
+
+            apiClient.getServerConfiguration().then(function (config) {
+
+                view.querySelector('#chkDebugLog').checked = config.EnableDebugLevelLogging;
+            });
+        });
+
+    };
+});

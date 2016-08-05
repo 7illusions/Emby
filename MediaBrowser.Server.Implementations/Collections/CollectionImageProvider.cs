@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
@@ -12,6 +11,7 @@ using MoreLinq;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Collections
 {
@@ -19,6 +19,17 @@ namespace MediaBrowser.Server.Implementations.Collections
     {
         public CollectionImageProvider(IFileSystem fileSystem, IProviderManager providerManager, IApplicationPaths applicationPaths, IImageProcessor imageProcessor) : base(fileSystem, providerManager, applicationPaths, imageProcessor)
         {
+        }
+
+        protected override bool Supports(IHasImages item)
+        {
+            // Right now this is the only way to prevent this image from getting created ahead of internet image providers
+            if (!item.IsLocked)
+            {
+                return false;
+            }
+
+            return base.Supports(item);
         }
 
         protected override Task<List<BaseItem>> GetItemsWithImages(IHasImages item)
@@ -46,7 +57,7 @@ namespace MediaBrowser.Server.Implementations.Collections
                         return subItem;
                     }
 
-                    var parent = subItem.Parent;
+                    var parent = subItem.GetParent();
 
                     if (parent != null && parent.HasImage(ImageType.Primary))
                     {
@@ -62,7 +73,12 @@ namespace MediaBrowser.Server.Implementations.Collections
                 .DistinctBy(i => i.Id)
                 .ToList();
 
-            return Task.FromResult(GetFinalItems(items));
+            return Task.FromResult(GetFinalItems(items, 2));
+        }
+
+        protected override Task<string> CreateImage(IHasImages item, List<BaseItem> itemsWithImages, string outputPathWithoutExtension, ImageType imageType, int imageIndex)
+        {
+            return CreateSingleImage(itemsWithImages, outputPathWithoutExtension, ImageType.Primary);
         }
     }
 }

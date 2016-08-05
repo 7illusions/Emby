@@ -1,4 +1,4 @@
-﻿(function ($, document, LibraryBrowser, window) {
+﻿define(['jQuery', 'libraryBrowser'], function ($, libraryBrowser) {
 
     var currentItem;
 
@@ -8,7 +8,7 @@
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getJSON(ApiClient.getUrl('Social/Shares/Public/' + id + '/Item')).done(function (item) {
+        ApiClient.getJSON(ApiClient.getUrl('Social/Shares/Public/' + id + '/Item')).then(function (item) {
 
             reloadFromItem(page, item);
         });
@@ -18,9 +18,9 @@
 
         currentItem = item;
 
-        LibraryBrowser.renderName(item, $('.itemName', page), false);
-        LibraryBrowser.renderParentName(item, $('.parentName', page));
-        LibraryBrowser.renderDetailPageBackdrop(page, item);
+        libraryBrowser.renderName(item, $('.itemName', page)[0], false);
+        libraryBrowser.renderParentName(item, $('.parentName', page)[0]);
+        libraryBrowser.renderDetailPageBackdrop(page, item);
 
         renderImage(page, item);
 
@@ -40,7 +40,7 @@
 
         var chapters = item.Chapters || [];
 
-        if (!chapters.length || !AppInfo.enableDetailPageChapters) {
+        if (!chapters.length) {
             $('#scenesCollapsible', page).hide();
         } else {
             $('#scenesCollapsible', page).show();
@@ -58,7 +58,7 @@
     }
 
     function renderImage(page, item) {
-        LibraryBrowser.renderDetailImage(page.querySelector('.detailImageContainer'), item, '#');
+        libraryBrowser.renderDetailImage(page.querySelector('.detailImageContainer'), item, false);
     }
 
     $(document).on('pageinit', "#publicSharedItemPage", function () {
@@ -79,7 +79,7 @@
 
         });
 
-    }).on('pageshowready', "#publicSharedItemPage", function () {
+    }).on('pageshow', "#publicSharedItemPage", function () {
 
         var page = this;
 
@@ -87,4 +87,4 @@
 
     });
 
-})(jQuery, document, LibraryBrowser, window);
+});

@@ -1,14 +1,13 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Channels;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.MediaEncoding.Encoder
 {
@@ -18,38 +17,63 @@ namespace MediaBrowser.MediaEncoding.Encoder
         {
         }
 
-        protected override string GetCommandLineArguments(EncodingJob job)
+        protected override Task<string> GetCommandLineArguments(EncodingJob state)
         {
             var audioTranscodeParams = new List<string>();
 
-            var bitrate = job.OutputAudioBitrate;
+            var bitrate = state.OutputAudioBitrate;
 
             if (bitrate.HasValue)
             {
                 audioTranscodeParams.Add("-ab " + bitrate.Value.ToString(UsCulture));
             }
 
-            if (job.OutputAudioChannels.HasValue)
+            if (state.OutputAudioChannels.HasValue)
             {
-                audioTranscodeParams.Add("-ac " + job.OutputAudioChannels.Value.ToString(UsCulture));
+                audioTranscodeParams.Add("-ac " + state.OutputAudioChannels.Value.ToString(UsCulture));
             }
 
-            if (job.OutputAudioSampleRate.HasValue)
+            // opus will fail on 44100
+            if (!string.Equals(state.OutputAudioCodec, "opus", StringComparison.OrdinalIgnoreCase))
             {
-                audioTranscodeParams.Add("-ar " + job.OutputAudioSampleRate.Value.ToString(UsCulture));
+                if (state.OutputAudioSampleRate.HasValue)
+                {
+                    audioTranscodeParams.Add("-ar " + state.OutputAudioSampleRate.Value.ToString(UsCulture));
+                }
             }
 
-            var threads = GetNumberOfThreads(job, false);
+            var threads = GetNumberOfThreads(state, false);
 
-            var inputModifier = GetInputModifier(job);
+            var inputModifier = GetInputModifier(state);
 
-            return string.Format("{0} {1} -threads {2}{3} {4} -id3v2_version 3 -write_id3v1 1 -y \"{5}\"",
+            var albumCoverInput = string.Empty;
+            var mapArgs = string.Empty;
+            var metadata = string.Empty;
+            var vn = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(state.AlbumCoverPath))
+            {
+                albumCoverInput = " -i \"" + state.AlbumCoverPath + "\"";
+                mapArgs = " -map 0:a -map 1:v -c:v copy";
+                metadata = " -metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover(Front)\"";
+            }
+            else
+            {
+                vn = " -vn";
+            }
+
+            var result = string.Format("{0} {1}{6}{7} -threads {2}{3} {4} -id3v2_version 3 -write_id3v1 1{8} -y \"{5}\"",
                 inputModifier,
-                GetInputArgument(job),
+                GetInputArgument(state),
                 threads,
-                " -vn",
+                vn,
                 string.Join(" ", audioTranscodeParams.ToArray()),
-                job.OutputFilePath).Trim();
+                state.OutputFilePath,
+                albumCoverInput,
+                mapArgs,
+                metadata).Trim();
+
+            return Task.FromResult(result);
         }
 
         protected override string GetOutputFileExtension(EncodingJob state)

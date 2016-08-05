@@ -1,342 +1,289 @@
-﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.Net;
-using MediaBrowser.Controller.Channels;
-using MediaBrowser.Controller.Configuration;
-using MediaBrowser.Controller.Dlna;
-using MediaBrowser.Controller.Providers;
-using MediaBrowser.Dlna.ContentDirectory;
-using MediaBrowser.Dlna.PlayTo;
-using MediaBrowser.Dlna.Ssdp;
-using MediaBrowser.Model.Channels;
-using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Logging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-
-namespace MediaBrowser.Dlna.Channels
+﻿namespace MediaBrowser.Dlna.Channels
 {
-    public class DlnaChannelFactory : IChannelFactory, IDisposable
-    {
-        private readonly IServerConfigurationManager _config;
-        private readonly ILogger _logger;
-        private readonly IHttpClient _httpClient;
+    //public class DlnaChannel : IChannel, IDisposable
+    //{
+    //    private readonly ILogger _logger;
+    //    private readonly IHttpClient _httpClient;
+    //    private readonly IServerConfigurationManager _config;
+    //    private List<Device> _servers = new List<Device>();
 
-        private readonly IDeviceDiscovery _deviceDiscovery;
+    //    private readonly IDeviceDiscovery _deviceDiscovery;
+    //    private readonly SemaphoreSlim _syncLock = new SemaphoreSlim(1, 1);
+    //    private Func<List<string>> _localServersLookup;
 
-        private readonly SemaphoreSlim _syncLock = new SemaphoreSlim(1, 1);
-        private List<Device> _servers = new List<Device>();
+    //    public static DlnaChannel Current;
 
-        public static DlnaChannelFactory Instance;
+    //    public DlnaChannel(ILogger logger, IHttpClient httpClient, IDeviceDiscovery deviceDiscovery, IServerConfigurationManager config)
+    //    {
+    //        _logger = logger;
+    //        _httpClient = httpClient;
+    //        _deviceDiscovery = deviceDiscovery;
+    //        _config = config;
+    //        Current = this;
+    //    }
 
-        private Func<List<string>> _localServersLookup;
+    //    public string Name
+    //    {
+    //        get { return "Devices"; }
+    //    }
 
-        public DlnaChannelFactory(IServerConfigurationManager config, IHttpClient httpClient, ILogger logger, IDeviceDiscovery deviceDiscovery)
-        {
-            _config = config;
-            _httpClient = httpClient;
-            _logger = logger;
-            _deviceDiscovery = deviceDiscovery;
-            Instance = this;
-        }
+    //    public string Description
+    //    {
+    //        get { return string.Empty; }
+    //    }
 
-        internal void Start(Func<List<string>> localServersLookup)
-        {
-            _localServersLookup = localServersLookup;
+    //    public string DataVersion
+    //    {
+    //        get { return DateTime.UtcNow.Ticks.ToString(); }
+    //    }
 
-            //deviceDiscovery.DeviceDiscovered += deviceDiscovery_DeviceDiscovered;
-            _deviceDiscovery.DeviceLeft += deviceDiscovery_DeviceLeft;
-        }
+    //    public string HomePageUrl
+    //    {
+    //        get { return string.Empty; }
+    //    }
 
-        async void deviceDiscovery_DeviceDiscovered(object sender, SsdpMessageEventArgs e)
-        {
-            string usn;
-            if (!e.Headers.TryGetValue("USN", out usn)) usn = string.Empty;
+    //    public ChannelParentalRating ParentalRating
+    //    {
+    //        get { return ChannelParentalRating.GeneralAudience; }
+    //    }
 
-            string nt;
-            if (!e.Headers.TryGetValue("NT", out nt)) nt = string.Empty;
+    //    public InternalChannelFeatures GetChannelFeatures()
+    //    {
+    //        return new InternalChannelFeatures
+    //        {
+    //            ContentTypes = new List<ChannelMediaContentType>
+    //                {
+    //                    ChannelMediaContentType.Song,
+    //                    ChannelMediaContentType.Clip
+    //                },
 
-            string location;
-            if (!e.Headers.TryGetValue("Location", out location)) location = string.Empty;
+    //            MediaTypes = new List<ChannelMediaType>
+    //                {
+    //                    ChannelMediaType.Audio,
+    //                    ChannelMediaType.Video,
+    //                    ChannelMediaType.Photo
+    //                }
+    //        };
+    //    }
 
-            if (!IsValid(nt, usn))
-            {
-                return;
-            }
+    //    public bool IsEnabledFor(string userId)
+    //    {
+    //        return true;
+    //    }
 
-            if (_localServersLookup != null)
-            {
-                if (_localServersLookup().Any(i => usn.IndexOf(i, StringComparison.OrdinalIgnoreCase) != -1))
-                {
-                    // Don't add the local Dlna server to this
-                    return;
-                }
-            }
+    //    public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
+    //    {
+    //        throw new NotImplementedException();
+    //    }
 
-            if (GetExistingServers(usn).Any())
-            {
-                return;
-            }
+    //    public IEnumerable<ImageType> GetSupportedChannelImages()
+    //    {
+    //        return new List<ImageType>
+    //            {
+    //                ImageType.Primary
+    //            };
+    //    }
 
-            await _syncLock.WaitAsync().ConfigureAwait(false);
+    //    public void Start(Func<List<string>> localServersLookup)
+    //    {
+    //        _localServersLookup = localServersLookup;
 
-            try
-            {
-                if (GetExistingServers(usn).Any())
-                {
-                    return;
-                }
+    //        _deviceDiscovery.DeviceDiscovered -= deviceDiscovery_DeviceDiscovered;
+    //        _deviceDiscovery.DeviceLeft -= deviceDiscovery_DeviceLeft;
 
-                var device = await Device.CreateuPnpDeviceAsync(new Uri(location), _httpClient, _config, _logger)
-                            .ConfigureAwait(false);
+    //        _deviceDiscovery.DeviceDiscovered += deviceDiscovery_DeviceDiscovered;
+    //        _deviceDiscovery.DeviceLeft += deviceDiscovery_DeviceLeft;
+    //    }
 
-                if (!_servers.Any(i => string.Equals(i.Properties.UUID, device.Properties.UUID, StringComparison.OrdinalIgnoreCase)))
-                {
-                    _servers.Add(device);
-                }
-            }
-            catch (Exception ex)
-            {
+    //    public async Task<ChannelItemResult> GetChannelItems(InternalChannelItemQuery query, CancellationToken cancellationToken)
+    //    {
+    //        if (string.IsNullOrWhiteSpace(query.FolderId))
+    //        {
+    //            return await GetServers(query, cancellationToken).ConfigureAwait(false);
+    //        }
 
-            }
-            finally
-            {
-                _syncLock.Release();
-            }
-        }
+    //        return new ChannelItemResult();
 
-        async void deviceDiscovery_DeviceLeft(object sender, SsdpMessageEventArgs e)
-        {
-            string usn;
-            if (!e.Headers.TryGetValue("USN", out usn)) usn = String.Empty;
+    //        //var idParts = query.FolderId.Split('|');
+    //        //var folderId = idParts.Length == 2 ? idParts[1] : null;
 
-            string nt;
-            if (!e.Headers.TryGetValue("NT", out nt)) nt = String.Empty;
+    //        //var result = await new ContentDirectoryBrowser(_httpClient, _logger).Browse(new ContentDirectoryBrowseRequest
+    //        //{
+    //        //    Limit = query.Limit,
+    //        //    StartIndex = query.StartIndex,
+    //        //    ParentId = folderId,
+    //        //    ContentDirectoryUrl = ControlUrl
 
-            if (!IsValid(nt, usn))
-            {
-                return;
-            }
+    //        //}, cancellationToken).ConfigureAwait(false);
 
-            if (!GetExistingServers(usn).Any())
-            {
-                return;
-            }
+    //        //items = result.Items.ToList();
 
-            await _syncLock.WaitAsync().ConfigureAwait(false);
+    //        //var list = items.ToList();
+    //        //var count = list.Count;
 
-            try
-            {
-                var list = _servers.ToList();
+    //        //list = ApplyPaging(list, query).ToList();
 
-                foreach (var device in GetExistingServers(usn).ToList())
-                {
-                    list.Remove(device);
-                }
+    //        //return new ChannelItemResult
+    //        //{
+    //        //    Items = list,
+    //        //    TotalRecordCount = count
+    //        //};
+    //    }
 
-                _servers = list;
-            }
-            finally
-            {
-                _syncLock.Release();
-            }
-        }
+    //    public async Task<ChannelItemResult> GetServers(InternalChannelItemQuery query, CancellationToken cancellationToken)
+    //    {
+    //        await _syncLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        private bool IsValid(string nt, string usn)
-        {
-            // It has to report that it's a media renderer
-            if (usn.IndexOf("ContentDirectory:", StringComparison.OrdinalIgnoreCase) == -1 &&
-                     nt.IndexOf("ContentDirectory:", StringComparison.OrdinalIgnoreCase) == -1 &&
-                     usn.IndexOf("MediaServer:", StringComparison.OrdinalIgnoreCase) == -1 &&
-                     nt.IndexOf("MediaServer:", StringComparison.OrdinalIgnoreCase) == -1)
-            {
-                return false;
-            }
+    //        try
+    //        {
+    //            var items = _servers.Select(i =>
+    //            {
+    //                var service = i.Properties.Services
+    //                .FirstOrDefault(s => string.Equals(s.ServiceType, "urn:schemas-upnp-org:service:ContentDirectory:1", StringComparison.OrdinalIgnoreCase));
 
-            return true;
-        }
+    //                var controlUrl = service == null ? null : (_servers[0].Properties.BaseUrl.TrimEnd('/') + "/" + service.ControlUrl.TrimStart('/'));
 
-        private IEnumerable<Device> GetExistingServers(string usn)
-        {
-            return _servers
-                .Where(i => usn.IndexOf(i.Properties.UUID, StringComparison.OrdinalIgnoreCase) != -1);
-        }
+    //                if (string.IsNullOrWhiteSpace(controlUrl))
+    //                {
+    //                    return null;
+    //                }
 
-        public IEnumerable<IChannel> GetChannels()
-        {
-            //if (_servers.Count > 0)
-            //{
-            //    var service = _servers[0].Properties.Services
-            //        .FirstOrDefault(i => string.Equals(i.ServiceType, "urn:schemas-upnp-org:service:ContentDirectory:1", StringComparison.OrdinalIgnoreCase));
+    //                return new ChannelItemInfo
+    //                {
+    //                    Id = i.Properties.UUID,
+    //                    Name = i.Properties.Name,
+    //                    Type = ChannelItemType.Folder
+    //                };
 
-            //    var controlUrl = service == null ? null : (_servers[0].Properties.BaseUrl.TrimEnd('/') + "/" + service.ControlUrl.TrimStart('/'));
+    //            }).Where(i => i != null).ToList();
 
-            //    if (!string.IsNullOrEmpty(controlUrl))
-            //    {
-            //        return new List<IChannel>
-            //    {
-            //        new ServerChannel(_servers.ToList(), _httpClient, _logger, controlUrl)
-            //    };
-            //    }
-            //}
+    //            return new ChannelItemResult
+    //            {
+    //                TotalRecordCount = items.Count,
+    //                Items = items
+    //            };
+    //        }
+    //        finally
+    //        {
+    //            _syncLock.Release();
+    //        }
+    //    }
 
-            return new List<IChannel>();
-        }
+    //    async void deviceDiscovery_DeviceDiscovered(object sender, SsdpMessageEventArgs e)
+    //    {
+    //        string usn;
+    //        if (!e.Headers.TryGetValue("USN", out usn)) usn = string.Empty;
 
-        public void Dispose()
-        {
-            if (_deviceDiscovery != null)
-            {
-                _deviceDiscovery.DeviceDiscovered -= deviceDiscovery_DeviceDiscovered;
-                _deviceDiscovery.DeviceLeft -= deviceDiscovery_DeviceLeft;
-            }
-        }
-    }
+    //        string nt;
+    //        if (!e.Headers.TryGetValue("NT", out nt)) nt = string.Empty;
 
-    public class ServerChannel : IChannel, IFactoryChannel
-    {
-        private readonly IHttpClient _httpClient;
-        private readonly ILogger _logger;
-        public  string ControlUrl { get; set; }
-        public List<Device> Servers { get; set; }
+    //        string location;
+    //        if (!e.Headers.TryGetValue("Location", out location)) location = string.Empty;
 
-        public ServerChannel(IHttpClient httpClient, ILogger logger)
-        {
-            _httpClient = httpClient;
-            _logger = logger;
-            Servers = new List<Device>();
-        }
+    //        if (!IsValid(nt, usn))
+    //        {
+    //            return;
+    //        }
 
-        public string Name
-        {
-            get { return "Devices"; }
-        }
+    //        if (_localServersLookup != null)
+    //        {
+    //            if (_localServersLookup().Any(i => usn.IndexOf(i, StringComparison.OrdinalIgnoreCase) != -1))
+    //            {
+    //                // Don't add the local Dlna server to this
+    //                return;
+    //            }
+    //        }
 
-        public string Description
-        {
-            get { return string.Empty; }
-        }
+    //        await _syncLock.WaitAsync().ConfigureAwait(false);
 
-        public string DataVersion
-        {
-            get { return DateTime.UtcNow.Ticks.ToString(); }
-        }
+    //        var serverList = _servers.ToList();
 
-        public string HomePageUrl
-        {
-            get { return string.Empty; }
-        }
+    //        try
+    //        {
+    //            if (GetExistingServers(serverList, usn).Any())
+    //            {
+    //                return;
+    //            }
 
-        public ChannelParentalRating ParentalRating
-        {
-            get { return ChannelParentalRating.GeneralAudience; }
-        }
+    //            var device = await Device.CreateuPnpDeviceAsync(new Uri(location), _httpClient, _config, _logger)
+    //                        .ConfigureAwait(false);
 
-        public InternalChannelFeatures GetChannelFeatures()
-        {
-            return new InternalChannelFeatures
-            {
-                ContentTypes = new List<ChannelMediaContentType>
-                {
-                    ChannelMediaContentType.Song,
-                    ChannelMediaContentType.Clip
-                },
+    //            if (!serverList.Any(i => string.Equals(i.Properties.UUID, device.Properties.UUID, StringComparison.OrdinalIgnoreCase)))
+    //            {
+    //                serverList.Add(device);
+    //            }
+    //        }
+    //        catch (Exception ex)
+    //        {
 
-                MediaTypes = new List<ChannelMediaType>
-                {
-                    ChannelMediaType.Audio,
-                    ChannelMediaType.Video,
-                    ChannelMediaType.Photo
-                }
-            };
-        }
+    //        }
+    //        finally
+    //        {
+    //            _syncLock.Release();
+    //        }
+    //    }
 
-        public bool IsEnabledFor(string userId)
-        {
-            return true;
-        }
+    //    async void deviceDiscovery_DeviceLeft(object sender, SsdpMessageEventArgs e)
+    //    {
+    //        string usn;
+    //        if (!e.Headers.TryGetValue("USN", out usn)) usn = String.Empty;
 
-        public async Task<ChannelItemResult> GetChannelItems(InternalChannelItemQuery query, CancellationToken cancellationToken)
-        {
-            IEnumerable<ChannelItemInfo> items;
+    //        string nt;
+    //        if (!e.Headers.TryGetValue("NT", out nt)) nt = String.Empty;
 
-            if (string.IsNullOrWhiteSpace(query.FolderId))
-            {
-                items = Servers.Select(i => new ChannelItemInfo
-                {
-                    FolderType = ChannelFolderType.Container,
-                    Id = GetServerId(i),
-                    Name = i.Properties.Name,
-                    Overview = i.Properties.ModelDescription,
-                    Type = ChannelItemType.Folder
-                });
-            }
-            else
-            {
-                var idParts = query.FolderId.Split('|');
-                var folderId = idParts.Length == 2 ? idParts[1] : null;
+    //        if (!IsValid(nt, usn))
+    //        {
+    //            return;
+    //        }
 
-                var result = await new ContentDirectoryBrowser(_httpClient, _logger).Browse(new ContentDirectoryBrowseRequest
-                {
-                    Limit = query.Limit,
-                    StartIndex = query.StartIndex,
-                    ParentId = folderId,
-                    ContentDirectoryUrl = ControlUrl
+    //        await _syncLock.WaitAsync().ConfigureAwait(false);
 
-                }, cancellationToken).ConfigureAwait(false);
+    //        try
+    //        {
+    //            var serverList = _servers.ToList();
 
-                items = result.Items.ToList();
-            }
+    //            var matchingServers = GetExistingServers(serverList, usn);
+    //            if (matchingServers.Count > 0)
+    //            {
+    //                foreach (var device in matchingServers)
+    //                {
+    //                    serverList.Remove(device);
+    //                }
 
-            var list = items.ToList();
-            var count = list.Count;
+    //                _servers = serverList;
+    //            }
+    //        }
+    //        finally
+    //        {
+    //            _syncLock.Release();
+    //        }
+    //    }
 
-            list = ApplyPaging(list, query).ToList();
+    //    private bool IsValid(string nt, string usn)
+    //    {
+    //        // It has to report that it's a media renderer
+    //        if (usn.IndexOf("ContentDirectory:", StringComparison.OrdinalIgnoreCase) == -1 &&
+    //                 nt.IndexOf("ContentDirectory:", StringComparison.OrdinalIgnoreCase) == -1 &&
+    //                 usn.IndexOf("MediaServer:", StringComparison.OrdinalIgnoreCase) == -1 &&
+    //                 nt.IndexOf("MediaServer:", StringComparison.OrdinalIgnoreCase) == -1)
+    //        {
+    //            return false;
+    //        }
 
-            return new ChannelItemResult
-            {
-                Items = list,
-                TotalRecordCount = count
-            };
-        }
+    //        return true;
+    //    }
 
-        private string GetServerId(Device device)
-        {
-            return device.Properties.UUID.GetMD5().ToString("N");
-        }
+    //    private List<Device> GetExistingServers(List<Device> allDevices, string usn)
+    //    {
+    //        return allDevices
+    //            .Where(i => usn.IndexOf(i.Properties.UUID, StringComparison.OrdinalIgnoreCase) != -1)
+    //            .ToList();
+    //    }
 
-        private IEnumerable<T> ApplyPaging<T>(IEnumerable<T> items, InternalChannelItemQuery query)
-        {
-            if (query.StartIndex.HasValue)
-            {
-                items = items.Skip(query.StartIndex.Value);
-            }
-
-            if (query.Limit.HasValue)
-            {
-                items = items.Take(query.Limit.Value);
-            }
-
-            return items;
-        }
-
-        public Task<DynamicImageResponse> GetChannelImage(ImageType type, CancellationToken cancellationToken)
-        {
-            // TODO: Implement
-            return Task.FromResult(new DynamicImageResponse
-            {
-                HasImage = false
-            });
-        }
-
-        public IEnumerable<ImageType> GetSupportedChannelImages()
-        {
-            return new List<ImageType>
-            {
-                ImageType.Primary
-            };
-        }
-    }
+    //    public void Dispose()
+    //    {
+    //        _deviceDiscovery.DeviceDiscovered -= deviceDiscovery_DeviceDiscovered;
+    //        _deviceDiscovery.DeviceLeft -= deviceDiscovery_DeviceLeft;
+    //    }
+    //}
 }

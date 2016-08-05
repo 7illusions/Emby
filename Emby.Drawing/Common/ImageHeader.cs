@@ -1,10 +1,10 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Model.Drawing;
+﻿using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Logging;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CommonIO;
 
 namespace Emby.Drawing.Common
 {

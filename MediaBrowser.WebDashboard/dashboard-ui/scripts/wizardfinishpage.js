@@ -1,21 +1,26 @@
-﻿(function(){
+﻿define(['loading'], function (loading) {
 
-	function onFinish() {
+    function onFinish() {
 
-		ApiClient.ajax({
+        loading.show();
+
+        ApiClient.ajax({
 
             url: ApiClient.getUrl('Startup/Complete'),
             type: 'POST'
 
-        }).done(function () {
+        }).then(function () {
 
             Dashboard.navigate('dashboard.html');
+            loading.hide();
         });
-	}
+    }
 
-    $(document).on('pageinit', '#wizardFinishPage', function(){
+    return function (view, params) {
 
-    	$('.btnWizardNext', this).on('click', onFinish);
-    });
+        var self = this;
 
-})();
+        view.querySelector('.btnWizardNext').addEventListener('click', onFinish);
+    };
+
+});

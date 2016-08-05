@@ -1,4 +1,4 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery'], function ($) {
 
     function populateHistory(packageInfo, page) {
 
@@ -49,24 +49,22 @@
             })[0];
         }
 
-        selectmenu.selectmenu('refresh');
-
         if (packageVersion) {
             var val = packageVersion.versionStr + '|' + packageVersion.classification;
 
-            selectmenu.val(val).selectmenu('refresh');
+            selectmenu.val(val);
         }
     }
 
     function populateReviews(id, page) {
 
-        ApiClient.getPackageReviews(id, null, null, 3).done(function (positive) {
+        ApiClient.getPackageReviews(id, null, null, 3).then(function (positive) {
 
             var html = '';
 
             if (positive && positive.length > 0) {
 
-                html += '<div data-role="collapsible" data-collapsed="true" style="margin-top: 2em;" >';
+                html += '<div style="margin-top: 2em;" >';
                 html += '<h3>' + Globalize.translate('HeaderLatestReviews') + '</h3>';
 
                 html += "<div><br/>";
@@ -77,7 +75,10 @@
                     html += "<div>";
                     html += "<span class='storeItemReviewText'>";
                     html += new Date(review.timestamp).toDateString();
-                    html += " " + RatingHelpers.getStoreRatingHtml(review.rating, review.id, review.name, true);
+                    if (review.rating) {
+                        html += '<iron-icon icon="star" style="color:#666;height:20px;width:20px;min-height:20px;min-width:20px;margin-right:.25em;"></iron-icon>';
+                        html += review.rating.toFixed(1);
+                    }
                     html += " " + review.title;
                     html += "</span>";
                     if (review.review) {
@@ -93,7 +94,7 @@
                 html += "</div>";
             }
 
-            Events.trigger($('#latestReviews', page).html(html)[0], 'create');
+            $('#latestReviews', page).html(html).trigger('create');
         });
     }
 
@@ -110,12 +111,12 @@
         $('.pluginName', page).html(pkg.name);
 
         if (pkg.targetSystem == 'Server') {
-            $("#btnInstallDiv", page).visible(true);
+            $("#btnInstallDiv", page).removeClass('hide');
             $("#nonServerMsg", page).hide();
-            $("#pSelectVersion", page).visible(true);
+            $("#pSelectVersion", page).removeClass('hide');
         } else {
-            $("#btnInstallDiv", page).visible(false);
-            $("#pSelectVersion", page).visible(false);
+            $("#btnInstallDiv", page).addClass('hide');
+            $("#pSelectVersion", page).addClass('hide');
 
             var msg = Globalize.translate('MessageInstallPluginFromApp');
             $("#nonServerMsg", page).html(msg).show();
@@ -135,8 +136,12 @@
         RegistrationServices.renderPluginInfo(page, pkg, pluginSecurityInfo);
 
         //Ratings and Reviews
-        var ratingHtml = RatingHelpers.getStoreRatingHtml(pkg.avgRating, pkg.id, pkg.name);
-        ratingHtml += "<span class='storeReviewCount'>";
+        var ratingHtml = '';
+        if (pkg.avgRating) {
+            ratingHtml += '<iron-icon icon="star" style="color:#666;height:20px;width:20px;min-height:20px;min-width:20px;margin-right:.25em;"></iron-icon>';
+            ratingHtml += pkg.avgRating.toFixed(1);
+        }
+        ratingHtml += "<span>";
         ratingHtml += " " + Globalize.translate('ValueReviewCount').replace('{0}', pkg.totalRatings);
         ratingHtml += "</span>";
 
@@ -174,7 +179,7 @@
 
         $('.addPluginForm').off('submit', AddPluginPage.onSubmit).on('submit', AddPluginPage.onSubmit);
 
-    }).on('pageshowready', "#addPluginPage", function () {
+    }).on('pageshow', "#addPluginPage", function () {
 
         var page = this;
 
@@ -187,9 +192,9 @@
         var promise2 = ApiClient.getInstalledPlugins();
         var promise3 = ApiClient.getPluginSecurityInfo();
 
-        $.when(promise1, promise2, promise3).done(function (response1, response2, response3) {
+        Promise.all([promise1, promise2, promise3]).then(function (responses) {
 
-            renderPackage(response1[0], response2[0], response3[0], page);
+            renderPackage(responses[0], responses[1], responses[2], page);
 
         });
 
@@ -201,20 +206,13 @@
 
         var context = getParameterByName('context');
 
-        $('.syncTabs', page).hide();
-        $('.pluginTabs', page).hide();
-        $('.livetvTabs', page).hide();
         $('.notificationsTabs', page).hide();
 
         if (context == 'sync') {
-            $('.syncTabs', page).show();
-
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Sync');
             Dashboard.setPageTitle(Globalize.translate('TitleSync'));
         }
         else if (context == 'livetv') {
-
-            $('.livetvTabs', page).show();
 
             Dashboard.setPageTitle(Globalize.translate('TitleLiveTV'));
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Live%20TV');
@@ -227,20 +225,55 @@
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Notifications');
         }
         else {
-            $('.pluginTabs', page).show();
-
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Plugins');
             Dashboard.setPageTitle(Globalize.translate('TitlePlugins'));
         }
 
     });
 
-    function performInstallation(packageName, guid, updateClass, version) {
+    function performInstallation(page, packageName, guid, updateClass, version) {
 
-        ApiClient.installPlugin(packageName, guid, updateClass, version).done(function () {
+        var developer = $('#developer', page).html().toLowerCase();
+
+        var alertCallback = function (confirmed) {
+
+            if (confirmed) {
+
+                Dashboard.showLoadingMsg();
+
+                page.querySelector('#btnInstall').disabled = true;
+
+                ApiClient.installPlugin(packageName, guid, updateClass, version).then(function () {
+
+                    Dashboard.hideLoadingMsg();
+                });
+            }
+        };
+
+        if (developer != 'luke' && developer != 'ebr') {
 
             Dashboard.hideLoadingMsg();
-        });
+
+            var msg = Globalize.translate('MessagePluginInstallDisclaimer');
+            msg += '<br/>';
+            msg += '<br/>';
+            msg += Globalize.translate('PleaseConfirmPluginInstallation');
+
+            require(['confirm'], function (confirm) {
+
+                confirm(msg, Globalize.translate('HeaderConfirmPluginInstallation')).then(function () {
+
+                    alertCallback(true);
+                }, function () {
+
+                    alertCallback(false);
+                });
+
+            });
+
+        } else {
+            alertCallback(true);
+        }
     }
 
     function addPluginpage() {
@@ -251,14 +284,12 @@
 
             Dashboard.showLoadingMsg();
 
-            var page = $(this).parents('#addPluginPage');
-
-            $('#btnInstall', page).buttonEnabled(false);
+            var page = $(this).parents('#addPluginPage')[0];
 
             var name = getParameterByName('name');
             var guid = getParameterByName('guid');
 
-            ApiClient.getInstalledPlugins().done(function (plugins) {
+            ApiClient.getInstalledPlugins().then(function (plugins) {
 
                 var installedPlugin = plugins.filter(function (ip) {
                     return ip.Name == name;
@@ -277,7 +308,7 @@
                         title: Globalize.translate('HeaderPluginInstallation')
                     });
                 } else {
-                    performInstallation(name, guid, vals[1], version);
+                    performInstallation(page, name, guid, vals[1], version);
                 }
             });
 
@@ -287,4 +318,4 @@
 
     window.AddPluginPage = new addPluginpage();
 
-})(jQuery, document, window);
+});

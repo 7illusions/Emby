@@ -1,11 +1,11 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Entities;
+﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.Library
 {
@@ -40,11 +40,10 @@ namespace MediaBrowser.Server.Implementations.Library
             item.Id = libraryManager.GetNewItemId(item.Path, item.GetType());
 
             item.IsLocked = item.Path.IndexOf("[dontfetchmeta]", StringComparison.OrdinalIgnoreCase) != -1 ||
-                item.Parents.Any(i => i.IsLocked);
+                item.GetParents().Any(i => i.IsLocked);
 
             // Make sure DateCreated and DateModified have values
             var fileInfo = directoryService.GetFile(item.Path);
-            item.DateModified = fileSystem.GetLastWriteTimeUtc(fileInfo);
             SetDateCreated(item, fileSystem, fileInfo);
 
             EnsureName(item, fileInfo);
@@ -77,10 +76,10 @@ namespace MediaBrowser.Server.Implementations.Library
             EnsureName(item, args.FileInfo);
 
             item.IsLocked = item.Path.IndexOf("[dontfetchmeta]", StringComparison.OrdinalIgnoreCase) != -1 ||
-                item.Parents.Any(i => i.IsLocked);
+                item.GetParents().Any(i => i.IsLocked);
 
             // Make sure DateCreated and DateModified have values
-            EnsureDates(fileSystem, item, args, true);
+            EnsureDates(fileSystem, item, args);
         }
 
         /// <summary>
@@ -88,12 +87,12 @@ namespace MediaBrowser.Server.Implementations.Library
         /// </summary>
         /// <param name="item">The item.</param>
         /// <param name="fileInfo">The file information.</param>
-        private static void EnsureName(BaseItem item, FileSystemInfo fileInfo)
+        private static void EnsureName(BaseItem item, FileSystemMetadata fileInfo)
         {
             // If the subclass didn't supply a name, add it here
             if (string.IsNullOrEmpty(item.Name) && !string.IsNullOrEmpty(item.Path))
             {
-                item.Name = GetDisplayName(fileInfo.Name, (fileInfo.Attributes & FileAttributes.Directory) == FileAttributes.Directory);
+                item.Name = GetDisplayName(fileInfo.Name, fileInfo.IsDirectory);
             }
         }
 
@@ -125,8 +124,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <param name="fileSystem">The file system.</param>
         /// <param name="item">The item.</param>
         /// <param name="args">The args.</param>
-        /// <param name="includeCreationTime">if set to <c>true</c> [include creation time].</param>
-        private static void EnsureDates(IFileSystem fileSystem, BaseItem item, ItemResolveArgs args, bool includeCreationTime)
+        private static void EnsureDates(IFileSystem fileSystem, BaseItem item, ItemResolveArgs args)
         {
             if (fileSystem == null)
             {
@@ -148,12 +146,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
                 if (childData != null)
                 {
-                    if (includeCreationTime)
-                    {
-                        SetDateCreated(item, fileSystem, childData);
-                    }
-
-                    item.DateModified = fileSystem.GetLastWriteTimeUtc(childData);
+                    SetDateCreated(item, fileSystem, childData);
                 }
                 else
                 {
@@ -161,25 +154,17 @@ namespace MediaBrowser.Server.Implementations.Library
 
                     if (fileData.Exists)
                     {
-                        if (includeCreationTime)
-                        {
-                            SetDateCreated(item, fileSystem, fileData);
-                        }
-                        item.DateModified = fileSystem.GetLastWriteTimeUtc(fileData);
+                        SetDateCreated(item, fileSystem, fileData);
                     }
                 }
             }
             else
             {
-                if (includeCreationTime)
-                {
-                    SetDateCreated(item, fileSystem, args.FileInfo);
-                }
-                item.DateModified = fileSystem.GetLastWriteTimeUtc(args.FileInfo);
+                SetDateCreated(item, fileSystem, args.FileInfo);
             }
         }
 
-        private static void SetDateCreated(BaseItem item, IFileSystem fileSystem, FileSystemInfo info)
+        private static void SetDateCreated(BaseItem item, IFileSystem fileSystem, FileSystemMetadata info)
         {
             var config = BaseItem.ConfigurationManager.GetMetadataConfiguration();
 

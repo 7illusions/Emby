@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CommonIO;
 
 namespace MediaBrowser.Controller.Library
 {
@@ -35,7 +36,7 @@ namespace MediaBrowser.Controller.Library
         /// Gets the file system children.
         /// </summary>
         /// <value>The file system children.</value>
-        public IEnumerable<FileSystemInfo> FileSystemChildren
+        public IEnumerable<FileSystemMetadata> FileSystemChildren
         {
             get
             {
@@ -43,7 +44,7 @@ namespace MediaBrowser.Controller.Library
 
                 if (dict == null)
                 {
-                    return new List<FileSystemInfo>();
+                    return new List<FileSystemMetadata>();
                 }
 
                 return dict.Values;
@@ -54,7 +55,7 @@ namespace MediaBrowser.Controller.Library
         /// Gets or sets the file system dictionary.
         /// </summary>
         /// <value>The file system dictionary.</value>
-        public Dictionary<string, FileSystemInfo> FileSystemDictionary { get; set; }
+        public Dictionary<string, FileSystemMetadata> FileSystemDictionary { get; set; }
 
         /// <summary>
         /// Gets or sets the parent.
@@ -66,7 +67,7 @@ namespace MediaBrowser.Controller.Library
         /// Gets or sets the file info.
         /// </summary>
         /// <value>The file info.</value>
-        public FileSystemInfo FileInfo { get; set; }
+        public FileSystemMetadata FileInfo { get; set; }
 
         /// <summary>
         /// Gets or sets the path.
@@ -82,7 +83,7 @@ namespace MediaBrowser.Controller.Library
         {
             get
             {
-                return (FileInfo.Attributes & FileAttributes.Directory) == FileAttributes.Directory;
+                return FileInfo.IsDirectory;
             }
         }
 
@@ -116,8 +117,8 @@ namespace MediaBrowser.Controller.Library
 
                 var parentDir = System.IO.Path.GetDirectoryName(Path) ?? string.Empty;
 
-                return (parentDir.Length > _appPaths.RootFolderPath.Length
-                    && parentDir.StartsWith(_appPaths.RootFolderPath, StringComparison.OrdinalIgnoreCase));
+                return parentDir.Length > _appPaths.RootFolderPath.Length
+                       && parentDir.StartsWith(_appPaths.RootFolderPath, StringComparison.OrdinalIgnoreCase);
 
             }
         }
@@ -153,7 +154,7 @@ namespace MediaBrowser.Controller.Library
                 // Not officially supported but in some cases we can handle it.
                 if (item == null)
                 {
-                    item = parent.Parents.OfType<T>().FirstOrDefault();
+                    item = parent.GetParents().OfType<T>().FirstOrDefault();
                 }
 
                 return item != null;
@@ -201,7 +202,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="name">The name.</param>
         /// <returns>FileSystemInfo.</returns>
         /// <exception cref="System.ArgumentNullException"></exception>
-        public FileSystemInfo GetFileSystemEntryByName(string name)
+        public FileSystemMetadata GetFileSystemEntryByName(string name)
         {
             if (string.IsNullOrEmpty(name))
             {
@@ -217,7 +218,7 @@ namespace MediaBrowser.Controller.Library
         /// <param name="path">The path.</param>
         /// <returns>FileSystemInfo.</returns>
         /// <exception cref="System.ArgumentNullException"></exception>
-        public FileSystemInfo GetFileSystemEntryByPath(string path)
+        public FileSystemMetadata GetFileSystemEntryByPath(string path)
         {
             if (string.IsNullOrEmpty(path))
             {
@@ -226,7 +227,7 @@ namespace MediaBrowser.Controller.Library
 
             if (FileSystemDictionary != null)
             {
-                FileSystemInfo entry;
+                FileSystemMetadata entry;
 
                 if (FileSystemDictionary.TryGetValue(path, out entry))
                 {
@@ -278,7 +279,7 @@ namespace MediaBrowser.Controller.Library
         /// <returns><c>true</c> if the specified <see cref="System.Object" /> is equal to this instance; otherwise, <c>false</c>.</returns>
         public override bool Equals(object obj)
         {
-            return (Equals(obj as ItemResolveArgs));
+            return Equals(obj as ItemResolveArgs);
         }
 
         /// <summary>

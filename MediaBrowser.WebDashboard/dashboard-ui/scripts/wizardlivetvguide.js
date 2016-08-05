@@ -1,4 +1,4 @@
-﻿(function ($, document) {
+﻿define(['jQuery'], function ($) {
 
     var guideController;
 
@@ -8,7 +8,7 @@
 
         var apiClient = ApiClient;
 
-        apiClient.getJSON(apiClient.getUrl('Startup/Configuration')).done(function (config) {
+        apiClient.getJSON(apiClient.getUrl('Startup/Configuration')).then(function (config) {
 
             var providerId = null;
 
@@ -18,7 +18,7 @@
                 }
             }
 
-            var url = 'tvproviders/' + type.toLowerCase() + '.js';
+            var url = 'components/tvproviders/' + type.toLowerCase() + '.js';
 
             require([url], function (factory) {
 
@@ -32,7 +32,7 @@
                 instance.init();
                 guideController = instance;
 
-                $(guideController).on('submitted', skip);
+                Events.on(guideController, 'submitted', skip);
             });
         });
     }
@@ -44,30 +44,20 @@
         ApiClient.ajax({
 
             type: 'GET',
-            url: 'tvproviders/' + type + '.template.html'
+            url: 'components/tvproviders/' + type.toLowerCase() + '.template.html'
 
-        }).done(function (html) {
+        }).then(function (html) {
 
             var elem = page.querySelector('.providerTemplate');
             elem.innerHTML = Globalize.translateDocument(html);
-            $(elem).trigger('create');
 
             init(page, type);
         });
     }
 
     function skip() {
-        var apiClient = ApiClient;
-
-        apiClient.getJSON(apiClient.getUrl('Startup/Info')).done(function (info) {
-
-            if (info.SupportsRunningAsService) {
-                Dashboard.navigate('wizardservice.html');
-
-            } else {
-                Dashboard.navigate('wizardagreement.html');
-            }
-
+        require(['scripts/wizardcontroller'], function (wizardcontroller) {
+            wizardcontroller.navigateToComponents();
         });
     }
 
@@ -92,11 +82,11 @@
         $('.btnSkip', page).on('click', skip);
         $('.btnNext', page).on('click', next);
 
-    }).on('pageshowready', "#wizardGuidePage", function () {
+    }).on('pageshow', "#wizardGuidePage", function () {
 
         var page = this;
 
         reload(page);
     });
 
-})(jQuery, document, window);
+});

@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Session;
@@ -8,6 +7,8 @@ using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using System;
 using System.IO;
+using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.MediaEncoding.Encoder
 {
@@ -17,10 +18,10 @@ namespace MediaBrowser.MediaEncoding.Encoder
         {
         }
 
-        protected override string GetCommandLineArguments(EncodingJob state)
+        protected override async Task<string> GetCommandLineArguments(EncodingJob state)
         {
             // Get the output codec name
-            var videoCodec = state.OutputVideoCodec;
+            var videoCodec = EncodingJobFactory.GetVideoEncoder(state, GetEncodingOptions());
 
             var format = string.Empty;
             var keyFrame = string.Empty;
@@ -28,6 +29,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             if (string.Equals(Path.GetExtension(state.OutputFilePath), ".mp4", StringComparison.OrdinalIgnoreCase) &&
                 state.Options.Context == EncodingContext.Streaming)
             {
+                // Comparison: https://github.com/jansmolders86/mediacenterjs/blob/master/lib/transcoding/desktop.js
                 format = " -f mp4 -movflags frag_keyframe+empty_moov";
             }
 
@@ -35,12 +37,14 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             var inputModifier = GetInputModifier(state);
 
+            var videoArguments = await GetVideoArguments(state, videoCodec).ConfigureAwait(false);
+
             return string.Format("{0} {1}{2} {3} {4} -map_metadata -1 -threads {5} {6}{7} -y \"{8}\"",
                 inputModifier,
                 GetInputArgument(state),
                 keyFrame,
                 GetMapArgs(state),
-                GetVideoArguments(state, videoCodec),
+                videoArguments,
                 threads,
                 GetAudioArguments(state),
                 format,
@@ -52,42 +56,48 @@ namespace MediaBrowser.MediaEncoding.Encoder
         /// Gets video arguments to pass to ffmpeg
         /// </summary>
         /// <param name="state">The state.</param>
-        /// <param name="codec">The video codec.</param>
+        /// <param name="videoCodec">The video codec.</param>
         /// <returns>System.String.</returns>
-        private string GetVideoArguments(EncodingJob state, string codec)
+        private async Task<string> GetVideoArguments(EncodingJob state, string videoCodec)
         {
-            var args = "-codec:v:0 " + codec;
+            var args = "-codec:v:0 " + videoCodec;
 
             if (state.EnableMpegtsM2TsMode)
             {
                 args += " -mpegts_m2ts_mode 1";
             }
 
-            // See if we can save come cpu cycles by avoiding encoding
-            if (string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
+            var isOutputMkv = string.Equals(state.Options.OutputContainer, "mkv", StringComparison.OrdinalIgnoreCase);
+
+            if (state.RunTimeTicks.HasValue)
             {
-                return state.VideoStream != null && IsH264(state.VideoStream) && string.Equals(state.Options.OutputContainer, "ts", StringComparison.OrdinalIgnoreCase) ?
-                    args + " -bsf:v h264_mp4toannexb" :
-                    args;
+                //args += " -copyts -avoid_negative_ts disabled -start_at_zero";
             }
 
-            if (state.Options.Context == EncodingContext.Streaming)
+            if (string.Equals(videoCodec, "copy", StringComparison.OrdinalIgnoreCase))
             {
-                var keyFrameArg = string.Format(" -force_key_frames expr:gte(t,n_forced*{0})",
-                    5.ToString(UsCulture));
+                if (state.VideoStream != null && IsH264(state.VideoStream) && string.Equals(state.Options.OutputContainer, "ts", StringComparison.OrdinalIgnoreCase) && !string.Equals(state.VideoStream.NalLengthSize, "0", StringComparison.OrdinalIgnoreCase))
+                {
+                    args += " -bsf:v h264_mp4toannexb";
+                }
 
-                args += keyFrameArg;
+                return args;
             }
 
-            var hasGraphicalSubs = state.SubtitleStream != null && !state.SubtitleStream.IsTextSubtitleStream;
+            var keyFrameArg = string.Format(" -force_key_frames expr:gte(t,n_forced*{0})",
+                5.ToString(UsCulture));
+
+            args += keyFrameArg;
+
+            var hasGraphicalSubs = state.SubtitleStream != null && !state.SubtitleStream.IsTextSubtitleStream && state.Options.SubtitleMethod == SubtitleDeliveryMethod.Encode;
 
             // Add resolution params, if specified
             if (!hasGraphicalSubs)
             {
-                args += GetOutputSizeParam(state, codec);
+                args += await GetOutputSizeParam(state, videoCodec).ConfigureAwait(false);
             }
 
-            var qualityParam = GetVideoQualityParam(state, codec, false);
+            var qualityParam = GetVideoQualityParam(state, videoCodec);
 
             if (!string.IsNullOrEmpty(qualityParam))
             {
@@ -97,7 +107,7 @@ namespace MediaBrowser.MediaEncoding.Encoder
             // This is for internal graphical subs
             if (hasGraphicalSubs)
             {
-                args += GetGraphicalSubtitleParam(state, codec);
+                args += await GetGraphicalSubtitleParam(state, videoCodec).ConfigureAwait(false);
             }
 
             return args;
@@ -117,11 +127,11 @@ namespace MediaBrowser.MediaEncoding.Encoder
             }
 
             // Get the output codec name
-            var codec = state.OutputAudioCodec;
+            var codec = EncodingJobFactory.GetAudioEncoder(state);
 
             var args = "-codec:a:0 " + codec;
 
-            if (codec.Equals("copy", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
             {
                 return args;
             }

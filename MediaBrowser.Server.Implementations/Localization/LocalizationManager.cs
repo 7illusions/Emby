@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Model.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Localization;
 using MediaBrowser.Model.Entities;
@@ -12,6 +11,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using CommonIO;
+using MediaBrowser.Model.Logging;
 
 namespace MediaBrowser.Server.Implementations.Localization
 {
@@ -35,6 +36,7 @@ namespace MediaBrowser.Server.Implementations.Localization
 
         private readonly IFileSystem _fileSystem;
         private readonly IJsonSerializer _jsonSerializer;
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LocalizationManager" /> class.
@@ -42,11 +44,12 @@ namespace MediaBrowser.Server.Implementations.Localization
         /// <param name="configurationManager">The configuration manager.</param>
         /// <param name="fileSystem">The file system.</param>
         /// <param name="jsonSerializer">The json serializer.</param>
-        public LocalizationManager(IServerConfigurationManager configurationManager, IFileSystem fileSystem, IJsonSerializer jsonSerializer)
+        public LocalizationManager(IServerConfigurationManager configurationManager, IFileSystem fileSystem, IJsonSerializer jsonSerializer, ILogger logger)
         {
             _configurationManager = configurationManager;
             _fileSystem = fileSystem;
             _jsonSerializer = jsonSerializer;
+            _logger = logger;
 
             ExtractAll();
         }
@@ -58,7 +61,7 @@ namespace MediaBrowser.Server.Implementations.Localization
 
             var localizationPath = LocalizationPath;
 
-            Directory.CreateDirectory(localizationPath);
+			_fileSystem.CreateDirectory(localizationPath);
 
             var existingFiles = Directory.EnumerateFiles(localizationPath, "ratings-*.txt", SearchOption.TopDirectoryOnly)
                 .Select(Path.GetFileName)
@@ -75,7 +78,10 @@ namespace MediaBrowser.Server.Implementations.Localization
                 {
                     using (var stream = type.Assembly.GetManifestResourceStream(resource))
                     {
-                        using (var fs = _fileSystem.GetFileStream(Path.Combine(localizationPath, filename), FileMode.Create, FileAccess.Write, FileShare.Read))
+                        var target = Path.Combine(localizationPath, filename);
+                        _logger.Info("Extracting ratings to {0}", target);
+
+                        using (var fs = _fileSystem.GetFileStream(target, FileMode.Create, FileAccess.Write, FileShare.Read))
                         {
                             stream.CopyTo(fs);
                         }
@@ -212,7 +218,7 @@ namespace MediaBrowser.Server.Implementations.Localization
         /// <returns>Dictionary{System.StringParentalRating}.</returns>
         private void LoadRatings(string file)
         {
-            var dict = File.ReadAllLines(file).Select(i =>
+			var dict = File.ReadAllLines(file).Select(i =>
             {
                 if (!string.IsNullOrWhiteSpace(i))
                 {
@@ -242,6 +248,8 @@ namespace MediaBrowser.Server.Implementations.Localization
             _allParentalRatings.TryAdd(countryCode, dict);
         }
 
+        private readonly string[] _unratedValues = {"n/a", "unrated", "not rated"};
+
         /// <summary>
         /// Gets the rating level.
         /// </summary>
@@ -250,6 +258,11 @@ namespace MediaBrowser.Server.Implementations.Localization
             if (string.IsNullOrEmpty(rating))
             {
                 throw new ArgumentNullException("rating");
+            }
+
+            if (_unratedValues.Contains(rating, StringComparer.OrdinalIgnoreCase))
+            {
+                return null;
             }
 
             // Fairly common for some users to have "Rated R" in their rating field
@@ -366,10 +379,12 @@ namespace MediaBrowser.Server.Implementations.Localization
                 new LocalizatonOption{ Name="English (United States)", Value="en-us"},
                 new LocalizatonOption{ Name="Finnish", Value="fi"},
                 new LocalizatonOption{ Name="French", Value="fr"},
+                new LocalizatonOption{ Name="French (Canada)", Value="fr-CA"},
                 new LocalizatonOption{ Name="German", Value="de"},
                 new LocalizatonOption{ Name="Greek", Value="el"},
                 new LocalizatonOption{ Name="Hebrew", Value="he"},
                 new LocalizatonOption{ Name="Hungarian", Value="hu"},
+                new LocalizatonOption{ Name="Indonesian", Value="id"},
                 new LocalizatonOption{ Name="Italian", Value="it"},
                 new LocalizatonOption{ Name="Kazakh", Value="kk"},
                 new LocalizatonOption{ Name="Norwegian Bokmål", Value="nb"},

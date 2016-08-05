@@ -1,22 +1,22 @@
-﻿(function ($, document, window) {
+﻿define(['jQuery'], function ($) {
 
     function resetTuner(page, id) {
 
         var message = Globalize.translate('MessageConfirmResetTuner');
 
-        Dashboard.confirm(message, Globalize.translate('HeaderResetTuner'), function (confirmResult) {
+        require(['confirm'], function (confirm) {
 
-            if (confirmResult) {
+            confirm(message, Globalize.translate('HeaderResetTuner')).then(function () {
 
                 Dashboard.showLoadingMsg();
 
-                ApiClient.resetLiveTvTuner(id).done(function () {
+                ApiClient.resetLiveTvTuner(id).then(function () {
 
                     Dashboard.hideLoadingMsg();
 
                     reload(page);
                 });
-            }
+            });
         });
     }
 
@@ -24,70 +24,74 @@
 
         var html = '';
 
-        for (var i = 0, length = tuners.length; i < length; i++) {
+        if (tuners.length) {
+            html += '<div class="paperList">';
 
-            var tuner = tuners[i];
+            for (var i = 0, length = tuners.length; i < length; i++) {
 
-            html += '<tr>';
+                var tuner = tuners[i];
+                html += '<paper-icon-item>';
 
-            html += '<td>';
-            html += tuner.Name;
-            html += '</td>';
+                html += '<paper-fab mini style="background:#52B54B;" icon="live-tv" item-icon></paper-fab>';
 
-            html += '<td>';
-            html += tuner.SourceType;
-            html += '</td>';
+                html += '<paper-item-body two-line>';
 
-            html += '<td>';
+                html += '<div>';
+                html += tuner.Name;
+                html += '</div>';
 
-            if (tuner.Status == 'RecordingTv') {
-                if (tuner.ChannelName) {
+                html += '<div secondary>';
+                html += tuner.SourceType;
+                html += '</div>';
 
-                    html += '<a href="itemdetails.html?id=' + tuner.ChannelId + '">';
-                    html += Globalize.translate('StatusRecordingProgram').replace('{0}', tuner.ChannelName);
-                    html += '</a>';
-                } else {
+                html += '<div secondary>';
+                if (tuner.Status == 'RecordingTv') {
+                    if (tuner.ChannelName) {
 
-                    html += Globalize.translate('StatusRecording');
+                        html += '<a href="itemdetails.html?id=' + tuner.ChannelId + '">';
+                        html += Globalize.translate('StatusRecordingProgram').replace('{0}', tuner.ChannelName);
+                        html += '</a>';
+                    } else {
+
+                        html += Globalize.translate('StatusRecording');
+                    }
                 }
-            }
-            else if (tuner.Status == 'LiveTv') {
+                else if (tuner.Status == 'LiveTv') {
 
-                if (tuner.ChannelName) {
+                    if (tuner.ChannelName) {
 
-                    html += '<a href="itemdetails.html?id=' + tuner.ChannelId + '">';
-                    html += Globalize.translate('StatusWatchingProgram').replace('{0}', tuner.ChannelName);
-                    html += '</a>';
-                } else {
+                        html += '<a href="itemdetails.html?id=' + tuner.ChannelId + '">';
+                        html += Globalize.translate('StatusWatchingProgram').replace('{0}', tuner.ChannelName);
+                        html += '</a>';
+                    } else {
 
-                    html += Globalize.translate('StatusWatching');
+                        html += Globalize.translate('StatusWatching');
+                    }
                 }
+                else {
+                    html += tuner.Status;
+                }
+                html += '</div>';
+
+                html += '</paper-item-body>';
+
+                if (tuner.CanReset) {
+                    html += '<button type="button" is="paper-icon-button-light" data-tunerid="' + tuner.Id + '" title="' + Globalize.translate('ButtonResetTuner') + '" class="btnResetTuner"><iron-icon icon="refresh"></iron-icon></button>';
+                }
+
+                html += '</paper-icon-item>';
             }
-            else {
-                html += tuner.Status;
-            }
-            html += '</td>';
 
-            html += '<td>';
-
-            if (tuner.ProgramName) {
-                html += tuner.ProgramName;
-            }
-
-            html += '</td>';
-
-            html += '<td>';
-            html += tuner.Clients.join('<br/>');
-            html += '</td>';
-
-            html += '<td>';
-            html += '<button data-tunerid="' + tuner.Id + '" type="button" data-inline="true" data-icon="refresh" data-mini="true" data-iconpos="notext" class="btnResetTuner organizerButton" title="' + Globalize.translate('ButtonResetTuner') + '">' + Globalize.translate('ButtonResetTuner') + '</button>';
-            html += '</td>';
-
-            html += '</tr>';
+            html += '</div>';
         }
 
-        var elem = $('.tunersResultBody', page).html(html).parents('.tblTuners').table("refresh").trigger('create');
+        if (tuners.length) {
+            page.querySelector('.tunerSection').classList.remove('hide');
+        } else {
+            page.querySelector('.tunerSection').classList.add('hide');
+        }
+
+        var elem = $('.tunerList', page).html(html);
 
         $('.btnResetTuner', elem).on('click', function () {
 
@@ -160,7 +164,7 @@
             $('.servicesSection', page).hide();
         }
 
-        $('.servicesList', page).html(servicesToDisplay.map(getServiceHtml).join('')).trigger('create');
+        $('.servicesList', page).html(servicesToDisplay.map(getServiceHtml).join(''));
 
         var tuners = [];
         for (var i = 0, length = liveTvInfo.Services.length; i < length; i++) {
@@ -172,7 +176,7 @@
 
         renderTuners(page, tuners);
 
-        ApiClient.getNamedConfiguration("livetv").done(function (config) {
+        ApiClient.getNamedConfiguration("livetv").then(function (config) {
 
             renderDevices(page, config.TunerHosts);
             renderProviders(page, config.ListingProviders);
@@ -196,12 +200,12 @@
 
                 html += '<paper-icon-item>';
 
-                html += '<paper-fab class="listAvatar" style="background:#52B54B;" icon="live-tv" item-icon></paper-fab>';
+                html += '<paper-fab mini style="background:#52B54B;" icon="live-tv" item-icon></paper-fab>';
 
                 html += '<paper-item-body two-line>';
                 html += '<a class="clearLink" href="' + href + '">';
                 html += '<div>';
-                html += getTunerName(device.Type);
+                html += device.FriendlyName || getTunerName(device.Type);
                 html += '</div>';
 
                 html += '<div secondary>';
@@ -210,7 +214,7 @@
                 html += '</a>';
                 html += '</paper-item-body>';
 
-                html += '<paper-icon-button icon="delete" data-id="' + device.Id + '" title="' + Globalize.translate('ButtonDelete') + '" class="btnDeleteDevice"></paper-icon-button>';
+                html += '<button type="button" is="paper-icon-button-light" class="btnDeleteDevice" data-id="' + device.Id + '" title="' + Globalize.translate('ButtonDelete') + '"><iron-icon icon="delete"></iron-icon></button>';
                 html += '</paper-icon-item>';
             }
 
@@ -231,9 +235,9 @@
 
         var message = Globalize.translate('MessageConfirmDeleteTunerDevice');
 
-        Dashboard.confirm(message, Globalize.translate('HeaderDeleteDevice'), function (confirmResult) {
+        require(['confirm'], function (confirm) {
 
-            if (confirmResult) {
+            confirm(message, Globalize.translate('HeaderDeleteDevice')).then(function () {
 
                 Dashboard.showLoadingMsg();
 
@@ -243,11 +247,11 @@
                         Id: id
                     })
 
-                }).done(function () {
+                }).then(function () {
 
                     reload(page);
                 });
-            }
+            });
         });
     }
 
@@ -255,10 +259,16 @@
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getLiveTvInfo().done(function (liveTvInfo) {
+        ApiClient.getLiveTvInfo().then(function (liveTvInfo) {
 
             loadPage(page, liveTvInfo);
 
+        }, function () {
+
+            loadPage(page, {
+                Services: [],
+                IsEnabled: true
+            });
         });
     }
 
@@ -276,11 +286,11 @@
             }),
             contentType: "application/json"
 
-        }).done(function () {
+        }).then(function () {
 
             reload(page);
 
-        }).fail(function () {
+        }, function () {
             Dashboard.alert({
                 message: Globalize.translate('ErrorAddingTunerDevice')
             });
@@ -300,7 +310,7 @@
                 var provider = providers[i];
                 html += '<paper-icon-item>';
 
-                html += '<paper-fab class="listAvatar" style="background:#52B54B;" icon="dvr" item-icon></paper-fab>';
+                html += '<paper-fab mini style="background:#52B54B;" icon="dvr" item-icon></paper-fab>';
 
                 html += '<paper-item-body two-line>';
 
@@ -312,7 +322,7 @@
 
                 html += '</a>';
                 html += '</paper-item-body>';
-                html += '<paper-icon-button icon="delete" data-id="' + provider.Id + '" title="' + Globalize.translate('ButtonDelete') + '" class="btnDelete"></paper-icon-button>';
+                html += '<button type="button" is="paper-icon-button-light" class="btnOptions" data-id="' + provider.Id + '"><iron-icon icon="more-vert"></iron-icon></button>';
                 html += '</paper-icon-item>';
             }
 
@@ -321,11 +331,59 @@
 
         var elem = $('.providerList', page).html(html);
 
-        $('.btnDelete', elem).on('click', function () {
+        $('.btnOptions', elem).on('click', function () {
 
             var id = this.getAttribute('data-id');
 
-            deleteProvider(page, id);
+            showProviderOptions(page, id, this);
+        });
+    }
+
+    function showProviderOptions(page, providerId, button) {
+
+        var items = [];
+
+        items.push({
+            name: Globalize.translate('ButtonDelete'),
+            id: 'delete'
+        });
+
+        items.push({
+            name: Globalize.translate('MapChannels'),
+            id: 'map'
+        });
+
+        require(['actionsheet'], function (actionsheet) {
+
+            actionsheet.show({
+                items: items,
+                positionTo: button
+
+            }).then(function (id) {
+
+                switch (id) {
+
+                    case 'delete':
+                        deleteProvider(page, providerId);
+                        break;
+                    case 'map':
+                        mapChannels(page, providerId);
+                        break;
+                    default:
+                        break;
+                }
+            });
+
+        });
+    }
+
+    function mapChannels(page, providerId) {
+
+        require(['components/channelmapper/channelmapper'], function (channelmapper) {
+            new channelmapper({
+                serverId: ApiClient.serverInfo().Id,
+                providerId: providerId
+            }).show();
         });
     }
 
@@ -333,9 +391,9 @@
 
         var message = Globalize.translate('MessageConfirmDeleteGuideProvider');
 
-        Dashboard.confirm(message, Globalize.translate('HeaderDeleteProvider'), function (confirmResult) {
+        require(['confirm'], function (confirm) {
 
-            if (confirmResult) {
+            confirm(message, Globalize.translate('HeaderDeleteProvider')).then(function () {
 
                 Dashboard.showLoadingMsg();
 
@@ -345,11 +403,15 @@
                         Id: id
                     })
 
-                }).always(function () {
+                }).then(function () {
+
+                    reload(page);
+
+                }, function () {
 
                     reload(page);
                 });
-            }
+            });
         });
     }
 
@@ -363,6 +425,8 @@
                 return 'M3U Playlist';
             case 'hdhomerun':
                 return 'HDHomerun';
+            case 'satip':
+                return 'DVB';
             default:
                 return 'Unknown';
         }
@@ -376,6 +440,8 @@
 
             case 'schedulesdirect':
                 return 'Schedules Direct';
+            case 'xmltv':
+                return 'Xml TV';
             case 'emby':
                 return 'Emby Guide';
             default:
@@ -389,6 +455,8 @@
 
         switch (providerId) {
 
+            case 'xmltv':
+                return 'livetvguideprovider.html?type=xmltv';
             case 'schedulesdirect':
                 return 'livetvguideprovider.html?type=schedulesdirect';
             case 'emby':
@@ -413,13 +481,18 @@
         //});
 
         menuItems.push({
+            name: 'Xml TV',
+            id: 'xmltv'
+        });
+
+        menuItems.push({
             name: Globalize.translate('ButtonOther'),
             id: 'other'
         });
 
-        require(['actionsheet'], function () {
+        require(['actionsheet'], function (actionsheet) {
 
-            ActionSheetElement.show({
+            actionsheet.show({
                 items: menuItems,
                 positionTo: button,
                 callback: function (id) {
@@ -441,6 +514,11 @@
 
         var menuItems = [];
 
+        //menuItems.push({
+        //    name: getTunerName('satip'),
+        //    id: 'satip'
+        //});
+
         menuItems.push({
             name: 'HDHomerun',
             id: 'hdhomerun'
@@ -456,9 +534,9 @@
             id: 'other'
         });
 
-        require(['actionsheet'], function () {
+        require(['actionsheet'], function (actionsheet) {
 
-            ActionSheetElement.show({
+            actionsheet.show({
                 items: menuItems,
                 positionTo: button,
                 callback: function (id) {
@@ -474,6 +552,22 @@
             });
 
         });
+    }
+
+    function getTabs() {
+        return [
+        {
+            href: 'livetvstatus.html',
+            name: Globalize.translate('TabDevices')
+        },
+         {
+             href: 'livetvsettings.html',
+             name: Globalize.translate('TabSettings')
+         },
+         {
+             href: 'appservices.html?context=livetv',
+             name: Globalize.translate('TabServices')
+         }];
     }
 
     $(document).on('pageinit', "#liveTvStatusPage", function () {
@@ -493,11 +587,29 @@
             addProvider(this);
         });
 
-    }).on('pageshowready', "#liveTvStatusPage", function () {
+    }).on('pageshow', "#liveTvStatusPage", function () {
 
+        LibraryMenu.setTabs('livetvadmin', 0, getTabs);
         var page = this;
 
         reload(page);
+
+        // on here
+        $('.btnRefresh', page).taskButton({
+            mode: 'on',
+            progressElem: page.querySelector('.refreshGuideProgress'),
+            taskKey: 'RefreshGuide'
+        });
+
+    }).on('pagehide', "#liveTvStatusPage", function () {
+
+        var page = this;
+
+        // off here
+        $('.btnRefreshGuide', page).taskButton({
+            mode: 'off'
+        });
+
     });
 
-})(jQuery, document, window);
+});

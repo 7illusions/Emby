@@ -1,6 +1,5 @@
 ﻿using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Notifications;
@@ -16,12 +15,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using CommonIO;
+using MediaBrowser.Common.Threading;
 
 namespace MediaBrowser.Server.Implementations.News
 {
     public class NewsEntryPoint : IServerEntryPoint
     {
-        private Timer _timer;
+        private PeriodicTimer _timer;
         private readonly IHttpClient _httpClient;
         private readonly IApplicationPaths _appPaths;
         private readonly IFileSystem _fileSystem;
@@ -46,7 +47,7 @@ namespace MediaBrowser.Server.Implementations.News
 
         public void Run()
         {
-            _timer = new Timer(OnTimerFired, null, TimeSpan.FromMilliseconds(500), _frequency);
+            _timer = new PeriodicTimer(OnTimerFired, null, TimeSpan.FromMilliseconds(500), _frequency);
         }
 
         /// <summary>
@@ -71,7 +72,7 @@ namespace MediaBrowser.Server.Implementations.News
         {
             DateTime? lastUpdate = null;
 
-            if (File.Exists(path))
+			if (_fileSystem.FileExists(path))
             {
                 lastUpdate = _fileSystem.GetLastWriteTimeUtc(path);
             }
@@ -79,7 +80,8 @@ namespace MediaBrowser.Server.Implementations.News
             var requestOptions = new HttpRequestOptions
             {
                 Url = "http://emby.media/community/index.php?/blog/rss/1-media-browser-developers-blog",
-                Progress = new Progress<double>()
+                Progress = new Progress<double>(),
+                UserAgent = "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.42 Safari/537.36"
             };
 
             using (var stream = await _httpClient.Get(requestOptions).ConfigureAwait(false))

@@ -29,46 +29,43 @@ namespace MediaBrowser.Model.Configuration
 
         public bool GroupMoviesIntoBoxSets { get; set; }
 
-        public string[] DisplayChannelsWithinViews { get; set; }
-
         public string[] ExcludeFoldersFromGrouping { get; set; }
         public string[] GroupedFolders { get; set; }
 
         public SubtitlePlaybackMode SubtitleMode { get; set; }
         public bool DisplayCollectionsView { get; set; }
-        public bool DisplayFoldersView { get; set; }
 
         public bool EnableLocalPassword { get; set; }
 
         public string[] OrderedViews { get; set; }
 
-        public bool IncludeTrailersInSuggestions { get; set; }
-
-        public bool EnableCinemaMode { get; set; }
-
         public string[] LatestItemsExcludes { get; set; }
         public string[] PlainFolderViews { get; set; }
 
         public bool HidePlayedInLatest { get; set; }
-        public bool DisplayChannelsInline { get; set; }
+        public bool EnableChannelView { get; set; }
+
+        public bool RememberAudioSelections { get; set; }
+        public bool RememberSubtitleSelections { get; set; }
+        public bool EnableNextEpisodeAutoPlay { get; set; }
+        public bool DisplayFoldersView { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UserConfiguration" /> class.
         /// </summary>
         public UserConfiguration()
         {
+            EnableNextEpisodeAutoPlay = true;
+            RememberAudioSelections = true;
+            RememberSubtitleSelections = true;
+
             HidePlayedInLatest = true;
             PlayDefaultAudioTrack = true;
 
             LatestItemsExcludes = new string[] { };
             OrderedViews = new string[] { };
-            DisplayChannelsWithinViews = new string[] { };
 
             PlainFolderViews = new string[] { };
-            DisplayCollectionsView = true;
-
-            IncludeTrailersInSuggestions = true;
-            EnableCinemaMode = true;
 
             GroupedFolders = new string[] { };
         }

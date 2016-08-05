@@ -12,6 +12,7 @@ namespace MediaBrowser.Api.UserLibrary
         protected BaseItemsRequest()
         {
             EnableImages = true;
+            EnableTotalRecordCount = true;
         }
 
         /// <summary>
@@ -99,12 +100,13 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "HasTvdbId", Description = "Optional filter by items that have a tvdb id or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool? HasTvdbId { get; set; }
 
-        [ApiMember(Name = "IsYearMismatched", Description = "Optional filter by items that are potentially misidentified.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
-        public bool? IsYearMismatched { get; set; }
-
         [ApiMember(Name = "IsInBoxSet", Description = "Optional filter by items that are in boxsets, or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool? IsInBoxSet { get; set; }
-        
+
+        public string ExcludeItemIds { get; set; }
+
+        public bool EnableTotalRecordCount { get; set; }
+
         /// <summary>
         /// Skips over a given number of items within the results. Use for paging.
         /// </summary>
@@ -169,6 +171,13 @@ namespace MediaBrowser.Api.UserLibrary
         public string Filters { get; set; }
 
         /// <summary>
+        /// Gets or sets the Isfavorite option
+        /// </summary>
+        /// <value>IsFavorite</value>
+        [ApiMember(Name = "IsFavorite", Description = "Optional filter by items that are marked as favorite, or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
+        public bool? IsFavorite { get; set; }
+
+        /// <summary>
         /// Gets or sets the media types.
         /// </summary>
         /// <value>The media types.</value>
@@ -199,6 +208,8 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "Genres", Description = "Optional. If specified, results will be filtered based on genre. This allows multiple, pipe delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string Genres { get; set; }
 
+        public string GenreIds { get; set; }
+        
         [ApiMember(Name = "OfficialRatings", Description = "Optional. If specified, results will be filtered based on OfficialRating. This allows multiple, pipe delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string OfficialRatings { get; set; }
 
@@ -255,6 +266,8 @@ namespace MediaBrowser.Api.UserLibrary
         [ApiMember(Name = "Artists", Description = "Optional. If specified, results will be filtered based on artist. This allows multiple, pipe delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string Artists { get; set; }
 
+        public string ExcludeArtistIds { get; set; }
+
         [ApiMember(Name = "ArtistIds", Description = "Optional. If specified, results will be filtered based on artist. This allows multiple, pipe delimeted.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string ArtistIds { get; set; }
 
@@ -298,9 +311,6 @@ namespace MediaBrowser.Api.UserLibrary
 
         [ApiMember(Name = "IsLocked", Description = "Optional filter by items that are locked.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public bool? IsLocked { get; set; }
-
-        [ApiMember(Name = "IsUnidentified", Description = "Optional filter by items that are unidentified by internet metadata providers.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
-        public bool? IsUnidentified { get; set; }
 
         [ApiMember(Name = "IsPlaceHolder", Description = "Optional filter by items that are placeholders", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public bool? IsPlaceHolder { get; set; }
@@ -361,6 +371,11 @@ namespace MediaBrowser.Api.UserLibrary
             return (IncludeItemTypes ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
+        public string[] GetExcludeItemIds()
+        {
+            return (ExcludeItemIds ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
         public string[] GetExcludeItemTypes()
         {
             return (ExcludeItemTypes ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -379,6 +394,11 @@ namespace MediaBrowser.Api.UserLibrary
         public string[] GetStudioIds()
         {
             return (StudioIds ?? string.Empty).Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+        public string[] GetGenreIds()
+        {
+            return (GenreIds ?? string.Empty).Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         public string[] GetPersonTypes()

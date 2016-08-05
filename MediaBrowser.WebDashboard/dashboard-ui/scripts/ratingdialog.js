@@ -1,4 +1,4 @@
-﻿(function (window, document, $) {
+﻿define(['jQuery'], function ($) {
 
     window.RatingDialog = function (page) {
 
@@ -74,7 +74,7 @@
                     };
 
                     options.callback(review);
-                } else Logger.log("No callback function provided");
+                } else console.log("No callback function provided");
 
                 return false;
             });
@@ -98,10 +98,10 @@
                 id: id,
                 rating: rating,
                 callback: function (review) {
-                    Logger.log(review);
+                    console.log(review);
                     dialog.close();
 
-                    ApiClient.createPackageReview(review).done(function () {
+                    ApiClient.createPackageReview(review).then(function () {
                         Dashboard.alert({
                             message: Globalize.translate('MessageThankYouForYourReview'),
                             title: Globalize.translate('HeaderThankYou')
@@ -109,31 +109,7 @@
                     });
                 }
             });
-        },
-
-        getStoreRatingHtml: function (rating, id, name, noLinks) {
-
-            var html = "<div style='margin-left: 5px; margin-right: 5px; display: inline-block; vertical-align:middle;'>";
-            if (!rating) rating = 0;
-
-            for (var i = 1; i <= 5; i++) {
-                var title = noLinks ? rating + " stars" : "Rate " + i + (i > 1 ? " stars" : " star");
-
-                html += noLinks ? "" : "<a href='#' data-id=" + id + " data-name='" + name + "' data-rating=" + i + " onclick='RatingHelpers.ratePackage(this);return false;' >";
-                if (rating <= i - 1) {
-                    html += "<div class='storeStarRating emptyStarRating' title='" + title + "'></div>";
-                } else if (rating < i) {
-                    html += "<div class='storeStarRating halfStarRating' title='" + title + "'></div>";
-                } else {
-                    html += "<div class='storeStarRating' title='" + title + "'></div>";
-                }
-                html += noLinks ? "" : "</a>";
-            }
-
-            html += "</div>";
-
-            return html;
         }
     };
 
-})(window, document, jQuery);
+});

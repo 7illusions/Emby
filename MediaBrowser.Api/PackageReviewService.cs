@@ -102,7 +102,7 @@ namespace MediaBrowser.Api
     {
         private readonly IHttpClient _httpClient;
         private readonly IJsonSerializer _serializer;
-        private const string MbAdminUrl = "http://www.mb3admin.com/admin/";
+        private const string MbAdminUrl = "https://www.mb3admin.com/admin/";
         private readonly IServerApplicationHost _appHost;
 
         public PackageReviewService(IHttpClient httpClient, IJsonSerializer serializer, IServerApplicationHost appHost)
@@ -112,7 +112,7 @@ namespace MediaBrowser.Api
             _appHost = appHost;
         }
 
-        public object Get(ReviewRequest request)
+        public async Task<object> Get(ReviewRequest request)
         {
             var parms = "?id=" + request.Id;
 
@@ -133,11 +133,13 @@ namespace MediaBrowser.Api
                 parms += "&title=true";
             }
 
-            var result = _httpClient.Get(MbAdminUrl + "/service/packageReview/retrieve" + parms, CancellationToken.None).Result;
+            using (var result = await _httpClient.Get(MbAdminUrl + "/service/packageReview/retrieve" + parms, CancellationToken.None)
+                            .ConfigureAwait(false))
+            {
+                var reviews = _serializer.DeserializeFromStream<List<PackageReviewInfo>>(result);
 
-            var reviews = _serializer.DeserializeFromStream<List<PackageReviewInfo>>(result);
-
-            return ToOptimizedResult(reviews);
+                return ToOptimizedResult(reviews);
+            }
         }
 
         public void Post(CreateReviewRequest request)

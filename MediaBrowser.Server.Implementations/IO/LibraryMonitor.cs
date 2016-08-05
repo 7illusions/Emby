@@ -1,20 +1,19 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Common.ScheduledTasks;
+﻿using MediaBrowser.Common.ScheduledTasks;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Logging;
-using MediaBrowser.Server.Implementations.ScheduledTasks;
 using Microsoft.Win32;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Controller;
 
 namespace MediaBrowser.Server.Implementations.IO
 {
@@ -25,13 +24,9 @@ namespace MediaBrowser.Server.Implementations.IO
         /// </summary>
         private readonly ConcurrentDictionary<string, FileSystemWatcher> _fileSystemWatchers = new ConcurrentDictionary<string, FileSystemWatcher>(StringComparer.OrdinalIgnoreCase);
         /// <summary>
-        /// The update timer
-        /// </summary>
-        private Timer _updateTimer;
-        /// <summary>
         /// The affected paths
         /// </summary>
-        private readonly ConcurrentDictionary<string, string> _affectedPaths = new ConcurrentDictionary<string, string>();
+        private readonly List<FileRefresher> _activeRefreshers = new List<FileRefresher>();
 
         /// <summary>
         /// A dynamic list of paths that should be ignored.  Added to during our own file sytem modifications.
@@ -43,19 +38,14 @@ namespace MediaBrowser.Server.Implementations.IO
         /// </summary>
         private readonly IReadOnlyList<string> _alwaysIgnoreFiles = new List<string>
         {
-            "thumbs.db", 
-            "small.jpg", 
+            "thumbs.db",
+            "small.jpg",
             "albumart.jpg",
 
             // WMC temp recording directories that will constantly be written to
             "TempRec",
             "TempSBE"
         };
-
-        /// <summary>
-        /// The timer lock
-        /// </summary>
-        private readonly object _timerLock = new object();
 
         /// <summary>
         /// Add the path to our temporary ignore list.  Use when writing to a path within our listening scope.
@@ -76,6 +66,12 @@ namespace MediaBrowser.Server.Implementations.IO
             TemporarilyIgnore(path);
         }
 
+        public bool IsPathLocked(string path)
+        {
+            var lockedPaths = _tempIgnoredPaths.Keys.ToList();
+            return lockedPaths.Any(i => string.Equals(i, path, StringComparison.OrdinalIgnoreCase) || _fileSystem.ContainsSubPath(i, path));
+        }
+
         public async void ReportFileSystemChangeComplete(string path, bool refreshPath)
         {
             if (string.IsNullOrEmpty(path))
@@ -86,7 +82,7 @@ namespace MediaBrowser.Server.Implementations.IO
             // This is an arbitraty amount of time, but delay it because file system writes often trigger events long after the file was actually written to.
             // Seeing long delays in some situations, especially over the network, sometimes up to 45 seconds
             // But if we make this delay too high, we risk missing legitimate changes, such as user adding a new file, or hand-editing metadata
-            await Task.Delay(20000).ConfigureAwait(false);
+            await Task.Delay(45000).ConfigureAwait(false);
 
             string val;
             _tempIgnoredPaths.TryRemove(path, out val);
@@ -113,11 +109,12 @@ namespace MediaBrowser.Server.Implementations.IO
         private IServerConfigurationManager ConfigurationManager { get; set; }
 
         private readonly IFileSystem _fileSystem;
+        private readonly IServerApplicationHost _appHost;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LibraryMonitor" /> class.
         /// </summary>
-        public LibraryMonitor(ILogManager logManager, ITaskManager taskManager, ILibraryManager libraryManager, IServerConfigurationManager configurationManager, IFileSystem fileSystem)
+        public LibraryMonitor(ILogManager logManager, ITaskManager taskManager, ILibraryManager libraryManager, IServerConfigurationManager configurationManager, IFileSystem fileSystem, IServerApplicationHost appHost)
         {
             if (taskManager == null)
             {
@@ -129,6 +126,7 @@ namespace MediaBrowser.Server.Implementations.IO
             Logger = logManager.GetLogger(GetType().Name);
             ConfigurationManager = configurationManager;
             _fileSystem = fileSystem;
+            _appHost = appHost;
 
             SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
         }
@@ -213,7 +211,7 @@ namespace MediaBrowser.Server.Implementations.IO
         /// <param name="e">The <see cref="ItemChangeEventArgs"/> instance containing the event data.</param>
         void LibraryManager_ItemRemoved(object sender, ItemChangeEventArgs e)
         {
-            if (e.Item.Parent is AggregateFolder)
+            if (e.Item.GetParent() is AggregateFolder)
             {
                 StopWatchingPath(e.Item.Path);
             }
@@ -226,7 +224,7 @@ namespace MediaBrowser.Server.Implementations.IO
         /// <param name="e">The <see cref="ItemChangeEventArgs"/> instance containing the event data.</param>
         void LibraryManager_ItemAdded(object sender, ItemChangeEventArgs e)
         {
-            if (e.Item.Parent is AggregateFolder)
+            if (e.Item.GetParent() is AggregateFolder)
             {
                 StartWatchingPath(e.Item.Path);
             }
@@ -242,7 +240,7 @@ namespace MediaBrowser.Server.Implementations.IO
         /// <exception cref="System.ArgumentNullException">path</exception>
         private static bool ContainsParentFolder(IEnumerable<string> lst, string path)
         {
-            if (string.IsNullOrEmpty(path))
+            if (string.IsNullOrWhiteSpace(path))
             {
                 throw new ArgumentNullException("path");
             }
@@ -254,7 +252,7 @@ namespace MediaBrowser.Server.Implementations.IO
                 //this should be a little quicker than examining each actual parent folder...
                 var compare = str.TrimEnd(Path.DirectorySeparatorChar);
 
-                return (path.Equals(compare, StringComparison.OrdinalIgnoreCase) || (path.StartsWith(compare, StringComparison.OrdinalIgnoreCase) && path[compare.Length] == Path.DirectorySeparatorChar));
+                return path.Equals(compare, StringComparison.OrdinalIgnoreCase) || (path.StartsWith(compare, StringComparison.OrdinalIgnoreCase) && path[compare.Length] == Path.DirectorySeparatorChar);
             });
         }
 
@@ -271,9 +269,13 @@ namespace MediaBrowser.Server.Implementations.IO
                 {
                     var newWatcher = new FileSystemWatcher(path, "*")
                     {
-                        IncludeSubdirectories = true,
-                        InternalBufferSize = 32767
+                        IncludeSubdirectories = true
                     };
+
+                    if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                    {
+                        newWatcher.InternalBufferSize = 32767;
+                    }
 
                     newWatcher.NotifyFilter = NotifyFilters.CreationTime |
                         NotifyFilters.DirectoryName |
@@ -450,213 +452,58 @@ namespace MediaBrowser.Server.Implementations.IO
             if (monitorPath)
             {
                 // Avoid implicitly captured closure
-                var affectedPath = path;
-                _affectedPaths.AddOrUpdate(path, path, (key, oldValue) => affectedPath);
-            }
-
-            RestartTimer();
-        }
-
-        private void RestartTimer()
-        {
-            lock (_timerLock)
-            {
-                if (_updateTimer == null)
-                {
-                    _updateTimer = new Timer(TimerStopped, null, TimeSpan.FromSeconds(ConfigurationManager.Configuration.RealtimeLibraryMonitorDelay), TimeSpan.FromMilliseconds(-1));
-                }
-                else
-                {
-                    _updateTimer.Change(TimeSpan.FromSeconds(ConfigurationManager.Configuration.RealtimeLibraryMonitorDelay), TimeSpan.FromMilliseconds(-1));
-                }
+                CreateRefresher(path);
             }
         }
 
-        /// <summary>
-        /// Timers the stopped.
-        /// </summary>
-        /// <param name="stateInfo">The state info.</param>
-        private async void TimerStopped(object stateInfo)
+        private void CreateRefresher(string path)
         {
-            // Extend the timer as long as any of the paths are still being written to.
-            if (_affectedPaths.Any(p => IsFileLocked(p.Key)))
+            var parentPath = Path.GetDirectoryName(path);
+
+            lock (_activeRefreshers)
             {
-                Logger.Info("Timer extended.");
-                RestartTimer();
-                return;
-            }
-
-            Logger.Debug("Timer stopped.");
-
-            DisposeTimer();
-
-            var paths = _affectedPaths.Keys.ToList();
-            _affectedPaths.Clear();
-
-            try
-            {
-                await ProcessPathChanges(paths).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Logger.ErrorException("Error processing directory changes", ex);
-            }
-        }
-
-        private bool IsFileLocked(string path)
-        {
-            try
-            {
-                var data = _fileSystem.GetFileSystemInfo(path);
-
-                if (!data.Exists
-                    || data.Attributes.HasFlag(FileAttributes.Directory)
-
-                    // Opening a writable stream will fail with readonly files
-                    || data.Attributes.HasFlag(FileAttributes.ReadOnly))
+                var refreshers = _activeRefreshers.ToList();
+                foreach (var refresher in refreshers)
                 {
-                    return false;
-                }
-            }
-            catch (IOException)
-            {
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Logger.ErrorException("Error getting file system info for: {0}", ex, path);
-                return false;
-            }
-
-            try
-            {
-                using (_fileSystem.GetFileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
-                {
-                    if (_updateTimer != null)
+                    // Path is already being refreshed
+                    if (string.Equals(path, refresher.Path, StringComparison.Ordinal))
                     {
-                        //file is not locked
-                        return false;
+                        refresher.RestartTimer();
+                        return;
+                    }
+
+                    // Parent folder is already being refreshed
+                    if (_fileSystem.ContainsSubPath(refresher.Path, path))
+                    {
+                        refresher.AddPath(path);
+                        return;
+                    }
+
+                    // New path is a parent
+                    if (_fileSystem.ContainsSubPath(path, refresher.Path))
+                    {
+                        refresher.ResetPath(path, null);
+                        return;
+                    }
+
+                    // They are siblings. Rebase the refresher to the parent folder.
+                    if (string.Equals(parentPath, Path.GetDirectoryName(refresher.Path), StringComparison.Ordinal))
+                    {
+                        refresher.ResetPath(parentPath, path);
+                        return;
                     }
                 }
-            }
-            catch (DirectoryNotFoundException)
-            {
-                // File may have been deleted
-                return false;
-            }
-            catch (FileNotFoundException)
-            {
-                // File may have been deleted
-                return false;
-            }
-            catch (IOException)
-            {
-                //the file is unavailable because it is:
-                //still being written to
-                //or being processed by another thread
-                //or does not exist (has already been processed)
-                Logger.Debug("{0} is locked.", path);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Logger.ErrorException("Error determining if file is locked: {0}", ex, path);
-                return false;
-            }
 
-            return false;
-        }
-
-        private void DisposeTimer()
-        {
-            lock (_timerLock)
-            {
-                if (_updateTimer != null)
-                {
-                    _updateTimer.Dispose();
-                    _updateTimer = null;
-                }
+                var newRefresher = new FileRefresher(path, _fileSystem, ConfigurationManager, LibraryManager, TaskManager, Logger);
+                newRefresher.Completed += NewRefresher_Completed;
+                _activeRefreshers.Add(newRefresher);
             }
         }
 
-        /// <summary>
-        /// Processes the path changes.
-        /// </summary>
-        /// <param name="paths">The paths.</param>
-        /// <returns>Task.</returns>
-        private async Task ProcessPathChanges(List<string> paths)
+        private void NewRefresher_Completed(object sender, EventArgs e)
         {
-            var itemsToRefresh = paths
-                .Select(GetAffectedBaseItem)
-                .Where(item => item != null)
-                .Distinct()
-                .ToList();
-
-            foreach (var p in paths)
-            {
-                Logger.Info(p + " reports change.");
-            }
-
-            // If the root folder changed, run the library task so the user can see it
-            if (itemsToRefresh.Any(i => i is AggregateFolder))
-            {
-                TaskManager.CancelIfRunningAndQueue<RefreshMediaLibraryTask>();
-                return;
-            }
-
-            foreach (var item in itemsToRefresh)
-            {
-                Logger.Info(item.Name + " (" + item.Path + ") will be refreshed.");
-
-                try
-                {
-                    await item.ChangedExternally().ConfigureAwait(false);
-                }
-                catch (IOException ex)
-                {
-                    // For now swallow and log. 
-                    // Research item: If an IOException occurs, the item may be in a disconnected state (media unavailable)
-                    // Should we remove it from it's parent?
-                    Logger.ErrorException("Error refreshing {0}", ex, item.Name);
-                }
-                catch (Exception ex)
-                {
-                    Logger.ErrorException("Error refreshing {0}", ex, item.Name);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Gets the affected base item.
-        /// </summary>
-        /// <param name="path">The path.</param>
-        /// <returns>BaseItem.</returns>
-        private BaseItem GetAffectedBaseItem(string path)
-        {
-            BaseItem item = null;
-
-            while (item == null && !string.IsNullOrEmpty(path))
-            {
-                item = LibraryManager.RootFolder.FindByPath(path);
-
-                path = Path.GetDirectoryName(path);
-            }
-
-            if (item != null)
-            {
-                // If the item has been deleted find the first valid parent that still exists
-                while (!Directory.Exists(item.Path) && !File.Exists(item.Path))
-                {
-                    item = item.Parent;
-
-                    if (item == null)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            return item;
+            var refresher = (FileRefresher)sender;
+            DisposeRefresher(refresher);
         }
 
         /// <summary>
@@ -669,15 +516,47 @@ namespace MediaBrowser.Server.Implementations.IO
 
             foreach (var watcher in _fileSystemWatchers.Values.ToList())
             {
+                watcher.Created -= watcher_Changed;
+                watcher.Deleted -= watcher_Changed;
+                watcher.Renamed -= watcher_Changed;
                 watcher.Changed -= watcher_Changed;
-                watcher.EnableRaisingEvents = false;
+
+                try
+                {
+                    watcher.EnableRaisingEvents = false;
+                }
+                catch (InvalidOperationException)
+                {
+                    // Seeing this under mono on linux sometimes
+                    // Collection was modified; enumeration operation may not execute.
+                }
+
                 watcher.Dispose();
             }
 
-            DisposeTimer();
-
             _fileSystemWatchers.Clear();
-            _affectedPaths.Clear();
+            DisposeRefreshers();
+        }
+
+        private void DisposeRefresher(FileRefresher refresher)
+        {
+            lock (_activeRefreshers)
+            {
+                refresher.Dispose();
+                _activeRefreshers.Remove(refresher);
+            }
+        }
+
+        private void DisposeRefreshers()
+        {
+            lock (_activeRefreshers)
+            {
+                foreach (var refresher in _activeRefreshers.ToList())
+                {
+                    refresher.Dispose();
+                }
+                _activeRefreshers.Clear();
+            }
         }
 
         /// <summary>

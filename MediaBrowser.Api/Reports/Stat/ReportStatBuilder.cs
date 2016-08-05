@@ -1,11 +1,8 @@
 ﻿using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Model.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace MediaBrowser.Api.Reports
 {
@@ -213,7 +210,7 @@ namespace MediaBrowser.Api.Reports
             };
             foreach (var item in t)
             {
-                var ps = items.Where(x => x.People != null && x.SupportsPeople).SelectMany(x => x.People)
+                var ps = items.SelectMany(x => _libraryManager.GetPeople(x))
                                 .Where(n => n.Type == item.ToString())
                                 .GroupBy(x => x.Name)
                                 .OrderByDescending(x => x.Count())

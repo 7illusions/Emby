@@ -5,7 +5,6 @@ using MediaBrowser.Model.Connect;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Users;
 using System;
-using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading;
@@ -54,6 +53,26 @@ namespace MediaBrowser.Controller.Entities
             set
             {
                 base.Path = value;
+            }
+        }
+
+        private string _name;
+        /// <summary>
+        /// Gets or sets the name.
+        /// </summary>
+        /// <value>The name.</value>
+        public override string Name
+        {
+            get
+            {
+                return _name;
+            }
+            set
+            {
+                _name = value;
+
+                // lazy load this again
+                SortName = null;
             }
         }
 
@@ -108,7 +127,7 @@ namespace MediaBrowser.Controller.Entities
         /// <value>The last activity date.</value>
         public DateTime? LastActivityDate { get; set; }
 
-        private UserConfiguration _config;
+        private volatile UserConfiguration _config;
         private readonly object _configSyncLock = new object();
         [IgnoreDataMember]
         public UserConfiguration Configuration
@@ -131,7 +150,7 @@ namespace MediaBrowser.Controller.Entities
             set { _config = value; }
         }
 
-        private UserPolicy _policy;
+        private volatile UserPolicy _policy;
         private readonly object _policySyncLock = new object();
         [IgnoreDataMember]
         public UserPolicy Policy
@@ -177,24 +196,24 @@ namespace MediaBrowser.Controller.Entities
                 var oldConfigurationDirectory = ConfigurationDirectoryPath;
 
                 // Exceptions will be thrown if these paths already exist
-                if (Directory.Exists(newConfigDirectory))
+				if (FileSystem.DirectoryExists(newConfigDirectory))
                 {
                     FileSystem.DeleteDirectory(newConfigDirectory, true);
                 }
 
-                if (Directory.Exists(oldConfigurationDirectory))
+				if (FileSystem.DirectoryExists(oldConfigurationDirectory))
                 {
-                    Directory.Move(oldConfigurationDirectory, newConfigDirectory);
+					FileSystem.MoveDirectory(oldConfigurationDirectory, newConfigDirectory);
                 }
                 else
                 {
-                    Directory.CreateDirectory(newConfigDirectory);
+					FileSystem.CreateDirectory(newConfigDirectory);
                 }
             }
 
             Name = newName;
 
-            return RefreshMetadata(new MetadataRefreshOptions(new DirectoryService())
+			return RefreshMetadata(new MetadataRefreshOptions(new DirectoryService(FileSystem))
             {
                 ReplaceAllMetadata = true,
                 ImageRefreshMode = ImageRefreshMode.FullRefresh,
@@ -286,14 +305,7 @@ namespace MediaBrowser.Controller.Entities
 
         public bool IsFolderGrouped(Guid id)
         {
-            var config = Configuration;
-
-            if (config.ExcludeFoldersFromGrouping != null)
-            {
-                return !config.ExcludeFoldersFromGrouping.Select(i => new Guid(i)).Contains(id);
-            }
-
-            return config.GroupedFolders.Select(i => new Guid(i)).Contains(id);
+            return Configuration.GroupedFolders.Select(i => new Guid(i)).Contains(id);
         }
 
         [IgnoreDataMember]

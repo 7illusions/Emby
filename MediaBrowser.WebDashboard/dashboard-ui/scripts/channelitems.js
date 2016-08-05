@@ -1,48 +1,58 @@
-﻿(function ($, document) {
+﻿define(['jQuery', 'cardBuilder', 'emby-itemscontainer'], function ($, cardBuilder) {
 
-    var maxPageSize;
+    var data = {};
 
-    // The base query options
-    var query = {
+    function getPageData(context) {
+        var key = getSavedQueryKey(context);
+        var pageData = data[key];
 
-        SortBy: "",
-        SortOrder: "Ascending",
-        Fields: "PrimaryImageAspectRatio,SyncInfo",
-        StartIndex: 0
-    };
+        if (!pageData) {
+            pageData = data[key] = {
+                query: {
+                    SortBy: "",
+                    SortOrder: "Ascending",
+                    Fields: "PrimaryImageAspectRatio",
+                    StartIndex: 0,
+                    Limit: LibraryBrowser.getDefaultPageSize()
+                }
+            };
 
-    function getPageSizes() {
-
-        var sizes = [];
-
-        if (!maxPageSize || maxPageSize >= 10) sizes.push(10);
-        if (!maxPageSize || maxPageSize >= 20) sizes.push(20);
-        if (!maxPageSize || maxPageSize >= 30) sizes.push(30);
-        if (!maxPageSize || maxPageSize >= 40) sizes.push(40);
-        if (!maxPageSize || maxPageSize >= 50) sizes.push(50);
-        if (!maxPageSize || maxPageSize >= 100) sizes.push(100);
-
-        return sizes;
+            LibraryBrowser.loadSavedQueryValues(key, pageData.query);
+        }
+        return pageData;
     }
 
-    function getSavedQueryId() {
-        return 'channels-1-' + getParameterByName('id') + (getParameterByName('folderId') || '');
+    function getQuery(context) {
+
+        return getPageData(context).query;
     }
 
-    function showLoadingMessage(page) {
+    function getSavedQueryKey(context) {
 
-        Dashboard.showModalLoadingMsg();
+        if (!context.savedQueryKey) {
+            context.savedQueryKey = LibraryBrowser.getSavedQueryKey('channelitems');
+        }
+        return context.savedQueryKey;
     }
 
-    function hideLoadingMessage(page) {
-        Dashboard.hideModalLoadingMsg();
+    function getParam(context, name) {
+        
+        if (!context.pageParams) {
+            context.pageParams = {};
+        }
+
+        if (!context.pageParams[name]) {
+            context.pageParams[name] = getParameterByName(name);
+        }
+
+        return context.pageParams[name];
     }
 
     function reloadFeatures(page) {
 
-        var channelId = getParameterByName('id');
+        var channelId = getParam(page, 'id');
 
-        ApiClient.getJSON(ApiClient.getUrl("Channels/" + channelId + "/Features", query)).done(function (features) {
+        ApiClient.getJSON(ApiClient.getUrl("Channels/" + channelId + "/Features")).then(function (features) {
 
             if (features.CanFilter) {
 
@@ -59,59 +69,39 @@
                 $('.sortOrderToggle', page).hide();
             }
 
-            maxPageSize = features.MaxPageSize;
+            var maxPageSize = features.MaxPageSize;
 
+            var query = getQuery(page);
             if (maxPageSize) {
                 query.Limit = Math.min(maxPageSize, query.Limit || maxPageSize);
             }
 
-            updateSortOrders(page, features.DefaultSortFields);
+            getPageData(page).sortFields = features.DefaultSortFields;
 
             reloadItems(page);
         });
     }
 
-    function updateSortOrders(page, fields) {
-
-        updateSortOrder(page, fields, 'Name');
-        updateSortOrder(page, fields, 'CommunityRating');
-        updateSortOrder(page, fields, 'PremiereDate');
-        updateSortOrder(page, fields, 'PlayCount');
-        updateSortOrder(page, fields, 'Runtime');
-        updateSortOrder(page, fields, 'DateCreated');
-    }
-
-    function updateSortOrder(page, fields, name) {
-
-        var cssClass = "sortby" + name;
-
-        if (fields.indexOf(name) == -1) {
-
-            $('.' + cssClass, page).hide();
-        } else {
-            $('.' + cssClass, page).show();
-        }
-    }
-
     function reloadItems(page) {
 
-        showLoadingMessage(page);
+        Dashboard.showLoadingMsg();
 
-        var channelId = getParameterByName('id');
-        var folderId = getParameterByName('folderId');
+        var channelId = getParam(page, 'id');
+        var folderId = getParam(page, 'folderId');
 
+        var query = getQuery(page);
         query.UserId = Dashboard.getCurrentUserId();
 
         if (folderId) {
 
-            ApiClient.getItem(query.UserId, folderId).done(function (item) {
+            ApiClient.getItem(query.UserId, folderId).then(function (item) {
 
                 LibraryMenu.setTitle(item.Name);
             });
 
         } else {
 
-            ApiClient.getItem(query.UserId, channelId).done(function (item) {
+            ApiClient.getItem(query.UserId, channelId).then(function (item) {
 
                 LibraryMenu.setTitle(item.Name);
             });
@@ -119,7 +109,7 @@
 
         query.folderId = folderId;
 
-        ApiClient.getJSON(ApiClient.getUrl("Channels/" + channelId + "/Items", query)).done(function (result) {
+        ApiClient.getJSON(ApiClient.getUrl("Channels/" + channelId + "/Items", query)).then(function (result) {
 
             // Scroll back up so they can see the results from the beginning
             window.scrollTo(0, 0);
@@ -129,16 +119,15 @@
                 startIndex: query.StartIndex,
                 limit: query.Limit,
                 totalRecordCount: result.TotalRecordCount,
-                viewButton: true,
                 showLimit: false,
-                updatePageSizeSetting: false
+                updatePageSizeSetting: false,
+                sortButton: true,
+                filterButton: true
             });
-
-            page.querySelector('.listTopPaging').innerHTML = pagingHtml;
 
             updateFilterControls(page);
 
-            html = LibraryBrowser.getPosterViewHtml({
+            html = cardBuilder.getCardsHtml({
                 items: result.Items,
                 shape: "auto",
                 defaultShape: 'square',
@@ -150,8 +139,14 @@
                 centerText: true
             });
 
+            var i, length;
+            var elems = page.querySelectorAll('.paging');
+            for (i = 0, length = elems.length; i < length; i++) {
+                elems[i].innerHTML = pagingHtml;
+            }
+
             var elem = page.querySelector('#items');
-            elem.innerHTML = html + pagingHtml;
+            elem.innerHTML = html;
             ImageLoader.lazyChildren(elem);
 
             $('.btnNextPage', page).on('click', function () {
@@ -164,112 +159,105 @@
                 reloadItems(page);
             });
 
-            LibraryBrowser.saveQueryValues(getSavedQueryId(), query);
+            $('.btnFilter', page).on('click', function () {
+                showFilterMenu(page);
+            });
 
+            // On callback make sure to set StartIndex = 0
+            $('.btnSort', page).on('click', function () {
+                showSortMenu(page);
+            });
 
-        }).always(function () {
+            Dashboard.hideLoadingMsg();
 
-            hideLoadingMessage(page);
+        }, function () {
+
+            Dashboard.hideLoadingMsg();
+        });
+    }
+
+    function showFilterMenu(page) {
+
+        require(['components/filterdialog/filterdialog'], function (filterDialogFactory) {
+
+            var filterDialog = new filterDialogFactory({
+                query: getQuery(page)
+            });
+
+            Events.on(filterDialog, 'filterchange', function () {
+                reloadItems(page);
+            });
+
+            filterDialog.show();
+        });
+    }
+
+    function showSortMenu(page) {
+
+        var sortFields = getPageData(page).sortFields;
+
+        var items = [];
+
+        items.push({
+            name: Globalize.translate('OptionDefaultSort'),
+            id: ''
+        });
+
+        if (sortFields.indexOf('Name') != -1) {
+            items.push({
+                name: Globalize.translate('OptionNameSort'),
+                id: 'SortName'
+            });
+        }
+        if (sortFields.indexOf('CommunityRating') != -1) {
+            items.push({
+                name: Globalize.translate('OptionCommunityRating'),
+                id: 'CommunityRating'
+            });
+        }
+        if (sortFields.indexOf('DateCreated') != -1) {
+            items.push({
+                name: Globalize.translate('OptionDateAdded'),
+                id: 'DateCreated'
+            });
+        }
+        if (sortFields.indexOf('PlayCount') != -1) {
+            items.push({
+                name: Globalize.translate('OptionPlayCount'),
+                id: 'PlayCount'
+            });
+        }
+        if (sortFields.indexOf('PremiereDate') != -1) {
+            items.push({
+                name: Globalize.translate('OptionReleaseDate'),
+                id: 'PremiereDate'
+            });
+        }
+        if (sortFields.indexOf('Runtime') != -1) {
+            items.push({
+                name: Globalize.translate('OptionRuntime'),
+                id: 'Runtime'
+            });
+        }
+
+        LibraryBrowser.showSortMenu({
+            items: items,
+            callback: function () {
+                reloadItems(page);
+            },
+            query: getQuery(page)
         });
     }
 
     function updateFilterControls(page) {
 
-        // Reset form values using the last used query
-        $('.radioSortBy', page).each(function () {
-
-            this.checked = (query.SortBy || '').toLowerCase() == this.getAttribute('data-sortby').toLowerCase();
-
-        }).checkboxradio('refresh');
-
-        $('.radioSortOrder', page).each(function () {
-
-            this.checked = (query.SortOrder || '').toLowerCase() == this.getAttribute('data-sortorder').toLowerCase();
-
-        }).checkboxradio('refresh');
-
-        $('.chkStandardFilter', page).each(function () {
-
-            var filters = "," + (query.Filters || "");
-            var filterName = this.getAttribute('data-filter');
-
-            this.checked = filters.indexOf(',' + filterName) != -1;
-
-        }).checkboxradio('refresh');
-
-        $('.alphabetPicker', page).alphaValue(query.NameStartsWith);
-        $('#selectPageSize', page).val(query.Limit).selectmenu('refresh');
     }
 
-    $(document).on('pageinit', "#channelItemsPage", function () {
+    pageIdOn('pagebeforeshow', "channelItemsPage", function () {
 
         var page = this;
-
-        $('.radioSortBy', this).on('click', function () {
-            query.StartIndex = 0;
-            query.SortBy = this.getAttribute('data-sortby');
-            reloadItems(page);
-        });
-
-        $('.radioSortOrder', this).on('click', function () {
-            query.StartIndex = 0;
-            query.SortOrder = this.getAttribute('data-sortorder');
-            reloadItems(page);
-        });
-
-        $('.chkStandardFilter', this).on('change', function () {
-
-            var filterName = this.getAttribute('data-filter');
-            var filters = query.Filters || "";
-
-            filters = (',' + filters).replace(',' + filterName, '').substring(1);
-
-            if (this.checked) {
-                filters = filters ? (filters + ',' + filterName) : filterName;
-            }
-
-            query.StartIndex = 0;
-            query.Filters = filters;
-
-            reloadItems(page);
-        });
-
-        $('.alphabetPicker', this).on('alphaselect', function (e, character) {
-
-            query.NameStartsWithOrGreater = character;
-            query.StartIndex = 0;
-
-            reloadItems(page);
-
-        }).on('alphaclear', function (e) {
-
-            query.NameStartsWithOrGreater = '';
-
-            reloadItems(page);
-        });
-
-        $('#selectPageSize', page).on('change', function () {
-            query.Limit = parseInt(this.value);
-            query.StartIndex = 0;
-            reloadItems(page);
-        });
-
-    }).on('pagebeforeshow', "#channelItemsPage", function () {
-
-        var page = this;
-        var limit = LibraryBrowser.getDefaultPageSize();
-
-        // If the default page size has changed, the start index will have to be reset
-        if (limit != query.Limit) {
-            query.Limit = limit;
-        }
-        query.StartIndex = 0;
-
-        LibraryBrowser.loadSavedQueryValues(getSavedQueryId(), query);
-
         reloadFeatures(page);
-
         updateFilterControls(page);
     });
 
-})(jQuery, document);
+});

@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
@@ -10,6 +9,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Xml;
+using CommonIO;
 
 namespace MediaBrowser.XbmcMetadata.Savers
 {

@@ -12,12 +12,10 @@ namespace MediaBrowser.Server.Implementations.HttpServer
     {
         private static readonly CultureInfo UsCulture = new CultureInfo("en-US");
         private readonly ILogger _logger;
-        private readonly Func<bool> _denyIframeEmbedding;
 
-        public ResponseFilter(ILogger logger, Func<bool> denyIframeEmbedding)
+        public ResponseFilter(ILogger logger)
         {
             _logger = logger;
-            _denyIframeEmbedding = denyIframeEmbedding;
         }
 
         /// <summary>
@@ -30,11 +28,6 @@ namespace MediaBrowser.Server.Implementations.HttpServer
         {
             // Try to prevent compatibility view
             res.AddHeader("X-UA-Compatible", "IE=Edge");
-
-            if (_denyIframeEmbedding())
-            {
-                res.AddHeader("X-Frame-Options", "SAMEORIGIN");
-            }
 
             var exception = dto as Exception;
 
@@ -58,7 +51,11 @@ namespace MediaBrowser.Server.Implementations.HttpServer
 
             if (hasOptions != null)
             {
-                hasOptions.Options["Server"] = "Mono-HTTPAPI/1.1";
+                if (!hasOptions.Options.ContainsKey("Server"))
+                {
+                    hasOptions.Options["Server"] = "Mono-HTTPAPI/1.1, UPnP/1.0 DLNADOC/1.50";
+                    //hasOptions.Options["Server"] = "Mono-HTTPAPI/1.1";
+                }
 
                 // Content length has to be explicitly set on on HttpListenerResponse or it won't be happy
                 string contentLength;

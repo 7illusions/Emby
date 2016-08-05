@@ -1,5 +1,4 @@
-﻿using MediaBrowser.Common.IO;
-using MediaBrowser.Controller.Configuration;
+﻿using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.FileOrganization;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
@@ -11,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Server.Implementations.FileOrganization
 {
@@ -35,16 +35,32 @@ namespace MediaBrowser.Server.Implementations.FileOrganization
             _providerManager = providerManager;
         }
 
-        public async Task Organize(TvFileOrganizationOptions options, CancellationToken cancellationToken, IProgress<double> progress)
+        private bool EnableOrganization(FileSystemMetadata fileInfo, TvFileOrganizationOptions options)
         {
             var minFileBytes = options.MinFileSizeMb * 1024 * 1024;
 
-            var watchLocations = options.WatchLocations.ToList();
+            try
+            {
+                return _libraryManager.IsVideoFile(fileInfo.FullName) && fileInfo.Length >= minFileBytes;
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorException("Error organizing file {0}", ex, fileInfo.Name);
+            }
+
+            return false;
+        }
+
+        public async Task Organize(AutoOrganizeOptions options, CancellationToken cancellationToken, IProgress<double> progress)
+        {
+            var watchLocations = options.TvOptions.WatchLocations.ToList();
 
             var eligibleFiles = watchLocations.SelectMany(GetFilesToOrganize)
                 .OrderBy(_fileSystem.GetCreationTimeUtc)
-                .Where(i => _libraryManager.IsVideoFile(i.FullName) && i.Length >= minFileBytes)
+                .Where(i => EnableOrganization(i, options.TvOptions))
                 .ToList();
+
+            var processedFolders = new HashSet<string>();
 
             progress.Report(10);
 
@@ -59,27 +75,31 @@ namespace MediaBrowser.Server.Implementations.FileOrganization
 
                     try
                     {
-                        await organizer.OrganizeEpisodeFile(file.FullName, options, options.OverwriteExistingEpisodes, cancellationToken).ConfigureAwait(false);
+                        var result = await organizer.OrganizeEpisodeFile(file.FullName, options, options.TvOptions.OverwriteExistingEpisodes, cancellationToken).ConfigureAwait(false);
+                        if (result.Status == FileSortingStatus.Success && !processedFolders.Contains(file.DirectoryName, StringComparer.OrdinalIgnoreCase))
+                        {
+                            processedFolders.Add(file.DirectoryName);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.ErrorException("Error organizing episode {0}", ex, file);
+                        _logger.ErrorException("Error organizing episode {0}", ex, file.FullName);
                     }
 
                     numComplete++;
                     double percent = numComplete;
                     percent /= eligibleFiles.Count;
 
-                    progress.Report(10 + (89 * percent));
+                    progress.Report(10 + 89 * percent);
                 }
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             progress.Report(99);
 
-            foreach (var path in watchLocations)
+            foreach (var path in processedFolders)
             {
-                var deleteExtensions = options.LeftOverFileExtensionsToDelete
+                var deleteExtensions = options.TvOptions.LeftOverFileExtensionsToDelete
                     .Select(i => i.Trim().TrimStart('.'))
                     .Where(i => !string.IsNullOrEmpty(i))
                     .Select(i => "." + i)
@@ -90,11 +110,11 @@ namespace MediaBrowser.Server.Implementations.FileOrganization
                     DeleteLeftOverFiles(path, deleteExtensions);
                 }
 
-                if (options.DeleteEmptyFolders)
+                if (options.TvOptions.DeleteEmptyFolders)
                 {
-                    foreach (var subfolder in GetDirectories(path).ToList())
+                    if (!IsWatchFolder(path, watchLocations))
                     {
-                        DeleteEmptyFolders(subfolder);
+                        DeleteEmptyFolders(path);
                     }
                 }
             }
@@ -103,44 +123,22 @@ namespace MediaBrowser.Server.Implementations.FileOrganization
         }
 
         /// <summary>
-        /// Gets the directories.
-        /// </summary>
-        /// <param name="path">The path.</param>
-        /// <returns>IEnumerable{System.String}.</returns>
-        private IEnumerable<string> GetDirectories(string path)
-        {
-            try
-            {
-                return Directory
-                    .EnumerateDirectories(path, "*", SearchOption.TopDirectoryOnly)
-                    .ToList();
-            }
-            catch (IOException ex)
-            {
-                _logger.ErrorException("Error getting files from {0}", ex, path);
-
-                return new List<string>();
-            }
-        }
-
-        /// <summary>
         /// Gets the files to organize.
         /// </summary>
         /// <param name="path">The path.</param>
         /// <returns>IEnumerable{FileInfo}.</returns>
-        private IEnumerable<FileInfo> GetFilesToOrganize(string path)
+        private List<FileSystemMetadata> GetFilesToOrganize(string path)
         {
             try
             {
-                return new DirectoryInfo(path)
-                    .EnumerateFiles("*", SearchOption.AllDirectories)
+                return _fileSystem.GetFiles(path, true)
                     .ToList();
             }
             catch (IOException ex)
             {
                 _logger.ErrorException("Error getting files from {0}", ex, path);
 
-                return new List<FileInfo>();
+                return new List<FileSystemMetadata>();
             }
         }
 
@@ -151,8 +149,7 @@ namespace MediaBrowser.Server.Implementations.FileOrganization
         /// <param name="extensions">The extensions.</param>
         private void DeleteLeftOverFiles(string path, IEnumerable<string> extensions)
         {
-            var eligibleFiles = new DirectoryInfo(path)
-                .EnumerateFiles("*", SearchOption.AllDirectories)
+            var eligibleFiles = _fileSystem.GetFiles(path, true)
                 .Where(i => extensions.Contains(i.Extension, StringComparer.OrdinalIgnoreCase))
                 .ToList();
 
@@ -177,25 +174,35 @@ namespace MediaBrowser.Server.Implementations.FileOrganization
         {
             try
             {
-                foreach (var d in Directory.EnumerateDirectories(path))
+                foreach (var d in _fileSystem.GetDirectoryPaths(path))
                 {
                     DeleteEmptyFolders(d);
                 }
 
-                var entries = Directory.EnumerateFileSystemEntries(path);
+                var entries = _fileSystem.GetFileSystemEntryPaths(path);
 
                 if (!entries.Any())
                 {
                     try
                     {
                         _logger.Debug("Deleting empty directory {0}", path);
-                        Directory.Delete(path);
+                        _fileSystem.DeleteDirectory(path, false);
                     }
                     catch (UnauthorizedAccessException) { }
                     catch (DirectoryNotFoundException) { }
                 }
             }
             catch (UnauthorizedAccessException) { }
+        }
+
+        /// <summary>
+        /// Determines if a given folder path is contained in a folder list
+        /// </summary>
+        /// <param name="path">The folder path to check.</param>
+        /// <param name="watchLocations">A list of folders.</param>
+        private bool IsWatchFolder(string path, IEnumerable<string> watchLocations)
+        {
+            return watchLocations.Contains(path, StringComparer.OrdinalIgnoreCase);
         }
     }
 }

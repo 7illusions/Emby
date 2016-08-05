@@ -1,65 +1,37 @@
-﻿<!DOCTYPE html>
-<html>
-<head>
-    <title>${TitlePlayback}</title>
-</head>
-<body>
-    <div id="playbackConfigurationPage" data-role="page" class="page type-interior playbackConfigurationPage" data-require="scripts/playbackconfiguration">
+﻿<div id="playbackConfigurationPage" data-role="page" class="page type-interior playbackConfigurationPage withTabs" data-require="jqmlistview,scripts/playbackconfiguration,emby-input,emby-button">
 
-        <div data-role="content">
-            <div class="content-primary">
+    <div data-role="content">
+        <div class="content-primary">
 
-                <div data-role="controlgroup" data-type="horizontal" class="localnav" data-mini="true">
-                    <a href="#" data-role="button" class="ui-btn-active">${TabGeneral}</a>
-                    <a href="cinemamodeconfiguration.html" data-role="button">${TabCinemaMode}</a>
-                    <a href="streamingsettings.html" data-role="button">${TabStreaming}</a>
-                    <a href="encodingsettings.html" data-role="button">${TabTranscoding}</a>
+            <form class="playbackConfigurationForm">
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="txtMinResumePct" name="txtMinResumePct" pattern="[0-9]*" required min="0" max="100" label="${LabelMinResumePercentage}"></input>
+                    <div class="fieldDescription">
+                        ${LabelMinResumePercentageHelp}
+                    </div>
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="txtMaxResumePct" name="txtMaxResumePct" pattern="[0-9]*" required min="1" max="100" label="${LabelMaxResumePercentage}"></input>
+                    <div class="fieldDescription">
+                        ${LabelMaxResumePercentageHelp}
+                    </div>
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" id="txtMinResumeDuration" name="txtMinResumeDuration" pattern="[0-9]*" required min="0" label="${LabelMinResumeDuration}"></input>
+                    <div class="fieldDescription">
+                        ${LabelMinResumeDurationHelp}
+                    </div>
                 </div>
 
-                <form class="playbackConfigurationForm">
-                    <div data-role="collapsible" data-collapsed="false">
-                        <h2>${HeaderResumeSettings}</h2>
-                        <div>
-                            <br />
-                            <ul data-role="listview" class="ulForm">
-                                <li>
-                                    <label for="txtMinResumePct">${LabelMinResumePercentage}</label>
-                                    <input type="number" id="txtMinResumePct" name="txtMinResumePct" pattern="[0-9]*" required="required" min="0" max="100" />
-                                    <div class="fieldDescription">
-                                        ${LabelMinResumePercentageHelp}
-                                    </div>
-                                </li>
-                                <li>
-                                    <label for="txtMaxResumePct">${LabelMaxResumePercentage}</label>
-                                    <input type="number" id="txtMaxResumePct" name="txtMaxResumePct" pattern="[0-9]*" required="required" min="1" max="100" />
-                                    <div class="fieldDescription">
-                                        ${LabelMaxResumePercentageHelp}
-                                    </div>
-                                </li>
-                                <li>
-                                    <label for="txtMinResumeDuration">${LabelMinResumeDuration}</label>
-                                    <input type="number" id="txtMinResumeDuration" name="txtMinResumeDuration" pattern="[0-9]*" required="required" min="0" />
-                                    <div class="fieldDescription">
-                                        ${LabelMinResumeDurationHelp}
-                                    </div>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                    <br />
-                    <ul data-role="listview" class="ulForm">
-                        <li>
-                            <button type="submit" data-role="none" class="clearButton">
-                                <paper-button raised class="submit block"><iron-icon icon="check"></iron-icon><span>${ButtonSave}</span></paper-button>
-                            </button>
 
-                            <paper-button raised class="cancel block btnCancel" onclick="history.back();"><iron-icon icon="close"></iron-icon><span>${ButtonCancel}</span></paper-button>
-                        </li>
+                <br />
+                <ul data-role="listview" class="ulForm">
+                    <li>
+                        <button is="emby-button" type="submit" class="raised submit block"><i class="md-icon">check</i><span>${ButtonSave}</span></button>
+                    </li>
 
-                    </ul>
-                </form>
-            </div>
+                </ul>
+            </form>
         </div>
     </div>
-</body>
-</html>
+</div>

@@ -126,7 +126,7 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers
             }
             else
             {
-                var videoInfo = parser.ResolveFile(args.Path);
+                var videoInfo = parser.Resolve(args.Path, false, false);
 
                 if (videoInfo == null)
                 {
@@ -179,10 +179,33 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers
                 else if (string.Equals(videoInfo.StubType, "hddvd", StringComparison.OrdinalIgnoreCase))
                 {
                     video.VideoType = VideoType.HdDvd;
+                    video.IsHD = true;
                 }
                 else if (string.Equals(videoInfo.StubType, "bluray", StringComparison.OrdinalIgnoreCase))
                 {
                     video.VideoType = VideoType.BluRay;
+                    video.IsHD = true;
+                }
+                else if (string.Equals(videoInfo.StubType, "hdtv", StringComparison.OrdinalIgnoreCase))
+                {
+                    video.IsHD = true;
+                }
+            }
+
+            SetIsoType(video);
+        }
+
+        protected void SetIsoType(Video video)
+        {
+            if (video.VideoType == VideoType.Iso)
+            {
+                if (video.Path.IndexOf("dvd", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    video.IsoType = IsoType.Dvd;
+                }
+                else if (video.Path.IndexOf("bluray", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    video.IsoType = IsoType.BluRay;
                 }
             }
         }
@@ -218,6 +241,10 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers
                 else if (string.Equals(format3D, "tab", StringComparison.OrdinalIgnoreCase))
                 {
                     video.Video3DFormat = Video3DFormat.HalfTopAndBottom;
+                }
+                else if (string.Equals(format3D, "mvc", StringComparison.OrdinalIgnoreCase))
+                {
+                    video.Video3DFormat = Video3DFormat.MVC;
                 }
             }
         }

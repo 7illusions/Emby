@@ -1,140 +1,160 @@
-﻿(function ($, document) {
+﻿define(['libraryBrowser', 'cardBuilder'], function (libraryBrowser, cardBuilder) {
 
-    var view = LibraryBrowser.getDefaultItemsView('Thumb', 'Thumb');
+    return function (view, params, tabContent) {
 
-    // The base query options
-    var query = {
+        var self = this;
 
-        SortBy: "SortName",
-        SortOrder: "Ascending",
-        IncludeItemTypes: "Audio,MusicVideo",
-        Recursive: true,
-        Fields: "DateCreated,SyncInfo,ItemCounts",
-        StartIndex: 0
-    };
+        var data = {};
+        function getPageData() {
+            var key = getSavedQueryKey();
+            var pageData = data[key];
 
-    function getSavedQueryKey() {
+            if (!pageData) {
+                pageData = data[key] = {
+                    query: {
+                        SortBy: "SortName",
+                        SortOrder: "Ascending",
+                        IncludeItemTypes: "Audio,MusicAlbum",
+                        Recursive: true,
+                        Fields: "DateCreated,ItemCounts",
+                        StartIndex: 0
+                    },
+                    view: libraryBrowser.getSavedView(key) || 'PosterCard'
+                };
 
-        return 'musicgenres' + (query.ParentId || '');
-    }
-
-    function reloadItems(page) {
-
-        Dashboard.showLoadingMsg();
-
-        ApiClient.getMusicGenres(Dashboard.getCurrentUserId(), query).done(function (result) {
-
-            // Scroll back up so they can see the results from the beginning
-            window.scrollTo(0, 0);
-
-            var html = '';
-
-            $('.listTopPaging', page).html(LibraryBrowser.getQueryPagingHtml({
-                startIndex: query.StartIndex,
-                limit: query.Limit,
-                totalRecordCount: result.TotalRecordCount,
-                viewButton: true,
-                showLimit: false,
-                addSelectionButton: true
-            })).trigger('create');
-
-            updateFilterControls(page);
-            
-            if (view == "Thumb") {
-                html = LibraryBrowser.getPosterViewHtml({
-                    items: result.Items,
-                    shape: "backdrop",
-                    preferThumb: true,
-                    context: 'music',
-                    showItemCounts: true,
-                    lazy: true,
-                    centerText: true,
-                    overlayPlayButton: true
-                });
+                pageData.query.ParentId = params.topParentId;
+                libraryBrowser.loadSavedQueryValues(key, pageData.query);
             }
-            else if (view == "ThumbCard") {
-
-                html = LibraryBrowser.getPosterViewHtml({
-                    items: result.Items,
-                    shape: "backdrop",
-                    preferThumb: true,
-                    context: 'music',
-                    showItemCounts: true,
-                    cardLayout: true,
-                    lazy: true,
-                    showTitle: true
-                });
-            }
-
-            var elem = page.querySelector('#items');
-            elem.innerHTML = html;
-            ImageLoader.lazyChildren(elem);
-
-            $('.btnNextPage', page).on('click', function () {
-                query.StartIndex += query.Limit;
-                reloadItems(page);
-            });
-
-            $('.btnPreviousPage', page).on('click', function () {
-                query.StartIndex -= query.Limit;
-                reloadItems(page);
-            });
-
-            LibraryBrowser.saveQueryValues(getSavedQueryKey(), query);
-            
-            Dashboard.hideLoadingMsg();
-        });
-    }
-
-    function updateFilterControls(page) {
-
-        $('#selectPageSize', page).val(query.Limit).selectmenu('refresh');
-    }
-
-    $(document).on('pageinit', "#musicGenresPage", function () {
-
-        var page = this;
-
-        $('.chkStandardFilter', this).on('change', function () {
-
-            var filterName = this.getAttribute('data-filter');
-            var filters = query.Filters || "";
-
-            filters = (',' + filters).replace(',' + filterName, '').substring(1);
-
-            if (this.checked) {
-                filters = filters ? (filters + ',' + filterName) : filterName;
-            }
-
-            query.StartIndex = 0;
-            query.Filters = filters;
-
-            reloadItems(page);
-        });
-
-        $('#selectPageSize', page).on('change', function () {
-            query.Limit = parseInt(this.value);
-            query.StartIndex = 0;
-            reloadItems(page);
-        });
-
-    }).on('pagebeforeshow', "#musicGenresPage", function () {
-
-        query.ParentId = LibraryMenu.getTopParentId();
-
-        var limit = LibraryBrowser.getDefaultPageSize();
-
-        // If the default page size has changed, the start index will have to be reset
-        if (limit != query.Limit) {
-            query.Limit = limit;
-            query.StartIndex = 0;
+            return pageData;
         }
 
-        LibraryBrowser.loadSavedQueryValues(getSavedQueryKey(), query);
+        function getQuery() {
 
-        reloadItems(this);
+            return getPageData().query;
+        }
 
-        updateFilterControls(this);
-    });
+        function getSavedQueryKey() {
 
-})(jQuery, document);
+            return libraryBrowser.getSavedQueryKey('genres');
+        }
+
+        function getPromise() {
+
+            Dashboard.showLoadingMsg();
+            var query = getQuery();
+
+            return ApiClient.getGenres(Dashboard.getCurrentUserId(), query);
+        }
+
+        function reloadItems(context, promise) {
+
+            var query = getQuery();
+
+            promise.then(function (result) {
+
+                var html = '';
+
+                var viewStyle = self.getCurrentViewStyle();
+
+                if (viewStyle == "Thumb") {
+                    html = cardBuilder.getCardsHtml({
+                        items: result.Items,
+                        shape: "backdrop",
+                        preferThumb: true,
+                        context: 'music',
+                        showItemCounts: true,
+                        centerText: true,
+                        lazy: true,
+                        overlayMoreButton: true,
+                        showTitle: true
+                    });
+                }
+                else if (viewStyle == "ThumbCard") {
+
+                    html = cardBuilder.getCardsHtml({
+                        items: result.Items,
+                        shape: "backdrop",
+                        preferThumb: true,
+                        context: 'music',
+                        showItemCounts: true,
+                        cardLayout: true,
+                        showTitle: true,
+                        lazy: true
+                    });
+                }
+                else if (viewStyle == "PosterCard") {
+                    html = cardBuilder.getCardsHtml({
+                        items: result.Items,
+                        shape: "auto",
+                        context: 'music',
+                        showItemCounts: true,
+                        lazy: true,
+                        cardLayout: true,
+                        showTitle: true
+                    });
+                }
+                else if (viewStyle == "Poster") {
+                    html = cardBuilder.getCardsHtml({
+                        items: result.Items,
+                        shape: "auto",
+                        context: 'music',
+                        centerText: true,
+                        showItemCounts: true,
+                        lazy: true,
+                        overlayMoreButton: true,
+                        showTitle: true
+                    });
+                }
+
+                var elem = context.querySelector('#items');
+                elem.innerHTML = html;
+                ImageLoader.lazyChildren(elem);
+
+                libraryBrowser.saveQueryValues(getSavedQueryKey(), query);
+
+                Dashboard.hideLoadingMsg();
+            });
+        }
+        self.getViewStyles = function () {
+            return 'Poster,PosterCard,Thumb,ThumbCard'.split(',');
+        };
+
+        self.getCurrentViewStyle = function () {
+            return getPageData(tabContent).view;
+        };
+
+        self.setCurrentViewStyle = function (viewStyle) {
+            getPageData(tabContent).view = viewStyle;
+            libraryBrowser.saveViewSetting(getSavedQueryKey(tabContent), viewStyle);
+            fullyReload();
+        };
+
+        self.enableViewSelection = true;
+        var promise;
+
+        self.preRender = function () {
+            promise = getPromise();
+        };
+
+        self.renderTab = function () {
+
+            reloadItems(tabContent, promise);
+        };
+
+        function fullyReload() {
+            self.preRender();
+            self.renderTab();
+        }
+
+        var btnSelectView = tabContent.querySelector('.btnSelectView');
+        btnSelectView.addEventListener('click', function (e) {
+
+            libraryBrowser.showLayoutMenu(e.target, self.getCurrentViewStyle(), self.getViewStyles());
+        });
+
+        btnSelectView.addEventListener('layoutchange', function (e) {
+
+            self.setCurrentViewStyle(e.detail.viewStyle);
+        });
+    };
+});

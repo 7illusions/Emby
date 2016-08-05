@@ -10,7 +10,6 @@ using MediaBrowser.Controller.Localization;
 using MediaBrowser.Dlna.Didl;
 using MediaBrowser.Dlna.Server;
 using MediaBrowser.Dlna.Service;
-using MediaBrowser.Model.Channels;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Entities;
@@ -24,6 +23,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using MediaBrowser.Controller.MediaEncoding;
 
 namespace MediaBrowser.Dlna.ContentDirectory
 {
@@ -34,6 +34,8 @@ namespace MediaBrowser.Dlna.ContentDirectory
         private readonly IUserDataManager _userDataManager;
         private readonly IServerConfigurationManager _config;
         private readonly User _user;
+        private readonly IUserViewManager _userViewManager;
+        private readonly IMediaEncoder _mediaEncoder;
 
         private const string NS_DC = "http://purl.org/dc/elements/1.1/";
         private const string NS_DIDL = "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/";
@@ -47,7 +49,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
 
         private readonly DeviceProfile _profile;
 
-        public ControlHandler(ILogger logger, ILibraryManager libraryManager, DeviceProfile profile, string serverAddress, string accessToken, IImageProcessor imageProcessor, IUserDataManager userDataManager, User user, int systemUpdateId, IServerConfigurationManager config, ILocalizationManager localization, IChannelManager channelManager, IMediaSourceManager mediaSourceManager)
+        public ControlHandler(ILogger logger, ILibraryManager libraryManager, DeviceProfile profile, string serverAddress, string accessToken, IImageProcessor imageProcessor, IUserDataManager userDataManager, User user, int systemUpdateId, IServerConfigurationManager config, ILocalizationManager localization, IChannelManager channelManager, IMediaSourceManager mediaSourceManager, IUserViewManager userViewManager, IMediaEncoder mediaEncoder)
             : base(config, logger)
         {
             _libraryManager = libraryManager;
@@ -55,10 +57,12 @@ namespace MediaBrowser.Dlna.ContentDirectory
             _user = user;
             _systemUpdateId = systemUpdateId;
             _channelManager = channelManager;
+            _userViewManager = userViewManager;
+            _mediaEncoder = mediaEncoder;
             _profile = profile;
             _config = config;
 
-            _didlBuilder = new DidlBuilder(profile, user, imageProcessor, serverAddress, accessToken, userDataManager, localization, mediaSourceManager, Logger, libraryManager);
+            _didlBuilder = new DidlBuilder(profile, user, imageProcessor, serverAddress, accessToken, userDataManager, localization, mediaSourceManager, Logger, libraryManager, _mediaEncoder);
         }
 
         protected override IEnumerable<KeyValuePair<string, string>> GetResult(string methodName, Headers methodParams)
@@ -107,7 +111,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
 
             var newbookmark = int.Parse(sparams["PosSecond"], _usCulture);
 
-            var userdata = _userDataManager.GetUserData(user.Id, item.GetUserDataKey());
+            var userdata = _userDataManager.GetUserData(user, item);
 
             userdata.PlaybackPositionTicks = TimeSpan.FromSeconds(newbookmark).Ticks;
 
@@ -232,7 +236,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
                 }
                 else
                 {
-                    result.DocumentElement.AppendChild(_didlBuilder.GetItemElement(result, item, null, null, deviceId, filter));
+                    result.DocumentElement.AppendChild(_didlBuilder.GetItemElement(_config.GetDlnaConfiguration(), result, item, null, null, deviceId, filter));
                 }
 
                 provided++;
@@ -258,7 +262,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
                     }
                     else
                     {
-                        result.DocumentElement.AppendChild(_didlBuilder.GetItemElement(result, childItem, item, serverItem.StubType, deviceId, filter));
+                        result.DocumentElement.AppendChild(_didlBuilder.GetItemElement(_config.GetDlnaConfiguration(), result, childItem, item, serverItem.StubType, deviceId, filter));
                     }
                 }
             }
@@ -335,7 +339,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
                 }
                 else
                 {
-                    result.DocumentElement.AppendChild(_didlBuilder.GetItemElement(result, i, item, serverItem.StubType, deviceId, filter));
+                    result.DocumentElement.AppendChild(_didlBuilder.GetItemElement(_config.GetDlnaConfiguration(), result, i, item, serverItem.StubType, deviceId, filter));
                 }
             }
 
@@ -397,10 +401,10 @@ namespace MediaBrowser.Dlna.ContentDirectory
                 SortOrder = sort.SortOrder,
                 User = user,
                 Recursive = true,
-                Filter = FilterUnsupportedContent,
+                IsMissing = false,
+                ExcludeItemTypes = new[] { typeof(Game).Name, typeof(Book).Name },
                 IsFolder = isFolder,
                 MediaTypes = mediaTypes.ToArray()
-
             });
         }
 
@@ -457,7 +461,10 @@ namespace MediaBrowser.Dlna.ContentDirectory
                 SortBy = sortOrders.ToArray(),
                 SortOrder = sort.SortOrder,
                 User = user,
-                Filter = FilterUnsupportedContent
+                IsMissing = false,
+                PresetViews = new[] { CollectionType.Movies, CollectionType.TvShows, CollectionType.Music },
+                ExcludeItemTypes = new[] { typeof(Game).Name, typeof(Book).Name },
+                IsPlaceHolder = false
 
             }).ConfigureAwait(false);
 
@@ -481,23 +488,17 @@ namespace MediaBrowser.Dlna.ContentDirectory
 
         private QueryResult<ServerItem> GetItemsFromPerson(Person person, User user, int? startIndex, int? limit)
         {
-            var itemsWithPerson = _libraryManager.GetItems(new InternalItemsQuery
+            var itemsResult = _libraryManager.GetItemsResult(new InternalItemsQuery(user)
             {
-                Person = person.Name
+                Person = person.Name,
+                IncludeItemTypes = new[] { typeof(Movie).Name, typeof(Series).Name, typeof(Trailer).Name },
+                SortBy = new[] { ItemSortBy.SortName },
+                Limit = limit,
+                StartIndex = startIndex
 
-            }).Items;
+            });
 
-            var items = itemsWithPerson
-                .Where(i => i is Movie || i is Series || i is IChannelItem)
-                .Where(i => i.IsVisibleStandalone(user))
-                .ToList();
-
-            items = _libraryManager.Sort(items, user, new[] { ItemSortBy.SortName }, SortOrder.Ascending)
-                .Skip(startIndex ?? 0)
-                .Take(limit ?? int.MaxValue)
-                .ToList();
-
-            var serverItems = items.Select(i => new ServerItem
+            var serverItems = itemsResult.Items.Select(i => new ServerItem
             {
                 Item = i,
                 StubType = null
@@ -506,7 +507,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
 
             return new QueryResult<ServerItem>
             {
-                TotalRecordCount = serverItems.Length,
+                TotalRecordCount = itemsResult.TotalRecordCount,
                 Items = serverItems
             };
         }
@@ -523,7 +524,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
             if (context == null || context.IsFolder)
             {
                 var movie = item as Movie;
-                if (movie != null && options.EnableEnhancedMovies)
+                if (movie != null && options.EnableMovieFolders)
                 {
                     if (movie.GetTrailerIds().Count > 0 ||
                         movie.SpecialFeatureIds.Count > 0)
@@ -580,29 +581,6 @@ namespace MediaBrowser.Dlna.ContentDirectory
             });
         }
 
-        private bool FilterUnsupportedContent(BaseItem i)
-        {
-            // Unplayable
-            if (i.LocationType == LocationType.Virtual && !i.IsFolder)
-            {
-                return false;
-            }
-
-            // Unplayable
-            var supportsPlaceHolder = i as ISupportsPlaceHolders;
-            if (supportsPlaceHolder != null && supportsPlaceHolder.IsPlaceHolder)
-            {
-                return false;
-            }
-
-            if (i is Game || i is Book)
-            {
-                //return false;
-            }
-
-            return true;
-        }
-
         private ServerItem GetItemFromObjectId(string id, User user)
         {
             return DidlBuilder.IsIdRoot(id)
@@ -624,7 +602,7 @@ namespace MediaBrowser.Dlna.ContentDirectory
                 id = id.Substring(paramsIndex + paramsSrch.Length);
 
                 var parts = id.Split(';');
-                id = parts[24];
+                id = parts[23];
             }
 
             if (id.StartsWith("folder_", StringComparison.OrdinalIgnoreCase))

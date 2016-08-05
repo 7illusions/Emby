@@ -10,6 +10,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using MediaBrowser.Model.Querying;
 
 namespace MediaBrowser.Api
 {
@@ -102,11 +104,14 @@ namespace MediaBrowser.Api
         /// <returns>System.Object.</returns>
         public object Get(GetGameSystemSummaries request)
         {
-            var gameSystems = GetAllLibraryItems(request.UserId, _userManager, _libraryManager, null, i => i is GameSystem)
+            var user = request.UserId == null ? null : _userManager.GetUserById(request.UserId);
+            var query = new InternalItemsQuery(user)
+            {
+                IncludeItemTypes = new[] { typeof(GameSystem).Name }
+            };
+            var gameSystems = _libraryManager.GetItemList(query)
                 .Cast<GameSystem>()
                 .ToList();
-
-            var user = request.UserId == null ? null : _userManager.GetUserById(request.UserId);
 
             var result = gameSystems
                 .Select(i => GetSummary(i, user))
@@ -119,8 +124,14 @@ namespace MediaBrowser.Api
 
         public object Get(GetPlayerIndex request)
         {
-            var games = GetAllLibraryItems(request.UserId, _userManager, _libraryManager, null, i => i is Game)
-                .Cast<Game>();
+            var user = request.UserId == null ? null : _userManager.GetUserById(request.UserId);
+            var query = new InternalItemsQuery(user)
+            {
+                IncludeItemTypes = new[] { typeof(Game).Name }
+            };
+            var games = _libraryManager.GetItemList(query)
+                .Cast<Game>()
+                .ToList();
 
             var lookup = games
                 .ToLookup(i => i.PlayersSupported ?? -1)
@@ -151,7 +162,10 @@ namespace MediaBrowser.Api
 
             var items = user == null ? 
                 system.GetRecursiveChildren(i => i is Game) :
-                system.GetRecursiveChildren(user, i => i is Game);
+                system.GetRecursiveChildren(user, new InternalItemsQuery(user)
+                {
+                    IncludeItemTypes = new[] { typeof(Game).Name }
+                });
 
             var games = items.Cast<Game>().ToList();
 
@@ -171,20 +185,42 @@ namespace MediaBrowser.Api
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        public object Get(GetSimilarGames request)
+        public async Task<object> Get(GetSimilarGames request)
         {
-            var dtoOptions = GetDtoOptions(request);
-
-            var result = SimilarItemsHelper.GetSimilarItemsResult(dtoOptions, _userManager,
-                _itemRepo,
-                _libraryManager,
-                _userDataRepository,
-                _dtoService,
-                Logger,
-                request, item => item is Game,
-                SimilarItemsHelper.GetSimiliarityScore);
+            var result = await GetSimilarItemsResult(request).ConfigureAwait(false);
 
             return ToOptimizedSerializedResultUsingCache(result);
+        }
+
+        private async Task<QueryResult<BaseItemDto>> GetSimilarItemsResult(BaseGetSimilarItemsFromItem request)
+        {
+            var user = !string.IsNullOrWhiteSpace(request.UserId) ? _userManager.GetUserById(request.UserId) : null;
+
+            var item = string.IsNullOrEmpty(request.Id) ?
+                (!string.IsNullOrWhiteSpace(request.UserId) ? user.RootFolder :
+                _libraryManager.RootFolder) : _libraryManager.GetItemById(request.Id);
+
+            var itemsResult = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                Limit = request.Limit,
+                IncludeItemTypes = new[]
+                {
+                        typeof(Game).Name
+                },
+                SimilarTo = item
+
+            }).ToList();
+
+            var dtoOptions = GetDtoOptions(request);
+
+            var result = new QueryResult<BaseItemDto>
+            {
+                Items = (await _dtoService.GetBaseItemDtos(itemsResult, dtoOptions, user).ConfigureAwait(false)).ToArray(),
+
+                TotalRecordCount = itemsResult.Count
+            };
+
+            return result;
         }
     }
 }

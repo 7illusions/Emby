@@ -1,20 +1,16 @@
-﻿using MediaBrowser.Model.Configuration;
-using MediaBrowser.Model.Drawing;
+﻿using MediaBrowser.Model.Drawing;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
-using MediaBrowser.Model.Users;
 
 namespace MediaBrowser.Controller.Entities
 {
-    public class Photo : BaseItem, IHasTags, IHasTaglines
+    public class Photo : BaseItem, IHasTaglines
     {
-        public List<string> Tags { get; set; }
         public List<string> Taglines { get; set; }
 
         public Photo()
         {
-            Tags = new List<string>();
             Taglines = new List<string>();
         }
 
@@ -51,8 +47,19 @@ namespace MediaBrowser.Controller.Entities
         {
             get
             {
-                return Parents.OfType<PhotoAlbum>().FirstOrDefault();
+                return GetParents().OfType<PhotoAlbum>().FirstOrDefault();
             }
+        }
+
+        [IgnoreDataMember]
+        public override bool EnableForceSaveOnDateModifiedChange
+        {
+            get { return true; }
+        }
+
+        public override bool CanDownload()
+        {
+            return true;
         }
 
         public int? Width { get; set; }
@@ -70,10 +77,5 @@ namespace MediaBrowser.Controller.Entities
         public double? Longitude { get; set; }
         public double? Altitude { get; set; }
         public int? IsoSpeedRating { get; set; }
-
-        protected override bool GetBlockUnratedValue(UserPolicy config)
-        {
-            return config.BlockUnratedItems.Contains(UnratedItem.Other);
-        }
     }
 }

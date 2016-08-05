@@ -1,5 +1,4 @@
 ﻿using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Dto;
@@ -16,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
 
 namespace MediaBrowser.Api.Images
 {
@@ -237,10 +237,10 @@ namespace MediaBrowser.Api.Images
                     contentPath = await reader.ReadToEndAsync().ConfigureAwait(false);
                 }
 
-                if (File.Exists(contentPath))
-                {
-                    return ToStaticFileResult(contentPath);
-                }
+				if (_fileSystem.FileExists(contentPath))
+				{
+				    return await ResultFactory.GetStaticFileResult(Request, contentPath).ConfigureAwait(false);
+				}
             }
             catch (DirectoryNotFoundException)
             {
@@ -259,9 +259,9 @@ namespace MediaBrowser.Api.Images
                 contentPath = await reader.ReadToEndAsync().ConfigureAwait(false);
             }
 
-            return ToStaticFileResult(contentPath);
+            return await ResultFactory.GetStaticFileResult(Request, contentPath).ConfigureAwait(false);
         }
-        
+
         /// <summary>
         /// Downloads the image.
         /// </summary>
@@ -281,7 +281,7 @@ namespace MediaBrowser.Api.Images
 
             var fullCachePath = GetFullCachePath(urlHash + "." + ext);
 
-            Directory.CreateDirectory(Path.GetDirectoryName(fullCachePath));
+			_fileSystem.CreateDirectory(Path.GetDirectoryName(fullCachePath));
             using (var stream = result.Content)
             {
                 using (var filestream = _fileSystem.GetFileStream(fullCachePath, FileMode.Create, FileAccess.Write, FileShare.Read, true))
@@ -290,7 +290,7 @@ namespace MediaBrowser.Api.Images
                 }
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(pointerCachePath));
+			_fileSystem.CreateDirectory(Path.GetDirectoryName(pointerCachePath));
             using (var writer = new StreamWriter(pointerCachePath))
             {
                 await writer.WriteAsync(fullCachePath).ConfigureAwait(false);

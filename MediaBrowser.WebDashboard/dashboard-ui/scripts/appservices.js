@@ -1,4 +1,4 @@
-﻿(function ($, document) {
+﻿define(['jQuery'], function ($) {
 
     function reloadList(page) {
 
@@ -10,9 +10,9 @@
 
         var promise2 = ApiClient.getInstalledPlugins();
 
-        $.when(promise1, promise2).done(function (response1, response2) {
-            renderInstalled(page, response1[0], response2[0]);
-            renderCatalog(page, response1[0], response2[0]);
+        Promise.all([promise1, promise2]).then(function (responses) {
+            renderInstalled(page, responses[0], responses[1]);
+            renderCatalog(page, responses[0], responses[1]);
         });
     }
 
@@ -46,8 +46,10 @@
                     return a.guid == i.Id;
                 })[0];
 
-                return catalogEntry && catalogEntry.category == category;
-
+                if (catalogEntry) {
+                    return catalogEntry.category == category;
+                }
+                return false;
             });
 
             PluginsPage.renderPlugins(page, installedPlugins);
@@ -72,15 +74,13 @@
         });
     }
 
-    $(document).on('pagebeforeshow pageinit pageshow', "#appServicesPage", function () {
+    $(document).on('pagebeforeshow pageshow', "#appServicesPage", function () {
 
         // This needs both events for the helpurl to get done at the right time
 
         var page = this;
 
         var context = getParameterByName('context');
-
-        $('.sectionTabs', page).hide();
 
         if (context == 'sync') {
             Dashboard.setPageTitle(Globalize.translate('TitleSync'));
@@ -95,24 +95,11 @@
             page.setAttribute('data-helpurl', 'https://github.com/MediaBrowser/Wiki/wiki/Notifications');
         }
 
-    }).on('pagebeforeshow', "#appServicesPage", function () {
-
-        // This needs both events for the helpurl to get done at the right time
-
-        var page = this;
-
-        var context = getParameterByName('context');
-
-        $('.sectionTabs', page).hide();
-        $('.' + context + 'SectionTabs', page).show();
-
-    }).on('pageshowready', "#appServicesPage", function () {
-
-        // This needs both events for the helpurl to get done at the right time
+    }).on('pageshow', "#appServicesPage", function () {
 
         var page = this;
 
         reloadList(page);
     });
 
-})(jQuery, document);
+});

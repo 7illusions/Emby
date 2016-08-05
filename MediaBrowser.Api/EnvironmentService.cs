@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using CommonIO;
 
 namespace MediaBrowser.Api
 {
@@ -44,6 +45,11 @@ namespace MediaBrowser.Api
         /// <value><c>true</c> if [include hidden]; otherwise, <c>false</c>.</value>
         [ApiMember(Name = "IncludeHidden", Description = "An optional filter to include or exclude hidden files and folders. true/false", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
         public bool IncludeHidden { get; set; }
+
+        public GetDirectoryContents()
+        {
+            IncludeHidden = true;
+        }
     }
 
     [Route("/Environment/NetworkShares", "GET", Summary = "Gets shares from a network device")]
@@ -84,6 +90,17 @@ namespace MediaBrowser.Api
         public string Path { get; set; }
     }
 
+    public class DefaultDirectoryBrowserInfo
+    {
+        public string Path { get; set; }
+    }
+
+    [Route("/Environment/DefaultDirectoryBrowser", "GET", Summary = "Gets the parent path of a given path")]
+    public class GetDefaultDirectoryBrowser : IReturn<DefaultDirectoryBrowserInfo>
+    {
+        
+    }
+
     /// <summary>
     /// Class EnvironmentService
     /// </summary>
@@ -96,13 +113,13 @@ namespace MediaBrowser.Api
         /// The _network manager
         /// </summary>
         private readonly INetworkManager _networkManager;
+        private IFileSystem _fileSystem;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="EnvironmentService" /> class.
         /// </summary>
         /// <param name="networkManager">The network manager.</param>
-        /// <exception cref="System.ArgumentNullException">networkManager</exception>
-        public EnvironmentService(INetworkManager networkManager)
+        public EnvironmentService(INetworkManager networkManager, IFileSystem fileSystem)
         {
             if (networkManager == null)
             {
@@ -110,6 +127,30 @@ namespace MediaBrowser.Api
             }
 
             _networkManager = networkManager;
+            _fileSystem = fileSystem;
+        }
+
+        public object Get(GetDefaultDirectoryBrowser request)
+        {
+            var result = new DefaultDirectoryBrowserInfo();
+
+            if (Environment.OSVersion.Platform == PlatformID.Unix)
+            {
+                try
+                {
+                    var qnap = "/share/CACHEDEV1_DATA";
+                    if (Directory.Exists(qnap))
+                    {
+                        result.Path = qnap;
+                    }
+                }
+                catch
+                {
+
+                }
+            }
+
+            return ToOptimizedResult(result);
         }
 
         /// <summary>
@@ -117,8 +158,6 @@ namespace MediaBrowser.Api
         /// </summary>
         /// <param name="request">The request.</param>
         /// <returns>System.Object.</returns>
-        /// <exception cref="System.ArgumentNullException">Path</exception>
-        /// <exception cref="System.ArgumentException"></exception>
         public object Get(GetDirectoryContents request)
         {
             var path = request.Path;
@@ -222,15 +261,14 @@ namespace MediaBrowser.Api
         private IEnumerable<FileSystemEntryInfo> GetFileSystemEntries(GetDirectoryContents request)
         {
             // using EnumerateFileSystemInfos doesn't handle reparse points (symlinks)
-            var entries = new DirectoryInfo(request.Path).EnumerateDirectories("*", SearchOption.TopDirectoryOnly)
-                .Concat<FileSystemInfo>(new DirectoryInfo(request.Path).EnumerateFiles("*", SearchOption.TopDirectoryOnly)).Where(i =>
+            var entries = _fileSystem.GetFileSystemEntries(request.Path).Where(i =>
             {
                 if (!request.IncludeHidden && i.Attributes.HasFlag(FileAttributes.Hidden))
                 {
                     return false;
                 }
 
-                var isDirectory = i.Attributes.HasFlag(FileAttributes.Directory);
+                var isDirectory = i.IsDirectory;
 
                 if (!request.IncludeFiles && !isDirectory)
                 {
@@ -249,7 +287,7 @@ namespace MediaBrowser.Api
             {
                 Name = f.Name,
                 Path = f.FullName,
-                Type = f.Attributes.HasFlag(FileAttributes.Directory) ? FileSystemEntryType.Directory : FileSystemEntryType.File
+                Type = f.IsDirectory ? FileSystemEntryType.Directory : FileSystemEntryType.File
 
             }).ToList();
         }

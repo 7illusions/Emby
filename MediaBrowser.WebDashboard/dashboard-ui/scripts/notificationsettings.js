@@ -1,12 +1,12 @@
-﻿(function () {
+﻿define(['jQuery'], function ($) {
 
     function reload(page) {
 
         Dashboard.showLoadingMsg();
 
-        ApiClient.getJSON(ApiClient.getUrl("Notifications/Types")).done(function (list) {
+        ApiClient.getJSON(ApiClient.getUrl("Notifications/Types")).then(function (list) {
 
-            var html = '<ul data-role="listview" data-inset="true">';
+            var html = '';
 
             var lastCategory = "";
 
@@ -16,29 +16,45 @@
 
                 if (i.Category != lastCategory) {
                     lastCategory = i.Category;
-                    itemHtml += '<li data-role="list-divider">';
+
+                    if (lastCategory) {
+                        itemHtml += '</div>';
+
+                    }
+                    itemHtml += '<h1>';
                     itemHtml += i.Category;
-                    itemHtml += '</li>';
+                    itemHtml += '</h1>';
+
+                    itemHtml += '<div class="paperList" style="margin-bottom:2em;">';
                 }
 
-                itemHtml += '<li>';
-                itemHtml += '<a href="notificationsetting.html?type=' + i.Type + '">';
-                itemHtml += '<h3>' + i.Name + '</h3>';
+                itemHtml += '<a class="clearLink" href="notificationsetting.html?type=' + i.Type + '">';
+                itemHtml += '<paper-icon-item>';
 
                 if (i.Enabled) {
-                    itemHtml += '<p style="color:#009F00;">' + Globalize.translate('LabelEnabled') + '</p>';
-                } else {
-                    itemHtml += '<p style="color:#cc0000;">' + Globalize.translate('LabelDisabled') + '</p>';
+                    itemHtml += '<paper-fab mini class="blue" icon="notifications-active" item-icon></paper-fab>';
+                }
+                else {
+                    itemHtml += '<paper-fab mini style="background-color:#999;" icon="notifications-off" item-icon></paper-fab>';
                 }
 
+                itemHtml += '<paper-item-body two-line>';
+                itemHtml += '<div>' + i.Name + '</div>';
+
+                itemHtml += '</paper-item-body>';
+
+                itemHtml += '<button type="button" is="paper-icon-button-light"><iron-icon icon="mode-edit"></iron-icon></button>';
+
+                itemHtml += '</paper-icon-item>';
                 itemHtml += '</a>';
-                itemHtml += '</li>';
 
                 return itemHtml;
 
             }).join('');
 
-            html += '</ul>';
+            if (list.length) {
+                html += '</div>';
+            }
 
             $('.notificationList', page).html(html).trigger('create');
 
@@ -46,11 +62,27 @@
         });
     }
 
-    $(document).on('pageshowready', "#notificationSettingsPage", function () {
+    function getTabs() {
+        return [
+        {
+            href: 'notificationsettings.html',
+            name: Globalize.translate('TabNotifications')
+        },
+        {
+            href: 'appservices.html?context=notifications',
+            name: Globalize.translate('TabServices')
+        }];
+    }
 
-        var page = this;
+    return function (view, params) {
 
-        reload(page);
-    });
+        view.addEventListener('viewshow', function () {
 
-})(jQuery, window);
+            LibraryMenu.setTabs('notifications', 0, getTabs);
+
+            require(['paper-fab', 'paper-item-body', 'paper-icon-item'], function () {
+                reload(view);
+            });
+        });
+    };
+});
