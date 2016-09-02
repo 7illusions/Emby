@@ -74,6 +74,8 @@ namespace MediaBrowser.Model.Configuration
         /// <value>The metadata path.</value>
         public string MetadataPath { get; set; }
 
+        public string LastVersion { get; set; }
+
         /// <summary>
         /// Gets or sets the display name of the season zero.
         /// </summary>
@@ -174,14 +176,11 @@ namespace MediaBrowser.Model.Configuration
         public string UICulture { get; set; }
 
         public PeopleMetadataOptions PeopleMetadataOptions { get; set; }
-        public bool FindInternetTrailers { get; set; }
 
         public bool SaveMetadataHidden { get; set; }
 
         public NameValuePair[] ContentTypes { get; set; }
 
-        public bool EnableAudioArchiveFiles { get; set; }
-        public bool EnableVideoArchiveFiles { get; set; }
         public int RemoteClientBitrateLimit { get; set; }
 
         public AutoOnOff EnableLibraryMonitor { get; set; }
@@ -204,6 +203,7 @@ namespace MediaBrowser.Model.Configuration
         public bool DisplaySpecialsWithinSeasons { get; set; }
         public bool DisplayCollectionsView { get; set; }
         public string[] LocalNetworkAddresses { get; set; }
+        public string[] CodecsUsed { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ServerConfiguration" /> class.
@@ -212,6 +212,7 @@ namespace MediaBrowser.Model.Configuration
         {
             LocalNetworkAddresses = new string[] { };
             Migrations = new string[] { };
+            CodecsUsed = new string[] { };
             SqliteCacheSize = 0;
 
             EnableLocalizedGuids = true;
@@ -241,7 +242,6 @@ namespace MediaBrowser.Model.Configuration
             LibraryMonitorDelay = 60;
 
             EnableInternetProviders = true;
-            FindInternetTrailers = true;
 
             PathSubstitutions = new PathSubstitution[] { };
             ContentTypes = new NameValuePair[] { };

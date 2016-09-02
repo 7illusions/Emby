@@ -1,4 +1,4 @@
-﻿define(['dialogHelper', 'paper-checkbox', 'paper-input', 'emby-button', 'paper-icon-button-light'], function (dialogHelper) {
+﻿define(['dialogHelper', 'paper-checkbox', 'emby-input', 'emby-button', 'paper-icon-button-light', 'formDialogStyle'], function (dialogHelper) {
 
     var extractedName;
     var extractedYear;
@@ -216,7 +216,7 @@
                     dlg.innerHTML = html;
                     document.body.appendChild(dlg);
 
-                    dlg.querySelector('.dialogHeaderTitle').innerHTML = Globalize.translate('FileOrganizeManually');
+                    dlg.querySelector('.formDialogHeaderTitle').innerHTML = Globalize.translate('FileOrganizeManually');
 
                     dialogHelper.open(dlg);
 
