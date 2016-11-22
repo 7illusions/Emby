@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Common.Net;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Model.Logging;
 
@@ -17,12 +19,14 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
         private readonly ILogger _logger;
         private readonly IFileSystem _fileSystem;
         private readonly IHttpClient _httpClient;
+        private readonly IServerApplicationHost _appHost;
 
-        public M3uParser(ILogger logger, IFileSystem fileSystem, IHttpClient httpClient)
+        public M3uParser(ILogger logger, IFileSystem fileSystem, IHttpClient httpClient, IServerApplicationHost appHost)
         {
             _logger = logger;
             _fileSystem = fileSystem;
             _httpClient = httpClient;
+            _appHost = appHost;
         }
 
         public async Task<List<M3UChannel>> Parse(string url, string channelIdPrefix, string tunerHostId, CancellationToken cancellationToken)
@@ -40,7 +44,13 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
         {
             if (url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
-                return _httpClient.Get(url, cancellationToken);
+                return _httpClient.Get(new HttpRequestOptions
+                {
+                    Url = url,
+                    CancellationToken = cancellationToken,
+                    // Some data providers will require a user agent
+                    UserAgent = _appHost.FriendlyName + "/" + _appHost.ApplicationVersion
+                });
             }
             return Task.FromResult(_fileSystem.OpenRead(url));
         }
@@ -70,7 +80,7 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
                 }
                 else if (!string.IsNullOrWhiteSpace(extInf) && !line.StartsWith("#", StringComparison.OrdinalIgnoreCase))
                 {
-                    var channel = GetChannelnfo(extInf, tunerHostId);
+                    var channel = GetChannelnfo(extInf, tunerHostId, line);
                     channel.Id = channelIdPrefix + urlHash + line.GetMD5().ToString("N");
                     channel.Path = line;
                     channels.Add(channel);
@@ -79,7 +89,7 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
             }
             return channels;
         }
-        private M3UChannel GetChannelnfo(string extInf, string tunerHostId)
+        private M3UChannel GetChannelnfo(string extInf, string tunerHostId, string mediaUrl)
         {
             var titleIndex = extInf.LastIndexOf(',');
             var channel = new M3UChannel();
@@ -87,8 +97,6 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
 
             channel.Number = extInf.Trim().Split(' ')[0] ?? "0";
             channel.Name = extInf.Substring(titleIndex + 1);
-            
-            if(channel.Number == "-1") { channel.Number = "0"; }         
 
             //Check for channel number with the format from SatIp            
             int number;                   
@@ -101,15 +109,42 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
                     channel.Name = channel.Name.Substring(numberIndex + 1);
                 }
             }
-            channel.ImageUrl = FindProperty("tvg-logo", extInf, null);
-            channel.Number = FindProperty("tvg-id", extInf, channel.Number);
-            channel.Number = FindProperty("channel-id", extInf, channel.Number);
-            channel.Name = FindProperty("tvg-name", extInf, channel.Name);
-            channel.Name = FindProperty("tvg-id", extInf, channel.Name);
+
+            if (string.Equals(channel.Number, "-1", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(mediaUrl))
+            {
+                channel.Number = Path.GetFileNameWithoutExtension(mediaUrl.Split('/').Last());
+            }
+
+            if (string.Equals(channel.Number, "-1", StringComparison.OrdinalIgnoreCase))
+            {
+                channel.Number = "0";
+            }
+
+            channel.ImageUrl = FindProperty("tvg-logo", extInf);
+
+            var name = FindProperty("tvg-name", extInf);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                 name = FindProperty("tvg-id", extInf);
+            }
+
+            channel.Name = name;
+
+            var numberString = FindProperty("tvg-id", extInf);
+            if (string.IsNullOrWhiteSpace(numberString))
+            {
+                numberString = FindProperty("channel-id", extInf);
+            }
+
+            if (!string.IsNullOrWhiteSpace(numberString))
+            {
+                channel.Number = numberString;
+            }
+
             return channel;
 
         }
-        private string FindProperty(string property, string properties, string defaultResult = "")
+        private string FindProperty(string property, string properties)
         {
             var reg = new Regex(@"([a-z0-9\-_]+)=\""([^""]+)\""", RegexOptions.IgnoreCase);
             var matches = reg.Matches(properties);
@@ -120,7 +155,7 @@ namespace MediaBrowser.Server.Implementations.LiveTv.TunerHosts
                     return match.Groups[2].Value;
                 }
             }
-            return defaultResult;
+            return null;
         }
     }
 

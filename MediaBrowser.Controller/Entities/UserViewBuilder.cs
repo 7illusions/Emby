@@ -96,7 +96,7 @@ namespace MediaBrowser.Controller.Entities
                             Limit = query.Limit,
                             IsAiring = true
 
-                        }, CancellationToken.None).ConfigureAwait(false);
+                        }, new Dto.DtoOptions(), CancellationToken.None).ConfigureAwait(false);
 
                         return GetResult(result);
                     }
@@ -201,7 +201,7 @@ namespace MediaBrowser.Controller.Entities
                     return await GetMusicFolders(queryParent, user, query).ConfigureAwait(false);
 
                 case SpecialFolder.MusicGenres:
-                    return await GetMusicGenres(queryParent, user, query).ConfigureAwait(false);
+                    return GetMusicGenres(queryParent, user, query);
 
                 case SpecialFolder.MusicGenre:
                     return await GetMusicGenreItems(queryParent, displayParent, user, query).ConfigureAwait(false);
@@ -290,32 +290,20 @@ namespace MediaBrowser.Controller.Entities
             return GetResult(list, parent, query);
         }
 
-        private async Task<QueryResult<BaseItem>> GetMusicGenres(Folder parent, User user, InternalItemsQuery query)
+        private QueryResult<BaseItem> GetMusicGenres(Folder parent, User user, InternalItemsQuery query)
         {
-            var tasks = GetRecursiveChildren(parent, user, new[] { CollectionType.Music, CollectionType.MusicVideos })
-                .Where(i => !i.IsFolder)
-                .SelectMany(i => i.Genres)
-                .DistinctNames()
-                .Select(i =>
-                {
-                    try
-                    {
-                        return _libraryManager.GetMusicGenre(i);
-                    }
-                    catch
-                    {
-                        // Full exception logged at lower levels
-                        _logger.Error("Error getting genre");
-                        return null;
-                    }
+            var result = _libraryManager.GetMusicGenres(new InternalItemsQuery(user)
+            {
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
 
-                })
-                .Where(i => i != null)
-                .Select(i => GetUserView(i.Name, SpecialFolder.MusicGenre, i.SortName, parent));
-
-            var genres = await Task.WhenAll(tasks).ConfigureAwait(false);
-
-            return GetResult(genres, parent, query);
+            return new QueryResult<BaseItem>
+            {
+                TotalRecordCount = result.TotalRecordCount,
+                Items = result.Items.Select(i => i.Item1).ToArray()
+            };
         }
 
         private async Task<QueryResult<BaseItem>> GetMusicGenreItems(Folder queryParent, Folder displayParent, User user, InternalItemsQuery query)
@@ -332,50 +320,51 @@ namespace MediaBrowser.Controller.Entities
 
         private QueryResult<BaseItem> GetMusicAlbumArtists(Folder parent, User user, InternalItemsQuery query)
         {
-            var items = parent.QueryRecursive(new InternalItemsQuery(user)
+            var artists = _libraryManager.GetAlbumArtists(new InternalItemsQuery(user)
             {
-                Recursive = true,
-                ParentId = parent.Id,
-                IncludeItemTypes = new[] { typeof(Audio.Audio).Name },
-                EnableTotalRecordCount = false
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
 
-            }).Items.Cast<IHasAlbumArtist>();
-
-            var artists = _libraryManager.GetAlbumArtists(items);
-
-            return GetResult(artists, parent, query);
+            return new QueryResult<BaseItem>
+            {
+                TotalRecordCount = artists.TotalRecordCount,
+                Items = artists.Items.Select(i => i.Item1).ToArray()
+            };
         }
 
         private QueryResult<BaseItem> GetMusicArtists(Folder parent, User user, InternalItemsQuery query)
         {
-            var items = parent.QueryRecursive(new InternalItemsQuery(user)
+            var artists = _libraryManager.GetArtists(new InternalItemsQuery(user)
             {
-                Recursive = true,
-                ParentId = parent.Id,
-                IncludeItemTypes = new[] { typeof(Audio.Audio).Name, typeof(MusicVideo).Name },
-                EnableTotalRecordCount = false
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
 
-            }).Items.Cast<IHasArtist>();
-
-            var artists = _libraryManager.GetArtists(items);
-
-            return GetResult(artists, parent, query);
+            return new QueryResult<BaseItem>
+            {
+                TotalRecordCount = artists.TotalRecordCount,
+                Items = artists.Items.Select(i => i.Item1).ToArray()
+            };
         }
 
         private QueryResult<BaseItem> GetFavoriteArtists(Folder parent, User user, InternalItemsQuery query)
         {
-            var items = parent.QueryRecursive(new InternalItemsQuery(user)
+            var artists = _libraryManager.GetArtists(new InternalItemsQuery(user)
             {
-                Recursive = true,
-                ParentId = parent.Id,
-                IncludeItemTypes = new[] { typeof(Audio.Audio).Name },
-                EnableTotalRecordCount = false
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit,
+                IsFavorite = true
+            });
 
-            }).Items.Cast<IHasAlbumArtist>();
-
-            var artists = _libraryManager.GetAlbumArtists(items).Where(i => _userDataManager.GetUserData(user, i).IsFavorite);
-
-            return GetResult(artists, parent, query);
+            return new QueryResult<BaseItem>
+            {
+                TotalRecordCount = artists.TotalRecordCount,
+                Items = artists.Items.Select(i => i.Item1).ToArray()
+            };
         }
 
         private QueryResult<BaseItem> GetMusicPlaylists(Folder parent, User user, InternalItemsQuery query)
@@ -424,7 +413,7 @@ namespace MediaBrowser.Controller.Entities
 
             query.SortBy = new string[] { };
 
-            return PostFilterAndSort(items, parent, null, query);
+            return PostFilterAndSort(items, parent, null, query, false, true);
         }
 
         private QueryResult<BaseItem> GetFavoriteSongs(Folder parent, User user, InternalItemsQuery query)
@@ -577,35 +566,18 @@ namespace MediaBrowser.Controller.Entities
 
         private async Task<QueryResult<BaseItem>> GetMovieGenres(Folder parent, User user, InternalItemsQuery query)
         {
-            var tasks = parent.QueryRecursive(new InternalItemsQuery(user)
+            var result = _libraryManager.GetGenres(new InternalItemsQuery(user)
             {
-                IncludeItemTypes = new[] { typeof(Movie).Name },
-                Recursive = true,
-                EnableTotalRecordCount = false
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
 
-            }).Items
-                .SelectMany(i => i.Genres)
-                .DistinctNames()
-                .Select(i =>
-                {
-                    try
-                    {
-                        return _libraryManager.GetGenre(i);
-                    }
-                    catch
-                    {
-                        // Full exception logged at lower levels
-                        _logger.Error("Error getting genre");
-                        return null;
-                    }
-
-                })
-                .Where(i => i != null)
-                .Select(i => GetUserView(i.Name, SpecialFolder.MovieGenre, i.SortName, parent));
-
-            var genres = await Task.WhenAll(tasks).ConfigureAwait(false);
-
-            return GetResult(genres, parent, query);
+            return new QueryResult<BaseItem>
+            {
+                TotalRecordCount = result.TotalRecordCount,
+                Items = result.Items.Select(i => i.Item1).ToArray()
+            };
         }
 
         private async Task<QueryResult<BaseItem>> GetMovieGenreItems(Folder queryParent, Folder displayParent, User user, InternalItemsQuery query)
@@ -720,35 +692,18 @@ namespace MediaBrowser.Controller.Entities
 
         private async Task<QueryResult<BaseItem>> GetTvGenres(Folder parent, User user, InternalItemsQuery query)
         {
-            var tasks = parent.QueryRecursive(new InternalItemsQuery(user)
+            var result = _libraryManager.GetGenres(new InternalItemsQuery(user)
             {
-                IncludeItemTypes = new[] { typeof(Series).Name },
-                Recursive = true,
-                EnableTotalRecordCount = false
+                AncestorIds = new[] { parent.Id.ToString("N") },
+                StartIndex = query.StartIndex,
+                Limit = query.Limit
+            });
 
-            }).Items
-                .SelectMany(i => i.Genres)
-                .DistinctNames()
-                .Select(i =>
-                {
-                    try
-                    {
-                        return _libraryManager.GetGenre(i);
-                    }
-                    catch
-                    {
-                        // Full exception logged at lower levels
-                        _logger.Error("Error getting genre");
-                        return null;
-                    }
-
-                })
-                .Where(i => i != null)
-                .Select(i => GetUserView(i.Name, SpecialFolder.TvGenre, i.SortName, parent));
-
-            var genres = await Task.WhenAll(tasks).ConfigureAwait(false);
-
-            return GetResult(genres, parent, query);
+            return new QueryResult<BaseItem>
+            {
+                TotalRecordCount = result.TotalRecordCount,
+                Items = result.Items.Select(i => i.Item1).ToArray()
+            };
         }
 
         private QueryResult<BaseItem> GetTvGenreItems(Folder queryParent, Folder displayParent, User user, InternalItemsQuery query)
@@ -780,7 +735,7 @@ namespace MediaBrowser.Controller.Entities
         {
             items = items.Where(i => Filter(i, query.User, query, _userDataManager, _libraryManager));
 
-            return PostFilterAndSort(items, queryParent, null, query, _libraryManager, _config);
+            return PostFilterAndSort(items, queryParent, null, query, _libraryManager, _config, true, true);
         }
 
         public static bool FilterItem(BaseItem item, InternalItemsQuery query)
@@ -791,9 +746,11 @@ namespace MediaBrowser.Controller.Entities
         private QueryResult<BaseItem> PostFilterAndSort(IEnumerable<BaseItem> items,
             BaseItem queryParent,
             int? totalRecordLimit,
-            InternalItemsQuery query)
+            InternalItemsQuery query,
+            bool collapseBoxSetItems,
+            bool enableSorting)
         {
-            return PostFilterAndSort(items, queryParent, totalRecordLimit, query, _libraryManager, _config);
+            return PostFilterAndSort(items, queryParent, totalRecordLimit, query, _libraryManager, _config, collapseBoxSetItems, enableSorting);
         }
 
         public static QueryResult<BaseItem> PostFilterAndSort(IEnumerable<BaseItem> items,
@@ -801,7 +758,9 @@ namespace MediaBrowser.Controller.Entities
             int? totalRecordLimit,
             InternalItemsQuery query,
             ILibraryManager libraryManager,
-            IServerConfigurationManager configurationManager)
+            IServerConfigurationManager configurationManager,
+            bool collapseBoxSetItems,
+            bool enableSorting)
         {
             var user = query.User;
 
@@ -810,7 +769,10 @@ namespace MediaBrowser.Controller.Entities
                 query.IsVirtualUnaired,
                 query.IsUnaired);
 
-            items = CollapseBoxSetItemsIfNeeded(items, query, queryParent, user, configurationManager);
+            if (collapseBoxSetItems)
+            {
+                items = CollapseBoxSetItemsIfNeeded(items, query, queryParent, user, configurationManager);
+            }
 
             // This must be the last filter
             if (!string.IsNullOrEmpty(query.AdjacentTo))
@@ -818,7 +780,7 @@ namespace MediaBrowser.Controller.Entities
                 items = FilterForAdjacency(items, query.AdjacentTo);
             }
 
-            return Sort(items, totalRecordLimit, query, libraryManager);
+            return SortAndPage(items, totalRecordLimit, query, libraryManager, enableSorting);
         }
 
         public static IEnumerable<BaseItem> CollapseBoxSetItemsIfNeeded(IEnumerable<BaseItem> items,
@@ -1093,8 +1055,6 @@ namespace MediaBrowser.Controller.Entities
             bool? isVirtualUnaired,
             bool? isUnaired)
         {
-            items = FilterVirtualSeasons(items, isMissing, isVirtualUnaired, isUnaired);
-
             if (isMissing.HasValue)
             {
                 var val = isMissing.Value;
@@ -1140,65 +1100,14 @@ namespace MediaBrowser.Controller.Entities
             return items;
         }
 
-        private static IEnumerable<BaseItem> FilterVirtualSeasons(
-            IEnumerable<BaseItem> items,
-            bool? isMissing,
-            bool? isVirtualUnaired,
-            bool? isUnaired)
-        {
-            if (isMissing.HasValue)
-            {
-                var val = isMissing.Value;
-                items = items.Where(i =>
-                {
-                    var e = i as Season;
-                    if (e != null)
-                    {
-                        return (e.IsMissingSeason) == val;
-                    }
-                    return true;
-                });
-            }
-
-            if (isUnaired.HasValue)
-            {
-                var val = isUnaired.Value;
-                items = items.Where(i =>
-                {
-                    var e = i as Season;
-                    if (e != null)
-                    {
-                        return e.IsUnaired == val;
-                    }
-                    return true;
-                });
-            }
-
-            if (isVirtualUnaired.HasValue)
-            {
-                var val = isVirtualUnaired.Value;
-                items = items.Where(i =>
-                {
-                    var e = i as Season;
-                    if (e != null)
-                    {
-                        return e.IsVirtualUnaired == val;
-                    }
-                    return true;
-                });
-            }
-
-            return items;
-        }
-
-        public static QueryResult<BaseItem> Sort(IEnumerable<BaseItem> items,
+        public static QueryResult<BaseItem> SortAndPage(IEnumerable<BaseItem> items,
             int? totalRecordLimit,
             InternalItemsQuery query,
-            ILibraryManager libraryManager)
+            ILibraryManager libraryManager, bool enableSorting)
         {
             var user = query.User;
 
-            items = items.DistinctBy(i => i.PresentationUniqueKey, StringComparer.OrdinalIgnoreCase);
+            items = items.DistinctBy(i => i.GetPresentationUniqueKey(), StringComparer.OrdinalIgnoreCase);
 
             if (query.SortBy.Length > 0)
             {
@@ -1543,13 +1452,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 var filterValue = query.HasThemeSong.Value;
 
-                var themeCount = 0;
-                var iHasThemeMedia = item as IHasThemeMedia;
-
-                if (iHasThemeMedia != null)
-                {
-                    themeCount = iHasThemeMedia.ThemeSongIds.Count;
-                }
+                var themeCount = item.ThemeSongIds.Count;
                 var ok = filterValue ? themeCount > 0 : themeCount == 0;
 
                 if (!ok)
@@ -1562,13 +1465,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 var filterValue = query.HasThemeVideo.Value;
 
-                var themeCount = 0;
-                var iHasThemeMedia = item as IHasThemeMedia;
-
-                if (iHasThemeMedia != null)
-                {
-                    themeCount = iHasThemeMedia.ThemeVideoIds.Count;
-                }
+                var themeCount = item.ThemeVideoIds.Count;
                 var ok = filterValue ? themeCount > 0 : themeCount == 0;
 
                 if (!ok)
@@ -1726,16 +1623,7 @@ namespace MediaBrowser.Controller.Entities
             {
                 var val = query.MinCriticRating.Value;
 
-                var hasCriticRating = item as IHasCriticRating;
-
-                if (hasCriticRating != null)
-                {
-                    if (!(hasCriticRating.CriticRating.HasValue && hasCriticRating.CriticRating >= val))
-                    {
-                        return false;
-                    }
-                }
-                else
+                if (!(item.CriticRating.HasValue && item.CriticRating >= val))
                 {
                     return false;
                 }

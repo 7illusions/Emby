@@ -334,7 +334,7 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
 
             trigger.Stop();
 
-            TaskManager.QueueScheduledTask(ScheduledTask);
+            TaskManager.QueueScheduledTask(ScheduledTask, e.Argument);
 
             await Task.Delay(1000).ConfigureAwait(false);
 
@@ -390,12 +390,12 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
 
             try
             {
-                var localTask = ScheduledTask.Execute(CurrentCancellationTokenSource.Token, progress);
-
                 if (options != null && options.MaxRuntimeMs.HasValue)
                 {
                     CurrentCancellationTokenSource.CancelAfter(options.MaxRuntimeMs.Value);
                 }
+
+                var localTask = ScheduledTask.Execute(CurrentCancellationTokenSource.Token, progress);
 
                 await localTask.ConfigureAwait(false);
 
@@ -423,21 +423,6 @@ namespace MediaBrowser.Common.Implementations.ScheduledTasks
             CurrentProgress = null;
 
             OnTaskCompleted(startTime, endTime, status, failureException);
-
-            // Bad practice, i know. But we keep a lot in memory, unfortunately.
-            GC.Collect(2, GCCollectionMode.Forced, true);
-            GC.Collect(2, GCCollectionMode.Forced, true);
-        }
-
-        /// <summary>
-        /// Executes the task.
-        /// </summary>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <param name="progress">The progress.</param>
-        /// <returns>Task.</returns>
-        private Task ExecuteTask(CancellationToken cancellationToken, IProgress<double> progress)
-        {
-            return Task.Run(async () => await ScheduledTask.Execute(cancellationToken, progress).ConfigureAwait(false), cancellationToken);
         }
 
         /// <summary>

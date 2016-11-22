@@ -1,4 +1,4 @@
-﻿<div id="wizardUserPage" data-role="page" class="page standalonePage wizardPage" data-require="scripts/wizarduserpage,paper-input,emby-button">
+﻿<div id="wizardUserPage" data-role="page" class="page standalonePage wizardPage" data-require="scripts/wizarduserpage,emby-input,emby-button">
 
     <div data-role="content">
 
@@ -14,8 +14,12 @@
                     <input is="emby-input" type="text" id="txtUsername" label="${LabelYourFirstName}" required="required" />
                     <div class="fieldDescription">${MoreUsersCanBeAddedLater}</div>
                 </div>
-                <br />   <h1 style="margin-bottom:.25em;">${HeaderOptionalLinkEmbyAccount}</h1>
-                <br /> <div class="inputContainer">
+                <br />
+
+                <h1 style="margin-bottom:.25em;">${HeaderOptionalLinkEmbyAccount}</h1>
+                <br />
+
+                <div class="inputContainer">
                     <input is="emby-input" type="text" id="txtConnectUserName" label="${LabelConnectUserName}" />
                     <div class="fieldDescription">
                         <div>${LabelConnectUserNameHelp}</div>
@@ -24,8 +28,8 @@
                 </div>
                 <br />
                 <div class="wizardNavigation">
-                    <button is="emby-button" type="button" class="raised subdued" onclick="history.back();"><i class="md-icon">arrow_back</i><span>${LabelPrevious}</span></button>
-                    <button is="emby-button" type="submit" class="raised accent"><span>${LabelNext}</span><i class="md-icon">arrow_forward</i></button>
+                    <button is="emby-button" type="button" class="raised button-cancel" onclick="history.back();"><i class="md-icon">arrow_back</i><span>${LabelPrevious}</span></button>
+                    <button is="emby-button" type="submit" class="raised button-submit"><span>${LabelNext}</span><i class="md-icon">arrow_forward</i></button>
                 </div>
             </form>
         </div>

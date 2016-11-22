@@ -1,4 +1,5 @@
 ﻿define(['dialogHelper', 'loading', 'cardBuilder', 'connectionManager', 'require', 'globalize', 'scrollHelper', 'layoutManager', 'focusManager', 'emby-input', 'emby-checkbox', 'paper-icon-button-light', 'css!./../formdialog', 'material-icons', 'cardStyle'], function (dialogHelper, loading, cardBuilder, connectionManager, require, globalize, scrollHelper, layoutManager, focusManager) {
+    'use strict';
 
     var currentItem;
     var currentItemType;
@@ -20,13 +21,14 @@
 
         var i, length;
         var identifyField = page.querySelectorAll('.identifyField');
+        var value;
         for (i = 0, length = identifyField.length; i < length; i++) {
 
-            var value = identifyField[i].value;
+            value = identifyField[i].value;
 
             if (value) {
 
-                if (identifyField[i].type == 'number') {
+                if (identifyField[i].type === 'number') {
                     value = parseInt(value);
                 }
 
@@ -39,7 +41,7 @@
         var txtLookupId = page.querySelectorAll('.txtLookupId');
         for (i = 0, length = txtLookupId.length; i < length; i++) {
 
-            var value = txtLookupId[i].value;
+            value = txtLookupId[i].value;
 
             if (value) {
                 hasId = true;
@@ -174,21 +176,31 @@
 
         var html = '';
         var cssClass = "card scalableCard";
+        var cardBoxCssClass = 'cardBox visualCardBox';
+        var padderClass;
 
-        if (currentItemType == "Episode") {
-            cssClass += " backdropCard";
+        if (currentItemType === "Episode") {
+            cssClass += " backdropCard backdropCard-scalable";
+            padderClass = 'cardPadder-backdrop';
         }
-        else if (currentItemType == "MusicAlbum" || currentItemType == "MusicArtist") {
-            cssClass += " squareCard";
+        else if (currentItemType === "MusicAlbum" || currentItemType === "MusicArtist") {
+            cssClass += " squareCard squareCard-scalable";
+            padderClass = 'cardPadder-square';
         }
         else {
-            cssClass += " portraitCard";
+            cssClass += " portraitCard portraitCard-scalable";
+            padderClass = 'cardPadder-portrait';
+        }
+
+        if (layoutManager.tv) {
+            cssClass += ' card-focusscale';
+            cardBoxCssClass += ' cardBox-focustransform cardBox-focustransform-transition';
         }
 
         html += '<button type="button" class="' + cssClass + '" data-index="' + index + '">';
-        html += '<div class="cardBox visualCardBox">';
-        html += '<div class="cardScalable">';
-        html += '<div class="cardPadder"></div>';
+        html += '<div class="' + cardBoxCssClass + '">';
+        html += '<div class="cardScalable visualCardBox-cardScalable">';
+        html += '<div class="' + padderClass + '"></div>';
 
         html += '<div class="cardContent searchImage">';
 
@@ -203,15 +215,15 @@
         html += '</div>';
         html += '</div>';
 
-        html += '<div class="cardFooter">';
+        html += '<div class="cardFooter visualCardBox-cardFooter">';
         html += '<div class="cardText cardTextCentered">' + result.Name + '</div>';
 
-        html += '<div class="cardText cardTextCentered">';
+        html += '<div class="cardText cardText-secondary cardTextCentered">';
         html += result.ProductionYear || '&nbsp;';
         html += '</div>';
 
         if (result.GameSystem) {
-            html += '<div class="cardText cardTextCentered">';
+            html += '<div class="cardText cardText-secondary cardTextCentered">';
             html += result.GameSystem;
             html += '</div>';
         }
@@ -287,7 +299,7 @@
 
             page.querySelector('#txtLookupName').value = '';
 
-            if (item.Type == "Person" || item.Type == "BoxSet") {
+            if (item.Type === "Person" || item.Type === "BoxSet") {
 
                 page.querySelector('.fldLookupYear').classList.add('hide');
                 page.querySelector('#txtLookupYear').value = '';
@@ -299,7 +311,7 @@
 
             page.querySelector('.identifyProviderIds').innerHTML = html;
 
-            page.querySelector('.dialogHeaderTitle').innerHTML = globalize.translate('sharedcomponents#Identify');
+            page.querySelector('.formDialogHeaderTitle').innerHTML = globalize.translate('sharedcomponents#Identify');
         });
     }
 
@@ -335,13 +347,12 @@
                 html += globalize.translateDocument(template, 'sharedcomponents');
 
                 dlg.innerHTML = html;
-                document.body.appendChild(dlg);
 
                 // Has to be assigned a z-index after the call to .open() 
                 dlg.addEventListener('close', onDialogClosed);
 
                 if (layoutManager.tv) {
-                    scrollHelper.centerFocus.on(dlg.querySelector('.dialogContent'), false);
+                    scrollHelper.centerFocus.on(dlg.querySelector('.formDialogContent'), false);
                 }
 
                 dialogHelper.open(dlg);
@@ -409,10 +420,9 @@
             html += globalize.translateDocument(template, 'sharedcomponents');
 
             dlg.innerHTML = html;
-            document.body.appendChild(dlg);
 
             if (layoutManager.tv) {
-                scrollHelper.centerFocus.on(dlg.querySelector('.dialogContent'), false);
+                scrollHelper.centerFocus.on(dlg.querySelector('.formDialogContent'), false);
             }
 
             dialogHelper.open(dlg);
@@ -447,7 +457,7 @@
 
         dlg.querySelector('#txtLookupName').value = itemName;
 
-        if (itemType == "Person" || itemType == "BoxSet") {
+        if (itemType === "Person" || itemType === "BoxSet") {
 
             dlg.querySelector('.fldLookupYear').classList.add('hide');
             dlg.querySelector('#txtLookupYear').value = '';
@@ -458,7 +468,7 @@
             dlg.querySelector('#txtLookupYear').value = itemYear;
         }
 
-        dlg.querySelector('.dialogHeaderTitle').innerHTML = globalize.translate('sharedcomponents#Search');
+        dlg.querySelector('.formDialogHeaderTitle').innerHTML = globalize.translate('sharedcomponents#Search');
     }
 
     return {

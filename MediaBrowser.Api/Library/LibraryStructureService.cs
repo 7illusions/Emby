@@ -10,6 +10,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Model.Configuration;
 
 namespace MediaBrowser.Api.Library
 {
@@ -52,6 +55,8 @@ namespace MediaBrowser.Api.Library
         /// </summary>
         /// <value>The path.</value>
         public string[] Paths { get; set; }
+
+        public LibraryOptions LibraryOptions { get; set; }
     }
 
     [Route("/Library/VirtualFolders", "DELETE")]
@@ -107,11 +112,25 @@ namespace MediaBrowser.Api.Library
         /// <value>The name.</value>
         public string Path { get; set; }
 
+        public MediaPathInfo PathInfo { get; set; }
+
         /// <summary>
         /// Gets or sets a value indicating whether [refresh library].
         /// </summary>
         /// <value><c>true</c> if [refresh library]; otherwise, <c>false</c>.</value>
         public bool RefreshLibrary { get; set; }
+    }
+
+    [Route("/Library/VirtualFolders/Paths/Update", "POST")]
+    public class UpdateMediaPath : IReturnVoid
+    {
+        /// <summary>
+        /// Gets or sets the name.
+        /// </summary>
+        /// <value>The name.</value>
+        public string Name { get; set; }
+
+        public MediaPathInfo PathInfo { get; set; }
     }
 
     [Route("/Library/VirtualFolders/Paths", "DELETE")]
@@ -134,6 +153,14 @@ namespace MediaBrowser.Api.Library
         /// </summary>
         /// <value><c>true</c> if [refresh library]; otherwise, <c>false</c>.</value>
         public bool RefreshLibrary { get; set; }
+    }
+
+    [Route("/Library/VirtualFolders/LibraryOptions", "POST")]
+    public class UpdateLibraryOptions : IReturnVoid
+    {
+        public string Id { get; set; }
+
+        public LibraryOptions LibraryOptions { get; set; }
     }
 
     /// <summary>
@@ -184,13 +211,27 @@ namespace MediaBrowser.Api.Library
             return ToOptimizedSerializedResultUsingCache(result);
         }
 
+        public void Post(UpdateLibraryOptions request)
+        {
+            var collectionFolder = (CollectionFolder)_libraryManager.GetItemById(request.Id);
+
+            collectionFolder.UpdateLibraryOptions(request.LibraryOptions);
+        }
+
         /// <summary>
         /// Posts the specified request.
         /// </summary>
         /// <param name="request">The request.</param>
         public void Post(AddVirtualFolder request)
         {
-            _libraryManager.AddVirtualFolder(request.Name, request.CollectionType, request.Paths, request.RefreshLibrary);
+            var libraryOptions = request.LibraryOptions ?? new LibraryOptions();
+
+            if (request.Paths != null && request.Paths.Length > 0)
+            {
+                libraryOptions.PathInfos = request.Paths.Select(i => new MediaPathInfo { Path = i }).ToArray();
+            }
+
+            _libraryManager.AddVirtualFolder(request.Name, request.CollectionType, libraryOptions, request.RefreshLibrary);
         }
 
         /// <summary>
@@ -214,12 +255,12 @@ namespace MediaBrowser.Api.Library
             var currentPath = Path.Combine(rootFolderPath, request.Name);
             var newPath = Path.Combine(rootFolderPath, request.NewName);
 
-			if (!_fileSystem.DirectoryExists(currentPath))
+            if (!_fileSystem.DirectoryExists(currentPath))
             {
                 throw new DirectoryNotFoundException("The media collection does not exist");
             }
 
-			if (!string.Equals(currentPath, newPath, StringComparison.OrdinalIgnoreCase) && _fileSystem.DirectoryExists(newPath))
+            if (!string.Equals(currentPath, newPath, StringComparison.OrdinalIgnoreCase) && _fileSystem.DirectoryExists(newPath))
             {
                 throw new ArgumentException("There is already a media collection with the name " + newPath + ".");
             }
@@ -234,11 +275,11 @@ namespace MediaBrowser.Api.Library
                     //Create an unique name
                     var temporaryName = Guid.NewGuid().ToString();
                     var temporaryPath = Path.Combine(rootFolderPath, temporaryName);
-					_fileSystem.MoveDirectory(currentPath, temporaryPath);
+                    _fileSystem.MoveDirectory(currentPath, temporaryPath);
                     currentPath = temporaryPath;
                 }
 
-				_fileSystem.MoveDirectory(currentPath, newPath);
+                _fileSystem.MoveDirectory(currentPath, newPath);
             }
             finally
             {
@@ -286,7 +327,16 @@ namespace MediaBrowser.Api.Library
 
             try
             {
-                _libraryManager.AddMediaPath(request.Name, request.Path);
+                var mediaPath = request.PathInfo;
+
+                if (mediaPath == null)
+                {
+                    mediaPath = new MediaPathInfo
+                    {
+                        Path = request.Path
+                    };
+                }
+                _libraryManager.AddMediaPath(request.Name, mediaPath);
             }
             finally
             {
@@ -308,6 +358,20 @@ namespace MediaBrowser.Api.Library
                     }
                 });
             }
+        }
+
+        /// <summary>
+        /// Posts the specified request.
+        /// </summary>
+        /// <param name="request">The request.</param>
+        public void Post(UpdateMediaPath request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+            {
+                throw new ArgumentNullException("request");
+            }
+
+            _libraryManager.UpdateMediaPath(request.Name, request.PathInfo);
         }
 
         /// <summary>

@@ -1,30 +1,14 @@
-﻿define(['libraryBrowser', 'cardBuilder', 'appSettings', 'components/groupedcards', 'scrollStyles', 'emby-button', 'paper-icon-button-light', 'emby-itemscontainer'], function (LibraryBrowser, cardBuilder, appSettings, groupedcards) {
+﻿define(['libraryBrowser', 'cardBuilder', 'appSettings', 'components/groupedcards', 'dom', 'apphost', 'scrollStyles', 'emby-button', 'paper-icon-button-light', 'emby-itemscontainer'], function (libraryBrowser, cardBuilder, appSettings, groupedcards, dom, appHost) {
 
     function getUserViews(userId) {
 
         return ApiClient.getUserViews({}, userId).then(function (result) {
 
-            var items = result.Items;
-
-            var list = [];
-
-            for (var i = 0, length = items.length; i < length; i++) {
-
-                var view = items[i];
-
-                if (AppInfo.isNativeApp && browserInfo.safari && view.CollectionType == 'livetv') {
-                    continue;
-                }
-
-                list.push(view);
-            }
-
-            return list;
+            return result.Items;
         });
     }
 
     function enableScrollX() {
-
         return browserInfo.mobile && AppInfo.enableAppLayouts;
     }
 
@@ -95,7 +79,7 @@
                 cssClass += ' ' + item.CollectionType + 'buttonCard';
             }
 
-            var href = item.url || LibraryBrowser.getHref(item);
+            var href = item.url || libraryBrowser.getHref(item);
             var onclick = item.onclick ? ' onclick="' + item.onclick + '"' : '';
 
             icon = item.icon || icon;
@@ -183,8 +167,6 @@
                 infos.push(getUpgradeMobileLayoutsInfo);
             }
 
-            appSettings.set(cacheKey, new Date().getTime());
-
             return infos[getRandomInt(0, infos.length - 1)]();
         });
     }
@@ -192,7 +174,7 @@
     function getCard(img, target, shape) {
 
         shape = shape || 'backdropCard';
-        var html = '<div class="card scalableCard ' + shape + '"><div class="cardBox"><div class="cardScalable"><div class="cardPadder"></div>';
+        var html = '<div class="card scalableCard ' + shape + ' ' + shape + '-scalable"><div class="cardBox"><div class="cardScalable"><div class="cardPadder cardPadder-backdrop"></div>';
 
         if (target) {
             html += '<a class="cardContent" href="' + target + '" target="_blank">';
@@ -274,7 +256,7 @@
         var options = {
 
             Limit: 20,
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             ImageTypeLimit: 1,
             EnableImageTypes: "Primary,Backdrop,Thumb"
         };
@@ -320,7 +302,7 @@
         var options = {
 
             Limit: 12,
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             ImageTypeLimit: 1,
             EnableImageTypes: "Primary,Backdrop,Thumb",
             IncludeItemTypes: "Movie"
@@ -347,7 +329,8 @@
                     lazy: true,
                     context: 'home',
                     centerText: true,
-                    overlayPlayButton: true
+                    overlayPlayButton: true,
+                    allowBottomPadding: !enableScrollX()
                 });
                 html += '</div>';
             }
@@ -362,7 +345,7 @@
         var options = {
 
             Limit: 12,
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             ImageTypeLimit: 1,
             EnableImageTypes: "Primary,Backdrop,Thumb",
             IncludeItemTypes: "Episode"
@@ -390,7 +373,8 @@
                     showChildCountIndicator: true,
                     lazy: true,
                     context: 'home',
-                    overlayPlayButton: true
+                    overlayPlayButton: true,
+                    allowBottomPadding: !enableScrollX()
                 });
                 html += '</div>';
             }
@@ -402,12 +386,12 @@
 
     function loadLatestChannelMedia(elem, userId) {
 
-        var screenWidth = window.innerWidth;
+        var screenWidth = dom.getWindowSize().innerWidth;
 
         var options = {
 
             Limit: screenWidth >= 2400 ? 10 : (screenWidth >= 1600 ? 10 : (screenWidth >= 1440 ? 8 : (screenWidth >= 800 ? 7 : 6))),
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             Filters: "IsUnplayed",
             UserId: userId
         };
@@ -451,28 +435,28 @@
 
             if (items.length) {
 
-                var screenWidth = window.innerWidth;
-
                 html += '<div>';
                 html += '<h1 class="listHeader">' + Globalize.translate('HeaderMyMedia') + '</h1>';
 
                 html += '</div>';
 
-                var scrollX = enableScrollX() && browserInfo.safari && screenWidth > 800;
+                var scrollX = enableScrollX() && dom.getWindowSize().innerWidth >= 600;
 
                 if (scrollX) {
                     html += '<div is="emby-itemscontainer" class="hiddenScrollX itemsContainer">';
                 } else {
                     html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
                 }
+
                 html += cardBuilder.getCardsHtml({
                     items: items,
                     shape: scrollX ? 'overflowBackdrop' : shape,
                     showTitle: showTitles,
                     centerText: true,
+                    overlayText: false,
                     lazy: true,
-                    autoThumb: true,
-                    transition: false
+                    transition: false,
+                    allowBottomPadding: !enableScrollX()
                 });
                 html += '</div>';
             }
@@ -495,7 +479,7 @@
 
     function loadResume(elem, userId) {
 
-        var screenWidth = window.innerWidth;
+        var screenWidth = dom.getWindowSize().innerWidth;
 
         var options = {
 
@@ -505,7 +489,7 @@
             Filters: "IsResumable",
             Limit: screenWidth >= 1920 ? 8 : (screenWidth >= 1600 ? 8 : (screenWidth >= 1200 ? 9 : 6)),
             Recursive: true,
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             CollapseBoxSetItems: false,
             ExcludeLocationTypes: "Virtual",
             ImageTypeLimit: 1,
@@ -535,7 +519,8 @@
                     showDetailsMenu: true,
                     overlayPlayButton: true,
                     context: 'home',
-                    centerText: true
+                    centerText: true,
+                    allowBottomPadding: !enableScrollX()
                 });
                 html += '</div>';
             }
@@ -551,7 +536,7 @@
         var query = {
 
             Limit: 20,
-            Fields: "PrimaryImageAspectRatio,SeriesInfo,DateCreated,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,SeriesInfo,DateCreated,BasicSyncInfo",
             UserId: userId,
             ImageTypeLimit: 1,
             EnableImageTypes: "Primary,Backdrop,Banner,Thumb"
@@ -568,6 +553,9 @@
                 } else {
                     html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
                 }
+
+                var supportsImageAnalysis = appHost.supports('imageanalysis');
+
                 html += cardBuilder.getCardsHtml({
                     items: result.Items,
                     preferThumb: true,
@@ -578,7 +566,10 @@
                     lazy: true,
                     overlayPlayButton: true,
                     context: 'home',
-                    centerText: true
+                    centerText: !supportsImageAnalysis,
+                    allowBottomPadding: !enableScrollX(),
+                    cardLayout: supportsImageAnalysis,
+                    vibrant: supportsImageAnalysis
                 });
                 html += '</div>';
             }
@@ -621,12 +612,12 @@
 
     function loadLatestChannelItemsFromChannel(page, channel, index) {
 
-        var screenWidth = window.innerWidth;
+        var screenWidth = dom.getWindowSize().innerWidth;
 
         var options = {
 
             Limit: screenWidth >= 1600 ? 10 : (screenWidth >= 1440 ? 5 : (screenWidth >= 800 ? 6 : 6)),
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             Filters: "IsUnplayed",
             UserId: Dashboard.getCurrentUserId(),
             ChannelIds: channel.Id
@@ -667,13 +658,13 @@
         });
     }
 
-    function loadLatestLiveTvRecordings(elem, userId, index) {
+    function loadLatestLiveTvRecordings(elem, userId) {
 
         return ApiClient.getLiveTvRecordings({
 
             userId: userId,
             limit: 5,
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             IsInProgress: false,
             EnableTotalRecordCount: false
 
@@ -683,10 +674,8 @@
 
             if (result.Items.length) {
 
-                var cssClass = index !== 0 ? 'listHeader' : 'listHeader';
-
                 html += '<div>';
-                html += '<h1 style="display:inline-block; vertical-align:middle;" class="' + cssClass + '">' + Globalize.translate('HeaderLatestTvRecordings') + '</h1>';
+                html += '<h1 style="display:inline-block; vertical-align:middle;" class="listHeader">' + Globalize.translate('HeaderLatestTvRecordings') + '</h1>';
                 html += '<a href="livetv.html?tab=3" onclick="LibraryBrowser.showTab(\'livetv.html\',3);" class="clearLink" style="margin-left:2em;"><button is="emby-button" type="button" class="raised more mini"><span>' + Globalize.translate('ButtonMore') + '</span></button></a>';
                 html += '</div>';
             }
@@ -696,6 +685,9 @@
             } else {
                 html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
             }
+
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+
             html += cardBuilder.getCardsHtml({
                 items: result.Items,
                 shape: enableScrollX() ? 'autooverflow' : 'auto',
@@ -704,8 +696,14 @@
                 coverImage: true,
                 lazy: true,
                 showDetailsMenu: true,
-                centerText: true,
-                overlayPlayButton: true
+                centerText: !supportsImageAnalysis,
+                overlayText: false,
+                overlayPlayButton: true,
+                allowBottomPadding: !enableScrollX(),
+                preferThumb: true,
+                cardLayout: supportsImageAnalysis,
+                vibrant: supportsImageAnalysis
+
             });
             html += '</div>';
 

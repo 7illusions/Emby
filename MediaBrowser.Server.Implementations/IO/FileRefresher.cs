@@ -12,6 +12,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Server.Implementations.ScheduledTasks;
+using MoreLinq;
 
 namespace MediaBrowser.Server.Implementations.IO
 {
@@ -44,6 +45,11 @@ namespace MediaBrowser.Server.Implementations.IO
 
         private void AddAffectedPath(string path)
         {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentNullException("path");
+            }
+
             if (!_affectedPaths.Contains(path, StringComparer.Ordinal))
             {
                 _affectedPaths.Add(path);
@@ -52,6 +58,11 @@ namespace MediaBrowser.Server.Implementations.IO
 
         public void AddPath(string path)
         {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentNullException("path");
+            }
+
             lock (_timerLock)
             {
                 AddAffectedPath(path);
@@ -61,8 +72,18 @@ namespace MediaBrowser.Server.Implementations.IO
 
         public void RestartTimer()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             lock (_timerLock)
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
                 if (_timer == null)
                 {
                     _timer = new Timer(OnTimerCallback, null, TimeSpan.FromSeconds(ConfigurationManager.Configuration.LibraryMonitorDelay), TimeSpan.FromMilliseconds(-1));
@@ -126,9 +147,10 @@ namespace MediaBrowser.Server.Implementations.IO
         private async Task ProcessPathChanges(List<string> paths)
         {
             var itemsToRefresh = paths
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Select(GetAffectedBaseItem)
                 .Where(item => item != null)
-                .Distinct()
+                .DistinctBy(i => i.Id)
                 .ToList();
 
             foreach (var p in paths)
@@ -254,6 +276,11 @@ namespace MediaBrowser.Server.Implementations.IO
                 // File may have been deleted
                 return false;
             }
+            catch (UnauthorizedAccessException)
+            {
+                Logger.Debug("No write permission for: {0}.", path);
+                return false;
+            }
             catch (IOException)
             {
                 //the file is unavailable because it is:
@@ -277,12 +304,15 @@ namespace MediaBrowser.Server.Implementations.IO
                 if (_timer != null)
                 {
                     _timer.Dispose();
+                    _timer = null;
                 }
             }
         }
 
+        private bool _disposed;
         public void Dispose()
         {
+            _disposed = true;
             DisposeTimer();
         }
     }

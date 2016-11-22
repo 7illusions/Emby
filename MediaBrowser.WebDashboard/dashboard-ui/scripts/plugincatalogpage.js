@@ -96,7 +96,7 @@
 
         if (!options.categories) {
             currentCategory = Globalize.translate('HeaderTopPlugins');
-            html += '<div class="detailSectionHeader">' + currentCategory + '</div>';
+            html += '<div class="detailSectionHeader"><h1>' + currentCategory + '</h1></div>';
             var topPlugins = allPlugins.slice(0).sort(function (a, b) {
 
                 if (a.installs > b.installs) {
@@ -125,9 +125,17 @@
                 html += getPluginHtml(topPlugins[i], options, installedPlugins);
             }
             html += '</div>';
+            html += '<br/>';
+            html += '<br/>';
         }
 
         var hasOpenTag = false;
+        currentCategory = null;
+
+        if (options.showCategory === false) {
+            html += '<div class="itemsContainer vertical-wrap">';
+            hasOpenTag = true;
+        }
 
         for (i = 0, length = availablePlugins.length; i < length; i++) {
 
@@ -143,10 +151,9 @@
                         html += '</div>';
                         html += '<br/>';
                         html += '<br/>';
-                        html += '<br/>';
                     }
 
-                    html += '<div class="detailSectionHeader">' + category + '</div>';
+                    html += '<div class="detailSectionHeader"><h1>' + category + '</h1></div>';
                     html += '<div class="itemsContainer vertical-wrap">';
                     hasOpenTag = true;
                 }
@@ -181,12 +188,12 @@
         }
         var target = plugin.externalUrl ? ' target="_blank"' : '';
 
-        html += "<div class='card backdropCard bottomPaddedCard scalableCard'>";
+        html += "<div class='card backdropCard scalableCard backdropCard-scalable'>";
 
-        html += '<div class="cardBox visualCardBox">';
-        html += '<div class="cardScalable">';
+        html += '<div class="cardBox cardBox-bottompadded visualCardBox">';
+        html += '<div class="cardScalable visualCardBox-cardScalable">';
 
-        html += '<div class="cardPadder"></div>';
+        html += '<div class="cardPadder cardPadder-backdrop"></div>';
 
         html += '<a class="cardContent" href="' + href + '"' + target + '>';
         if (plugin.thumbImage) {
@@ -210,28 +217,26 @@
         // cardScalable
         html += "</div>";
 
-        html += '<div class="cardFooter">';
+        html += '<div class="cardFooter visualCardBox-cardFooter">';
 
         html += "<div class='cardText'>";
         html += plugin.name;
         html += "</div>";
 
-        if (!plugin.isExternal) {
-            html += "<div class='cardText' style='display:flex;align-items:center;'>";
+        //    html += "<div class='cardText' style='display:flex;align-items:center;'>";
 
-            if (plugin.avgRating) {
-                html += '<i class="md-icon" style="color:#cc3333;margin-right:.25em;">star</i>';
-                html += plugin.avgRating.toFixed(1);
-            }
+        //    if (plugin.avgRating) {
+        //        html += '<i class="md-icon" style="color:#cc3333;margin-right:.25em;">star</i>';
+        //        html += plugin.avgRating.toFixed(1);
+        //    }
 
-            if (plugin.totalRatings) {
-                html += "<div style='margin-left:.5em;'>";
-                html += " " + Globalize.translate('LabelNumberReviews').replace("{0}", plugin.totalRatings);
-            }
-            html += "</div>";
+        //    if (plugin.totalRatings) {
+        //        html += "<div style='margin-left:.5em;'>";
+        //        html += " " + Globalize.translate('LabelNumberReviews').replace("{0}", plugin.totalRatings);
+        //    }
+        //    html += "</div>";
 
-            html += "</div>";
-        }
+        //    html += "</div>";
 
         var installedPlugin = plugin.isApp ? null : installedPlugins.filter(function (ip) {
             return ip.Id == plugin.guid;

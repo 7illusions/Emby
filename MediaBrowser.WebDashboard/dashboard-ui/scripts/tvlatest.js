@@ -42,7 +42,6 @@
                     inheritThumb: false,
                     showUnplayedIndicator: false,
                     showChildCountIndicator: true,
-                    overlayText: false,
                     showParentTitle: true,
                     lazy: true,
                     showTitle: true,
@@ -59,11 +58,10 @@
                     showParentTitle: false,
                     showUnplayedIndicator: false,
                     showChildCountIndicator: true,
-                    overlayText: false,
                     centerText: true,
                     lazy: true,
                     showTitle: false,
-                    overlayPlayButton: AppInfo.enableAppLayouts
+                    overlayPlayButton: true
                 });
             }
 

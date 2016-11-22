@@ -14,16 +14,14 @@ namespace MediaBrowser.Common.Implementations.Updates
     {
         private readonly IHttpClient _httpClient;
         private readonly IJsonSerializer _jsonSerializer;
-        private TimeSpan _cacheLength;
 
-        public GithubUpdater(IHttpClient httpClient, IJsonSerializer jsonSerializer, TimeSpan cacheLength)
+        public GithubUpdater(IHttpClient httpClient, IJsonSerializer jsonSerializer)
         {
             _httpClient = httpClient;
             _jsonSerializer = jsonSerializer;
-            _cacheLength = cacheLength;
         }
 
-        public async Task<CheckForUpdateResult> CheckForUpdateResult(string organzation, string repository, Version minVersion, PackageVersionClass updateLevel, string assetFilename, string packageName, string targetFilename, CancellationToken cancellationToken)
+        public async Task<CheckForUpdateResult> CheckForUpdateResult(string organzation, string repository, Version minVersion, PackageVersionClass updateLevel, string assetFilename, string packageName, string targetFilename, TimeSpan cacheLength, CancellationToken cancellationToken)
         {
             var url = string.Format("https://api.github.com/repos/{0}/{1}/releases", organzation, repository);
 
@@ -32,14 +30,14 @@ namespace MediaBrowser.Common.Implementations.Updates
                 Url = url,
                 EnableKeepAlive = false,
                 CancellationToken = cancellationToken,
-                UserAgent = "Emby/3.0"
-
+                UserAgent = "Emby/3.0",
+                BufferContent = false
             };
 
-            if (_cacheLength.Ticks > 0)
+            if (cacheLength.Ticks > 0)
             {
                 options.CacheMode = CacheMode.Unconditional;
-                options.CacheLength = _cacheLength;
+                options.CacheLength = cacheLength;
             }
 
             using (var stream = await _httpClient.Get(options).ConfigureAwait(false))
@@ -77,6 +75,64 @@ namespace MediaBrowser.Common.Implementations.Updates
             {
                 IsUpdateAvailable = false
             };
+        }
+
+        private bool MatchesUpdateLevel(RootObject i, PackageVersionClass updateLevel)
+        {
+            if (updateLevel == PackageVersionClass.Beta)
+            {
+                return !i.prerelease || i.name.EndsWith("-beta", StringComparison.OrdinalIgnoreCase);
+            }
+            if (updateLevel == PackageVersionClass.Dev)
+            {
+                return !i.prerelease || i.name.EndsWith("-beta", StringComparison.OrdinalIgnoreCase) ||
+                       i.name.EndsWith("-dev", StringComparison.OrdinalIgnoreCase);
+            }
+
+            // Technically all we need to do is check that it's not pre-release
+            // But let's addititional checks for -beta and -dev to handle builds that might be temporarily tagged incorrectly.
+            return !i.prerelease && !i.name.EndsWith("-beta", StringComparison.OrdinalIgnoreCase) &&
+                   !i.name.EndsWith("-dev", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public async Task<List<RootObject>> GetLatestReleases(string organzation, string repository, string assetFilename, CancellationToken cancellationToken)
+        {
+            var list = new List<RootObject>();
+
+            var url = string.Format("https://api.github.com/repos/{0}/{1}/releases", organzation, repository);
+
+            var options = new HttpRequestOptions
+            {
+                Url = url,
+                EnableKeepAlive = false,
+                CancellationToken = cancellationToken,
+                UserAgent = "Emby/3.0",
+                BufferContent = false
+            };
+
+            using (var stream = await _httpClient.Get(options).ConfigureAwait(false))
+            {
+                var obj = _jsonSerializer.DeserializeFromStream<RootObject[]>(stream);
+
+                obj = obj.Where(i => (i.assets ?? new List<Asset>()).Any(a => IsAsset(a, assetFilename))).ToArray();
+
+                list.AddRange(obj.Where(i => MatchesUpdateLevel(i, PackageVersionClass.Release)).OrderByDescending(GetVersion).Take(1));
+                list.AddRange(obj.Where(i => MatchesUpdateLevel(i, PackageVersionClass.Beta)).OrderByDescending(GetVersion).Take(1));
+                list.AddRange(obj.Where(i => MatchesUpdateLevel(i, PackageVersionClass.Dev)).OrderByDescending(GetVersion).Take(1));
+
+                return list;
+            }
+        }
+
+        public Version GetVersion(RootObject obj)
+        {
+            Version version;
+            if (!Version.TryParse(obj.tag_name, out version))
+            {
+                return new Version(1, 0);
+            }
+
+            return version;
         }
 
         private CheckForUpdateResult CheckForUpdateResult(RootObject obj, Version minVersion, string assetFilename, string packageName, string targetFilename)

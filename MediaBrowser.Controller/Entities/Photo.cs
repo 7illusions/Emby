@@ -1,19 +1,11 @@
 ﻿using MediaBrowser.Model.Drawing;
-using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
 
 namespace MediaBrowser.Controller.Entities
 {
-    public class Photo : BaseItem, IHasTaglines
+    public class Photo : BaseItem
     {
-        public List<string> Taglines { get; set; }
-
-        public Photo()
-        {
-            Taglines = new List<string>();
-        }
-
         [IgnoreDataMember]
         public override bool SupportsLocalMetadata
         {
@@ -37,13 +29,13 @@ namespace MediaBrowser.Controller.Entities
         {
             get
             {
-                return Album;
+                return AlbumEntity;
             }
         }
 
 
         [IgnoreDataMember]
-        public PhotoAlbum Album
+        public PhotoAlbum AlbumEntity
         {
             get
             {
@@ -52,7 +44,7 @@ namespace MediaBrowser.Controller.Entities
         }
 
         [IgnoreDataMember]
-        public override bool EnableForceSaveOnDateModifiedChange
+        public override bool EnableRefreshOnDateModifiedChange
         {
             get { return true; }
         }

@@ -75,7 +75,6 @@
         return html;
     }
 
-    var translateY = '-64px';
     function slideDown(elem) {
 
         if (elem.classList.contains('hide')) {
@@ -86,15 +85,15 @@
             elem.classList.add('hide');
         };
 
-        if (!browser.animate || browser.mobile) {
+        if (!browser.animate || browser.slow) {
             onfinish();
             return;
         }
 
         requestAnimationFrame(function () {
             var keyframes = [
-              { transform: 'translateY(' + translateY + ')', offset: 0 },
-              { transform: 'none', offset: 1 }];
+              { transform: 'none', offset: 0 },
+              { transform: 'translateY(100%)', offset: 1 }];
             var timing = { duration: 200, iterations: 1, fill: 'both', easing: 'ease-out' };
             elem.animate(keyframes, timing).onfinish = onfinish;
         });
@@ -108,15 +107,15 @@
 
         elem.classList.remove('hide');
 
-        if (!browser.animate || browser.mobile) {
+        if (!browser.animate || browser.slow) {
             return;
         }
 
         requestAnimationFrame(function () {
 
             var keyframes = [
-              { transform: 'none', offset: 0 },
-              { transform: 'translateY(' + translateY + ')', offset: 1 }];
+              { transform: 'translateY(100%)', offset: 0 },
+              { transform: 'none', offset: 1 }];
             var timing = { duration: 200, iterations: 1, fill: 'both', easing: 'ease-out' };
             elem.animate(keyframes, timing);
         });
@@ -130,7 +129,7 @@
 
         elem.classList.remove('hide');
 
-        if (!browser.animate || browser.mobile) {
+        if (!browser.animate || browser.slow) {
             return;
         }
 
@@ -308,19 +307,20 @@
 
         return new Promise(function (resolve, reject) {
 
-            require(['itemShortcuts', 'css!css/nowplayingbar.css', 'emby-slider'], function (itemShortcuts) {
+            require(['appfooter-shared', 'itemShortcuts', 'css!css/nowplayingbar.css', 'emby-slider'], function (appfooter, itemShortcuts) {
 
-                nowPlayingBarElement = document.querySelector('.nowPlayingBar');
+                var parentContainer = appfooter.element;
+                nowPlayingBarElement = parentContainer.querySelector('.nowPlayingBar');
 
                 if (nowPlayingBarElement) {
                     resolve(nowPlayingBarElement);
                     return;
                 }
 
-                document.body.insertAdjacentHTML('beforeend', getNowPlayingBarHtml());
-                nowPlayingBarElement = document.querySelector('.nowPlayingBar');
+                parentContainer.insertAdjacentHTML('afterbegin', getNowPlayingBarHtml());
+                nowPlayingBarElement = parentContainer.querySelector('.nowPlayingBar');
 
-                if (browser.safari && browser.mobile) {
+                if (browser.safari && browser.slow) {
                     // Not handled well here. The wrong elements receive events, bar doesn't update quickly enough, etc.
                     nowPlayingBarElement.classList.add('noMediaProgress');
                 }
@@ -424,7 +424,7 @@
             }
         }
 
-        var timeText = datetime.getDisplayRunningTime(playState.PositionTicks);
+        var timeText = playState.PositionTicks == null ? '--:--' : datetime.getDisplayRunningTime(playState.PositionTicks);
 
         if (nowPlayingItem.RunTimeTicks) {
 
@@ -596,13 +596,16 @@
 
         if (nowPlayingItem.Id) {
             ApiClient.getItem(Dashboard.getCurrentUserId(), nowPlayingItem.Id).then(function (item) {
-                nowPlayingUserData.innerHTML = userdataButtons.getIconsHtml({
+                userdataButtons.fill({
                     item: item,
-                    includePlayed: false
+                    includePlayed: false,
+                    element: nowPlayingUserData
                 });
             });
         } else {
-            nowPlayingUserData.innerHTML = '';
+            userdataButtons.destroy({
+                element: nowPlayingUserData
+            });
         }
     }
 

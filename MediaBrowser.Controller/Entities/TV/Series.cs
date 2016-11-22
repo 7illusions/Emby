@@ -17,17 +17,14 @@ namespace MediaBrowser.Controller.Entities.TV
     /// <summary>
     /// Class Series
     /// </summary>
-    public class Series : Folder, IHasTrailers, IHasDisplayOrder, IHasLookupInfo<SeriesInfo>, IHasSpecialFeatures, IMetadataContainer, IHasOriginalTitle
+    public class Series : Folder, IHasTrailers, IHasDisplayOrder, IHasLookupInfo<SeriesInfo>, IMetadataContainer, IHasOriginalTitle
     {
-        public List<Guid> SpecialFeatureIds { get; set; }
-
         public int? AnimeSeriesIndex { get; set; }
 
         public Series()
         {
             AirDays = new List<DayOfWeek>();
 
-            SpecialFeatureIds = new List<Guid>();
             RemoteTrailers = new List<MediaUrl>();
             LocalTrailerIds = new List<Guid>();
             RemoteTrailerIds = new List<Guid>();
@@ -96,19 +93,29 @@ namespace MediaBrowser.Controller.Entities.TV
             }
         }
 
-        [IgnoreDataMember]
-        public override string PresentationUniqueKey
+        public override string CreatePresentationUniqueKey()
         {
-            get
-            {
-                var userdatakeys = GetUserDataKeys();
+            var userdatakeys = GetUserDataKeys();
 
-                if (userdatakeys.Count > 1)
-                {
-                    return userdatakeys[0];
-                }
-                return base.PresentationUniqueKey;
+            if (userdatakeys.Count > 1)
+            {
+                return AddLibrariesToPresentationUniqueKey(userdatakeys[0]);
             }
+            return base.CreatePresentationUniqueKey();
+        }
+
+        private string AddLibrariesToPresentationUniqueKey(string key)
+        {
+            var folders = LibraryManager.GetCollectionFolders(this)
+                .Select(i => i.Id.ToString("N"))
+                .ToArray();
+
+            if (folders.Length == 0)
+            {
+                return key;
+            }
+
+            return key + "-" + string.Join("-", folders);
         }
 
         private static string GetUniqueSeriesKey(BaseItem series)
@@ -117,7 +124,7 @@ namespace MediaBrowser.Controller.Entities.TV
             {
                 return series.Id.ToString("N");
             }
-            return series.PresentationUniqueKey;
+            return series.GetPresentationUniqueKey();
         }
 
         public override int GetChildCount(User user)
@@ -197,7 +204,29 @@ namespace MediaBrowser.Controller.Entities.TV
         {
             var config = user.Configuration;
 
-            return GetSeasons(user, config.DisplayMissingEpisodes, config.DisplayUnairedEpisodes);
+            var seriesKey = GetUniqueSeriesKey(this);
+
+            var query = new InternalItemsQuery(user)
+            {
+                AncestorWithPresentationUniqueKey = seriesKey,
+                IncludeItemTypes = new[] {typeof (Season).Name},
+                SortBy = new[] {ItemSortBy.SortName}
+            };
+
+            if (!config.DisplayMissingEpisodes && !config.DisplayUnairedEpisodes)
+            {
+                query.IsVirtualItem = false;
+            }
+            else if (!config.DisplayMissingEpisodes)
+            {
+                query.IsMissing = false;
+            }
+            else if (!config.DisplayUnairedEpisodes)
+            {
+                query.IsVirtualUnaired = false;
+            }
+
+            return LibraryManager.GetItemList(query).Cast<Season>();
         }
 
         protected override Task<QueryResult<BaseItem>> GetItemsInternal(InternalItemsQuery query)
@@ -227,55 +256,40 @@ namespace MediaBrowser.Controller.Entities.TV
             Func<BaseItem, bool> filter = i => UserViewBuilder.Filter(i, user, query, UserDataManager, LibraryManager);
 
             var items = GetSeasons(user).Where(filter);
-            var result = PostFilterAndSort(items, query);
+            var result = PostFilterAndSort(items, query, false, true);
             return Task.FromResult(result);
-        }
-
-        public IEnumerable<Season> GetSeasons(User user, bool includeMissingSeasons, bool includeVirtualUnaired)
-        {
-            IEnumerable<Season> seasons;
-
-            seasons = LibraryManager.GetItemList(new InternalItemsQuery(user)
-            {
-                AncestorWithPresentationUniqueKey = GetUniqueSeriesKey(this),
-                IncludeItemTypes = new[] { typeof(Season).Name },
-                SortBy = new[] { ItemSortBy.SortName }
-
-            }).Cast<Season>();
-
-            if (!includeMissingSeasons)
-            {
-                seasons = seasons.Where(i => !(i.IsMissingSeason));
-            }
-            if (!includeVirtualUnaired)
-            {
-                seasons = seasons.Where(i => !i.IsVirtualUnaired);
-            }
-
-            return seasons;
         }
 
         public IEnumerable<Episode> GetEpisodes(User user)
         {
-            var config = user.Configuration;
+            var seriesKey = GetUniqueSeriesKey(this);
 
-            return GetEpisodes(user, config.DisplayMissingEpisodes, config.DisplayUnairedEpisodes);
-        }
-
-        public IEnumerable<Episode> GetEpisodes(User user, bool includeMissing, bool includeVirtualUnaired)
-        {
-            var allItems = LibraryManager.GetItemList(new InternalItemsQuery(user)
+            var query = new InternalItemsQuery(user)
             {
-                AncestorWithPresentationUniqueKey = GetUniqueSeriesKey(this),
-                IncludeItemTypes = new[] { typeof(Episode).Name, typeof(Season).Name },
-                SortBy = new[] { ItemSortBy.SortName }
+                AncestorWithPresentationUniqueKey = seriesKey,
+                IncludeItemTypes = new[] {typeof (Episode).Name, typeof (Season).Name},
+                SortBy = new[] {ItemSortBy.SortName}
+            };
+            var config = user.Configuration;
+            if (!config.DisplayMissingEpisodes && !config.DisplayUnairedEpisodes)
+            {
+                query.IsVirtualItem = false;
+            }
+            else if (!config.DisplayMissingEpisodes)
+            {
+                query.IsMissing = false;
+            }
+            else if (!config.DisplayUnairedEpisodes)
+            {
+                query.IsVirtualUnaired = false;
+            }
 
-            }).ToList();
+            var allItems = LibraryManager.GetItemList(query).ToList();
 
             var allSeriesEpisodes = allItems.OfType<Episode>().ToList();
 
             var allEpisodes = allItems.OfType<Season>()
-                .SelectMany(i => i.GetEpisodes(this, user, includeMissing, includeVirtualUnaired, allSeriesEpisodes))
+                .SelectMany(i => i.GetEpisodes(this, user, allSeriesEpisodes))
                 .Reverse()
                 .ToList();
 
@@ -352,78 +366,51 @@ namespace MediaBrowser.Controller.Entities.TV
             progress.Report(100);
         }
 
-        public IEnumerable<Episode> GetEpisodes(User user, Season season)
+        public IEnumerable<Episode> GetSeasonEpisodes(Season parentSeason, User user)
         {
-            var config = user.Configuration;
+            var seriesKey = GetUniqueSeriesKey(this);
 
-            return GetEpisodes(user, season, config.DisplayMissingEpisodes, config.DisplayUnairedEpisodes);
-        }
-
-        private IEnumerable<Episode> GetAllEpisodes(User user)
-        {
-            return LibraryManager.GetItemList(new InternalItemsQuery(user)
+            var query = new InternalItemsQuery(user)
             {
-                AncestorWithPresentationUniqueKey = GetUniqueSeriesKey(this),
+                AncestorWithPresentationUniqueKey = seriesKey,
                 IncludeItemTypes = new[] { typeof(Episode).Name },
                 SortBy = new[] { ItemSortBy.SortName }
+            };
+            if (user != null)
+            {
+                var config = user.Configuration;
+                if (!config.DisplayMissingEpisodes && !config.DisplayUnairedEpisodes)
+                {
+                    query.IsVirtualItem = false;
+                }
+                else if (!config.DisplayMissingEpisodes)
+                {
+                    query.IsMissing = false;
+                }
+                else if (!config.DisplayUnairedEpisodes)
+                {
+                    query.IsVirtualUnaired = false;
+                }
+            }
 
-            }).Cast<Episode>();
+            var allItems = LibraryManager.GetItemList(query).OfType<Episode>();
+
+            return GetSeasonEpisodes(parentSeason, user, allItems);
         }
 
-        public IEnumerable<Episode> GetEpisodes(User user, Season parentSeason, bool includeMissingEpisodes, bool includeVirtualUnairedEpisodes)
-        {
-            IEnumerable<Episode> episodes = GetAllEpisodes(user);
-
-            return GetEpisodes(user, parentSeason, includeMissingEpisodes, includeVirtualUnairedEpisodes, episodes);
-        }
-
-        public IEnumerable<Episode> GetEpisodes(User user, Season parentSeason, bool includeMissingEpisodes, bool includeVirtualUnairedEpisodes, IEnumerable<Episode> allSeriesEpisodes)
+        public IEnumerable<Episode> GetSeasonEpisodes(Season parentSeason, User user, IEnumerable<Episode> allSeriesEpisodes)
         {
             if (allSeriesEpisodes == null)
             {
-                return GetEpisodes(user, parentSeason, includeMissingEpisodes, includeVirtualUnairedEpisodes);
+                return GetSeasonEpisodes(parentSeason, user);
             }
 
             var episodes = FilterEpisodesBySeason(allSeriesEpisodes, parentSeason, ConfigurationManager.Configuration.DisplaySpecialsWithinSeasons);
-
-            if (!includeMissingEpisodes)
-            {
-                episodes = episodes.Where(i => !i.IsMissingEpisode);
-            }
-            if (!includeVirtualUnairedEpisodes)
-            {
-                episodes = episodes.Where(i => !i.IsVirtualUnaired);
-            }
 
             var sortBy = (parentSeason.IndexNumber ?? -1) == 0 ? ItemSortBy.SortName : ItemSortBy.AiredEpisodeOrder;
 
             return LibraryManager.Sort(episodes, user, new[] { sortBy }, SortOrder.Ascending)
                 .Cast<Episode>();
-        }
-
-        /// <summary>
-        /// Filters the episodes by season.
-        /// </summary>
-        public static IEnumerable<Episode> FilterEpisodesBySeason(IEnumerable<Episode> episodes, int seasonNumber, bool includeSpecials)
-        {
-            if (!includeSpecials || seasonNumber < 1)
-            {
-                return episodes.Where(i => (i.ParentIndexNumber ?? -1) == seasonNumber);
-            }
-
-            return episodes.Where(i =>
-            {
-                var episode = i;
-
-                if (episode != null)
-                {
-                    var currentSeasonNumber = episode.AiredSeasonNumber;
-
-                    return currentSeasonNumber.HasValue && currentSeasonNumber.Value == seasonNumber;
-                }
-
-                return false;
-            });
         }
 
         /// <summary>
@@ -453,6 +440,32 @@ namespace MediaBrowser.Controller.Entities.TV
                 return season != null && string.Equals(GetUniqueSeriesKey(season), seasonPresentationKey, StringComparison.OrdinalIgnoreCase);
             });
         }
+
+        /// <summary>
+        /// Filters the episodes by season.
+        /// </summary>
+        public static IEnumerable<Episode> FilterEpisodesBySeason(IEnumerable<Episode> episodes, int seasonNumber, bool includeSpecials)
+        {
+            if (!includeSpecials || seasonNumber < 1)
+            {
+                return episodes.Where(i => (i.ParentIndexNumber ?? -1) == seasonNumber);
+            }
+
+            return episodes.Where(i =>
+            {
+                var episode = i;
+
+                if (episode != null)
+                {
+                    var currentSeasonNumber = episode.AiredSeasonNumber;
+
+                    return currentSeasonNumber.HasValue && currentSeasonNumber.Value == seasonNumber;
+                }
+
+                return false;
+            });
+        }
+
 
         protected override bool GetBlockUnratedValue(UserPolicy config)
         {
@@ -508,6 +521,16 @@ namespace MediaBrowser.Controller.Entities.TV
             }
 
             return list;
+        }
+
+        [IgnoreDataMember]
+        public override bool StopRefreshIfLocalMetadataFound
+        {
+            get
+            {
+                // Need people id's from internet metadata
+                return false;
+            }
         }
     }
 }

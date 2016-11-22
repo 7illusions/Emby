@@ -162,15 +162,18 @@ namespace MediaBrowser.Providers.MediaInfo
         {
             var audio = item as Audio;
 
-            return item.LocationType == LocationType.FileSystem && audio != null && !audio.IsArchive;
+            return item.LocationType == LocationType.FileSystem && audio != null;
         }
 
         public bool HasChanged(IHasMetadata item, IDirectoryService directoryService)
         {
-            var file = directoryService.GetFile(item.Path);
-            if (file != null && file.LastWriteTimeUtc != item.DateModified)
+            if (item.EnableRefreshOnDateModifiedChange && !string.IsNullOrWhiteSpace(item.Path) && item.LocationType == LocationType.FileSystem)
             {
-                return true;
+                var file = directoryService.GetFile(item.Path);
+                if (file != null && file.LastWriteTimeUtc != item.DateModified)
+                {
+                    return true;
+                }
             }
 
             return false;

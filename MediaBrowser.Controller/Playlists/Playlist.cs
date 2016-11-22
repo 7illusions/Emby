@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading.Tasks;
+using MediaBrowser.Controller.Providers;
 
 namespace MediaBrowser.Controller.Playlists
 {
@@ -27,6 +28,15 @@ namespace MediaBrowser.Controller.Playlists
             get
             {
                 return true;
+            }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsPlayedStatus
+        {
+            get
+            {
+                return string.Equals(MediaType, "Video", StringComparison.OrdinalIgnoreCase);
             }
         }
 
@@ -58,9 +68,20 @@ namespace MediaBrowser.Controller.Playlists
             return true;
         }
 
+        protected override IEnumerable<BaseItem> LoadChildren()
+        {
+            // Save a trip to the database
+            return new List<BaseItem>();
+        }
+
         public override IEnumerable<BaseItem> GetChildren(User user, bool includeLinkedChildren)
         {
             return GetPlayableItems(user).Result;
+        }
+
+        protected override IEnumerable<BaseItem> GetNonCachedChildren(IDirectoryService directoryService)
+        {
+            return new List<BaseItem>();
         }
 
         public override IEnumerable<BaseItem> GetRecursiveChildren(User user, InternalItemsQuery query)
@@ -186,15 +207,15 @@ namespace MediaBrowser.Controller.Playlists
 
         public override bool IsVisible(User user)
         {
-            if (base.IsVisible(user))
-            {
-                var userId = user.Id.ToString("N");
+            var userId = user.Id.ToString("N");
 
-                return Shares.Any(i => string.Equals(userId, i.UserId, StringComparison.OrdinalIgnoreCase)) ||
-                    string.Equals(OwnerUserId, userId, StringComparison.OrdinalIgnoreCase);
-            }
+            return Shares.Any(i => string.Equals(userId, i.UserId, StringComparison.OrdinalIgnoreCase)) ||
+                string.Equals(OwnerUserId, userId, StringComparison.OrdinalIgnoreCase);
+        }
 
-            return false;
+        public override bool IsVisibleStandalone(User user)
+        {
+            return IsVisible(user);
         }
     }
 }

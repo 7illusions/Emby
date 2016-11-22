@@ -1,4 +1,17 @@
 define(['dom'], function (dom) {
+    'use strict';
+
+    var scopes = [];
+    function pushScope(elem) {
+        scopes.push(elem);
+    }
+
+    function popScope(elem) {
+
+        if (scopes.length) {
+            scopes.length -= 1;
+        }
+    }
 
     function autoFocus(view, defaultToFirst, findAutoFocusElement) {
 
@@ -12,7 +25,7 @@ define(['dom'], function (dom) {
         }
 
         if (defaultToFirst !== false) {
-            element = getFocusableElements(view)[0];
+            element = getFocusableElements(view, 1)[0];
 
             if (element) {
                 focus(element);
@@ -32,13 +45,20 @@ define(['dom'], function (dom) {
         }
     }
 
-    var focusableTagNames = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A', 'PAPER-CHECKBOX'];
+    var focusableTagNames = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'];
     var focusableContainerTagNames = ['BODY', 'DIALOG'];
-    var focusableQuery = focusableTagNames.join(',') + ',.focusable';
+    var focusableQuery = focusableTagNames.map(function (t) {
+
+        if (t === 'INPUT') {
+            t += ':not([type="range"])';
+        }
+        return t + ':not([tabindex="-1"]):not(:disabled)';
+
+    }).join(',') + ',.focusable';
 
     function isFocusable(elem) {
 
-        if (focusableTagNames.indexOf(elem.tagName) != -1) {
+        if (focusableTagNames.indexOf(elem.tagName) !== -1) {
             return true;
         }
 
@@ -63,41 +83,55 @@ define(['dom'], function (dom) {
     }
 
     // Determines if a focusable element can be focused at a given point in time 
-    function isCurrentlyFocusable(elem) {
-
-        if (elem.disabled) {
-            return false;
-        }
-
-        if (elem.getAttribute('tabindex') == "-1") {
-            return false;
-        }
+    function isCurrentlyFocusableInternal(elem) {
 
         // http://stackoverflow.com/questions/19669786/check-if-element-is-visible-in-dom
         if (elem.offsetParent === null) {
             return false;
         }
 
-        if (elem.tagName == 'INPUT') {
+        return true;
+    }
+
+    // Determines if a focusable element can be focused at a given point in time 
+    function isCurrentlyFocusable(elem) {
+
+        if (elem.disabled) {
+            return false;
+        }
+
+        if (elem.getAttribute('tabindex') === "-1") {
+            return false;
+        }
+
+        if (elem.tagName === 'INPUT') {
             var type = elem.type;
-            if (type == 'range') {
+            if (type === 'range') {
                 return false;
             }
         }
 
-        return true;
+        return isCurrentlyFocusableInternal(elem);
     }
 
-    function getFocusableElements(parent) {
-        var elems = (parent || document).querySelectorAll(focusableQuery);
+    function getDefaultScope() {
+        return scopes[0] || document.body;
+    }
+
+    function getFocusableElements(parent, limit) {
+        var elems = (parent || getDefaultScope()).querySelectorAll(focusableQuery);
         var focusableElements = [];
 
         for (var i = 0, length = elems.length; i < length; i++) {
 
             var elem = elems[i];
 
-            if (isCurrentlyFocusable(elem)) {
+            if (isCurrentlyFocusableInternal(elem)) {
                 focusableElements.push(elem);
+
+                if (limit && focusableElements.length >= limit) {
+                    break;
+                }
             }
         }
 
@@ -106,7 +140,7 @@ define(['dom'], function (dom) {
 
     function isFocusContainer(elem, direction) {
 
-        if (focusableContainerTagNames.indexOf(elem.tagName) != -1) {
+        if (focusableContainerTagNames.indexOf(elem.tagName) !== -1) {
             return true;
         }
         if (elem.classList.contains('focuscontainer')) {
@@ -118,7 +152,7 @@ define(['dom'], function (dom) {
                 return true;
             }
         }
-        else if (direction == 3) {
+        else if (direction === 3) {
             if (elem.classList.contains('focuscontainer-down')) {
                 return true;
             }
@@ -132,56 +166,45 @@ define(['dom'], function (dom) {
             elem = elem.parentNode;
 
             if (!elem) {
-                return document.body;
+                return getDefaultScope();
             }
         }
 
         return elem;
     }
 
-    function getWindowData(win, documentElement) {
+    function getOffset(elem) {
 
-        return {
-            pageYOffset: win.pageYOffset,
-            pageXOffset: win.pageXOffset,
-            clientTop: documentElement.clientTop,
-            clientLeft: documentElement.clientLeft
-        };
-    }
-
-    function getOffset(elem, windowData) {
-
-        var box = { top: 0, left: 0 };
+        var box;
 
         // Support: BlackBerry 5, iOS 3 (original iPhone)
         // If we don't have gBCR, just use 0,0 rather than error
         if (elem.getBoundingClientRect) {
             box = elem.getBoundingClientRect();
+        } else {
+            box = {
+                top: 0,
+                left: 0,
+                width: 0,
+                height: 0
+            };
         }
         return {
-            top: box.top + windowData.pageYOffset - windowData.clientTop,
-            left: box.left + windowData.pageXOffset - windowData.clientLeft
+            top: box.top,
+            left: box.left,
+            width: box.width,
+            height: box.height
         };
     }
 
-    function getViewportBoundingClientRect(elem, windowData) {
+    function getViewportBoundingClientRect(elem) {
 
-        var offset = getOffset(elem, windowData);
+        var offset = getOffset(elem);
 
-        var posY = offset.top - windowData.pageYOffset;
-        var posX = offset.left - windowData.pageXOffset;
+        offset.right = offset.left + offset.width;
+        offset.bottom = offset.top + offset.height;
 
-        var width = elem.offsetWidth;
-        var height = elem.offsetHeight;
-
-        return {
-            left: posX,
-            top: posY,
-            width: width,
-            height: height,
-            right: posX + width,
-            bottom: posY + height
-        };
+        return offset;
     }
 
     function nav(activeElement, direction) {
@@ -192,7 +215,7 @@ define(['dom'], function (dom) {
             activeElement = focusableParent(activeElement);
         }
 
-        var container = activeElement ? getFocusContainer(activeElement, direction) : document.body;
+        var container = activeElement ? getFocusContainer(activeElement, direction) : getDefaultScope();
 
         if (!activeElement) {
             autoFocus(container, true, false);
@@ -201,28 +224,31 @@ define(['dom'], function (dom) {
 
         var focusableContainer = dom.parentWithClass(activeElement, 'focusable');
 
-        var doc = activeElement.ownerDocument;
-        var windowData = getWindowData(doc.defaultView, doc.documentElement);
-        var rect = getViewportBoundingClientRect(activeElement, windowData);
+        var rect = getViewportBoundingClientRect(activeElement);
         var focusableElements = [];
 
         var focusable = container.querySelectorAll(focusableQuery);
         for (var i = 0, length = focusable.length; i < length; i++) {
             var curr = focusable[i];
 
-            if (curr == activeElement) {
+            if (curr === activeElement) {
                 continue;
             }
             // Don't refocus into the same container
-            if (curr == focusableContainer) {
+            if (curr === focusableContainer) {
                 continue;
             }
 
-            if (!isCurrentlyFocusable(curr)) {
+            //if (!isCurrentlyFocusableInternal(curr)) {
+            //    continue;
+            //}
+
+            var elementRect = getViewportBoundingClientRect(curr);
+
+            // not currently visible
+            if (!elementRect.width && !elementRect.height) {
                 continue;
             }
-
-            var elementRect = getViewportBoundingClientRect(curr, windowData);
 
             switch (direction) {
 
@@ -231,7 +257,7 @@ define(['dom'], function (dom) {
                     if (elementRect.left >= rect.left) {
                         continue;
                     }
-                    if (elementRect.right == rect.right) {
+                    if (elementRect.right === rect.right) {
                         continue;
                     }
                     break;
@@ -240,7 +266,7 @@ define(['dom'], function (dom) {
                     if (elementRect.right <= rect.right) {
                         continue;
                     }
-                    if (elementRect.left == rect.left) {
+                    if (elementRect.left === rect.left) {
                         continue;
                     }
                     break;
@@ -279,8 +305,8 @@ define(['dom'], function (dom) {
 
             // See if there's a focusable container, and if so, send the focus command to that
             var nearestElementFocusableParent = dom.parentWithClass(nearestElement, 'focusable');
-            if (nearestElementFocusableParent && nearestElementFocusableParent != nearestElement && activeElement) {
-                if (dom.parentWithClass(activeElement, 'focusable') != nearestElementFocusableParent) {
+            if (nearestElementFocusableParent && nearestElementFocusableParent !== nearestElement && activeElement) {
+                if (dom.parentWithClass(activeElement, 'focusable') !== nearestElementFocusableParent) {
                     nearestElement = nearestElementFocusableParent;
                 }
             }
@@ -379,12 +405,12 @@ define(['dom'], function (dom) {
     function sortNodesT(a, b) {
 
         var result = a.distT - b.distT;
-        if (result != 0) {
+        if (result !== 0) {
             return result;
         }
 
         result = a.index - b.index;
-        if (result != 0) {
+        if (result !== 0) {
             return result;
         }
 
@@ -415,6 +441,8 @@ define(['dom'], function (dom) {
             nav(sourceElement, 3);
         },
         sendText: sendText,
-        isCurrentlyFocusable: isCurrentlyFocusable
+        isCurrentlyFocusable: isCurrentlyFocusable,
+        pushScope: pushScope,
+        popScope: popScope
     };
 });

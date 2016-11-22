@@ -22,6 +22,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
+using MediaBrowser.Common.Net;
+using MediaBrowser.Controller;
 
 namespace MediaBrowser.Api.Playback
 {
@@ -68,6 +70,9 @@ namespace MediaBrowser.Api.Playback
         protected IMediaSourceManager MediaSourceManager { get; private set; }
         protected IZipClient ZipClient { get; private set; }
         protected IJsonSerializer JsonSerializer { get; private set; }
+
+        public static IServerApplicationHost AppHost;
+        public static IHttpClient HttpClient;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BaseStreamingService" /> class.
@@ -293,7 +298,8 @@ namespace MediaBrowser.Api.Playback
             // Since transcoding of folder rips is expiremental anyway, it's not worth adding additional variables such as this.
             if (state.VideoType == VideoType.VideoFile)
             {
-                var hwType = ApiEntryPoint.Instance.GetEncodingOptions().HardwareAccelerationType;
+                var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
+                var hwType = encodingOptions.HardwareAccelerationType;
 
                 if (string.Equals(hwType, "qsv", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(hwType, "h264_qsv", StringComparison.OrdinalIgnoreCase))
@@ -309,9 +315,32 @@ namespace MediaBrowser.Api.Playback
                 {
                     return GetAvailableEncoder("h264_omx", defaultEncoder);
                 }
+                if (string.Equals(hwType, "vaapi", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(encodingOptions.VaapiDevice))
+                {
+                    if (IsVaapiSupported(state))
+                    {
+                        return GetAvailableEncoder("h264_vaapi", defaultEncoder);
+                    }
+                }
             }
 
             return defaultEncoder;
+        }
+
+        private bool IsVaapiSupported(StreamState state)
+        {
+            var videoStream = state.VideoStream;
+
+            if (videoStream != null)
+            {
+                // vaapi will throw an error with this input
+                // [vaapi @ 0x7faed8000960] No VAAPI support for codec mpeg4 profile -99.
+                if (string.Equals(videoStream.Codec, "mpeg4", StringComparison.OrdinalIgnoreCase) && videoStream.Level == -99)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private string GetAvailableEncoder(string preferredEncoder, string defaultEncoder)
@@ -327,44 +356,62 @@ namespace MediaBrowser.Api.Playback
         /// Gets the video bitrate to specify on the command line
         /// </summary>
         /// <param name="state">The state.</param>
-        /// <param name="videoCodec">The video codec.</param>
+        /// <param name="videoEncoder">The video codec.</param>
         /// <returns>System.String.</returns>
-        protected string GetVideoQualityParam(StreamState state, string videoCodec)
+        protected string GetVideoQualityParam(StreamState state, string videoEncoder)
         {
             var param = string.Empty;
 
             var isVc1 = state.VideoStream != null &&
                 string.Equals(state.VideoStream.Codec, "vc1", StringComparison.OrdinalIgnoreCase);
 
-            if (string.Equals(videoCodec, "libx264", StringComparison.OrdinalIgnoreCase))
-            {
-                param = "-preset superfast";
+            var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
 
-                param += " -crf 23";
+            if (string.Equals(videoEncoder, "libx264", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(encodingOptions.H264Preset))
+                {
+                    param += "-preset " + encodingOptions.H264Preset;
+                }
+                else
+                {
+                    param += "-preset superfast";
+                }
+
+                if (encodingOptions.H264Crf >= 0 && encodingOptions.H264Crf <= 51)
+                {
+                    param += " -crf " + encodingOptions.H264Crf.ToString(CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    param += " -crf 23";
+                }
+
+                param += " -tune zerolatency";
             }
 
-            else if (string.Equals(videoCodec, "libx265", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "libx265", StringComparison.OrdinalIgnoreCase))
             {
-                param = "-preset fast";
+                param += "-preset fast";
 
                 param += " -crf 28";
             }
 
             // h264 (h264_qsv)
-            else if (string.Equals(videoCodec, "h264_qsv", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "h264_qsv", StringComparison.OrdinalIgnoreCase))
             {
-                param = "-preset 7 -look_ahead 0";
+                param += "-preset 7 -look_ahead 0";
 
             }
 
             // h264 (h264_nvenc)
-            else if (string.Equals(videoCodec, "h264_nvenc", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "h264_nvenc", StringComparison.OrdinalIgnoreCase))
             {
-                param = "-preset default";
+                param += "-preset default";
             }
 
             // webm
-            else if (string.Equals(videoCodec, "libvpx", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "libvpx", StringComparison.OrdinalIgnoreCase))
             {
                 // Values 0-3, 0 being highest quality but slower
                 var profileScore = 0;
@@ -384,30 +431,30 @@ namespace MediaBrowser.Api.Playback
                 profileScore = Math.Min(profileScore, 2);
 
                 // http://www.webmproject.org/docs/encoder-parameters/
-                param = string.Format("-speed 16 -quality good -profile:v {0} -slices 8 -crf {1} -qmin {2} -qmax {3}",
+                param += string.Format("-speed 16 -quality good -profile:v {0} -slices 8 -crf {1} -qmin {2} -qmax {3}",
                     profileScore.ToString(UsCulture),
                     crf,
                     qmin,
                     qmax);
             }
 
-            else if (string.Equals(videoCodec, "mpeg4", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "mpeg4", StringComparison.OrdinalIgnoreCase))
             {
-                param = "-mbd rd -flags +mv4+aic -trellis 2 -cmp 2 -subcmp 2 -bf 2";
+                param += "-mbd rd -flags +mv4+aic -trellis 2 -cmp 2 -subcmp 2 -bf 2";
             }
 
             // asf/wmv
-            else if (string.Equals(videoCodec, "wmv2", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "wmv2", StringComparison.OrdinalIgnoreCase))
             {
-                param = "-qmin 2";
+                param += "-qmin 2";
             }
 
-            else if (string.Equals(videoCodec, "msmpeg4", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(videoEncoder, "msmpeg4", StringComparison.OrdinalIgnoreCase))
             {
-                param = "-mbd 2";
+                param += "-mbd 2";
             }
 
-            param += GetVideoBitrateParam(state, videoCodec);
+            param += GetVideoBitrateParam(state, videoEncoder);
 
             var framerate = GetFramerateParam(state);
             if (framerate.HasValue)
@@ -422,7 +469,8 @@ namespace MediaBrowser.Api.Playback
 
             if (!string.IsNullOrEmpty(state.VideoRequest.Profile))
             {
-                if (!string.Equals(videoCodec, "h264_omx", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(videoEncoder, "h264_omx", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(videoEncoder, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
                 {
                     // not supported by h264_omx
                     param += " -profile:v " + state.VideoRequest.Profile;
@@ -431,14 +479,18 @@ namespace MediaBrowser.Api.Playback
 
             if (!string.IsNullOrEmpty(state.VideoRequest.Level))
             {
+                var level = NormalizeTranscodingLevel(state.OutputVideoCodec, state.VideoRequest.Level);
+
                 // h264_qsv and h264_nvenc expect levels to be expressed as a decimal. libx264 supports decimal and non-decimal format
-                if (string.Equals(videoCodec, "h264_qsv", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(videoCodec, "h264_nvenc", StringComparison.OrdinalIgnoreCase))
+                // also needed for libx264 due to https://trac.ffmpeg.org/ticket/3307
+                if (string.Equals(videoEncoder, "h264_qsv", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(videoEncoder, "h264_nvenc", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(videoEncoder, "libx264", StringComparison.OrdinalIgnoreCase))
                 {
-                    switch (state.VideoRequest.Level)
+                    switch (level)
                     {
                         case "30":
-                            param += " -level 3";
+                            param += " -level 3.0";
                             break;
                         case "31":
                             param += " -level 3.1";
@@ -447,7 +499,7 @@ namespace MediaBrowser.Api.Playback
                             param += " -level 3.2";
                             break;
                         case "40":
-                            param += " -level 4";
+                            param += " -level 4.0";
                             break;
                         case "41":
                             param += " -level 4.1";
@@ -456,7 +508,7 @@ namespace MediaBrowser.Api.Playback
                             param += " -level 4.2";
                             break;
                         case "50":
-                            param += " -level 5";
+                            param += " -level 5.0";
                             break;
                         case "51":
                             param += " -level 5.1";
@@ -465,24 +517,44 @@ namespace MediaBrowser.Api.Playback
                             param += " -level 5.2";
                             break;
                         default:
-                            param += " -level " + state.VideoRequest.Level;
+                            param += " -level " + level;
                             break;
                     }
                 }
-                else if (!string.Equals(videoCodec, "h264_omx", StringComparison.OrdinalIgnoreCase))
+                else if (!string.Equals(videoEncoder, "h264_omx", StringComparison.OrdinalIgnoreCase))
                 {
-                    param += " -level " + state.VideoRequest.Level;
+                    param += " -level " + level;
                 }
             }
 
-            if (!string.Equals(videoCodec, "h264_omx", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(videoCodec, "h264_qsv", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(videoCodec, "h264_nvenc", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(videoEncoder, "h264_omx", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(videoEncoder, "h264_qsv", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(videoEncoder, "h264_nvenc", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(videoEncoder, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
             {
                 param = "-pix_fmt yuv420p " + param;
             }
 
             return param;
+        }
+
+        private string NormalizeTranscodingLevel(string videoCodec, string level)
+        {
+            double requestLevel;
+
+            // Clients may direct play higher than level 41, but there's no reason to transcode higher
+            if (double.TryParse(level, NumberStyles.Any, UsCulture, out requestLevel))
+            {
+                if (string.Equals(videoCodec, "h264", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (requestLevel > 41)
+                    {
+                        return "41";
+                    }
+                }
+            }
+
+            return level;
         }
 
         protected string GetAudioFilterParam(StreamState state, bool isHls)
@@ -543,59 +615,97 @@ namespace MediaBrowser.Api.Playback
 
             var filters = new List<string>();
 
-            if (state.DeInterlace)
+            if (string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
+            {
+                filters.Add("format=nv12|vaapi");
+                filters.Add("hwupload");
+            }
+            else if (state.DeInterlace && !string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
             {
                 filters.Add("yadif=0:-1:0");
             }
 
-            // If fixed dimensions were supplied
-            if (request.Width.HasValue && request.Height.HasValue)
+            if (string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
             {
-                var widthParam = request.Width.Value.ToString(UsCulture);
-                var heightParam = request.Height.Value.ToString(UsCulture);
+                // Work around vaapi's reduced scaling features
+                var scaler = "scale_vaapi";
 
-                filters.Add(string.Format("scale=trunc({0}/2)*2:trunc({1}/2)*2", widthParam, heightParam));
+                // Given the input dimensions (inputWidth, inputHeight), determine the output dimensions
+                // (outputWidth, outputHeight). The user may request precise output dimensions or maximum
+                // output dimensions. Output dimensions are guaranteed to be even.
+                decimal inputWidth = Convert.ToDecimal(state.VideoStream.Width);
+                decimal inputHeight = Convert.ToDecimal(state.VideoStream.Height);
+                decimal outputWidth = request.Width.HasValue ? Convert.ToDecimal(request.Width.Value) : inputWidth;
+                decimal outputHeight = request.Height.HasValue ? Convert.ToDecimal(request.Height.Value) : inputHeight;
+                decimal maximumWidth = request.MaxWidth.HasValue ? Convert.ToDecimal(request.MaxWidth.Value) : outputWidth;
+                decimal maximumHeight = request.MaxHeight.HasValue ? Convert.ToDecimal(request.MaxHeight.Value) : outputHeight;
+
+                if (outputWidth > maximumWidth || outputHeight > maximumHeight)
+                {
+                    var scale = Math.Min(maximumWidth / outputWidth, maximumHeight / outputHeight);
+                    outputWidth = Math.Min(maximumWidth, Math.Truncate(outputWidth * scale));
+                    outputHeight = Math.Min(maximumHeight, Math.Truncate(outputHeight * scale));
+                }
+
+                outputWidth = 2 * Math.Truncate(outputWidth / 2);
+                outputHeight = 2 * Math.Truncate(outputHeight / 2);
+
+                if (outputWidth != inputWidth || outputHeight != inputHeight)
+                {
+                    filters.Add(string.Format("{0}=w={1}:h={2}", scaler, outputWidth.ToString(UsCulture), outputHeight.ToString(UsCulture)));
+                }
             }
-
-            // If Max dimensions were supplied, for width selects lowest even number between input width and width req size and selects lowest even number from in width*display aspect and requested size
-            else if (request.MaxWidth.HasValue && request.MaxHeight.HasValue)
+            else
             {
-                var maxWidthParam = request.MaxWidth.Value.ToString(UsCulture);
-                var maxHeightParam = request.MaxHeight.Value.ToString(UsCulture);
+                // If fixed dimensions were supplied
+                if (request.Width.HasValue && request.Height.HasValue)
+                {
+                    var widthParam = request.Width.Value.ToString(UsCulture);
+                    var heightParam = request.Height.Value.ToString(UsCulture);
 
-                filters.Add(string.Format("scale=trunc(min(max(iw\\,ih*dar)\\,min({0}\\,{1}*dar))/2)*2:trunc(min(max(iw/dar\\,ih)\\,min({0}/dar\\,{1}))/2)*2", maxWidthParam, maxHeightParam));
-            }
+                    filters.Add(string.Format("scale=trunc({0}/2)*2:trunc({1}/2)*2", widthParam, heightParam));
+                }
 
-            // If a fixed width was requested
-            else if (request.Width.HasValue)
-            {
-                var widthParam = request.Width.Value.ToString(UsCulture);
+                // If Max dimensions were supplied, for width selects lowest even number between input width and width req size and selects lowest even number from in width*display aspect and requested size
+                else if (request.MaxWidth.HasValue && request.MaxHeight.HasValue)
+                {
+                    var maxWidthParam = request.MaxWidth.Value.ToString(UsCulture);
+                    var maxHeightParam = request.MaxHeight.Value.ToString(UsCulture);
 
-                filters.Add(string.Format("scale={0}:trunc(ow/a/2)*2", widthParam));
-            }
+                    filters.Add(string.Format("scale=trunc(min(max(iw\\,ih*dar)\\,min({0}\\,{1}*dar))/2)*2:trunc(min(max(iw/dar\\,ih)\\,min({0}/dar\\,{1}))/2)*2", maxWidthParam, maxHeightParam));
+                }
 
-            // If a fixed height was requested
-            else if (request.Height.HasValue)
-            {
-                var heightParam = request.Height.Value.ToString(UsCulture);
+                // If a fixed width was requested
+                else if (request.Width.HasValue)
+                {
+                    var widthParam = request.Width.Value.ToString(UsCulture);
 
-                filters.Add(string.Format("scale=trunc(oh*a/2)*2:{0}", heightParam));
-            }
+                    filters.Add(string.Format("scale={0}:trunc(ow/a/2)*2", widthParam));
+                }
 
-            // If a max width was requested
-            else if (request.MaxWidth.HasValue)
-            {
-                var maxWidthParam = request.MaxWidth.Value.ToString(UsCulture);
+                // If a fixed height was requested
+                else if (request.Height.HasValue)
+                {
+                    var heightParam = request.Height.Value.ToString(UsCulture);
 
-                filters.Add(string.Format("scale=trunc(min(max(iw\\,ih*dar)\\,{0})/2)*2:trunc(ow/dar/2)*2", maxWidthParam));
-            }
+                    filters.Add(string.Format("scale=trunc(oh*a/2)*2:{0}", heightParam));
+                }
 
-            // If a max height was requested
-            else if (request.MaxHeight.HasValue)
-            {
-                var maxHeightParam = request.MaxHeight.Value.ToString(UsCulture);
+                // If a max width was requested
+                else if (request.MaxWidth.HasValue)
+                {
+                    var maxWidthParam = request.MaxWidth.Value.ToString(UsCulture);
 
-                filters.Add(string.Format("scale=trunc(oh*a/2)*2:min(ih\\,{0})", maxHeightParam));
+                    filters.Add(string.Format("scale=trunc(min(max(iw\\,ih*dar)\\,{0})/2)*2:trunc(ow/dar/2)*2", maxWidthParam));
+                }
+
+                // If a max height was requested
+                else if (request.MaxHeight.HasValue)
+                {
+                    var maxHeightParam = request.MaxHeight.Value.ToString(UsCulture);
+
+                    filters.Add(string.Format("scale=trunc(oh*a/2)*2:min(max(iw/dar\\,ih)\\,{0})", maxHeightParam));
+                }
             }
 
             var output = string.Empty;
@@ -680,7 +790,20 @@ namespace MediaBrowser.Api.Playback
             if (request.Width.HasValue || request.Height.HasValue || request.MaxHeight.HasValue || request.MaxWidth.HasValue)
             {
                 outputSizeParam = GetOutputSizeParam(state, outputVideoCodec).TrimEnd('"');
-                outputSizeParam = "," + outputSizeParam.Substring(outputSizeParam.IndexOf("scale", StringComparison.OrdinalIgnoreCase));
+
+                if (string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase))
+                {
+                    outputSizeParam = "," + outputSizeParam.Substring(outputSizeParam.IndexOf("format", StringComparison.OrdinalIgnoreCase));
+                }
+                else
+                {
+                    outputSizeParam = "," + outputSizeParam.Substring(outputSizeParam.IndexOf("scale", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            if (string.Equals(outputVideoCodec, "h264_vaapi", StringComparison.OrdinalIgnoreCase) && outputSizeParam.Length == 0)
+            {
+                outputSizeParam = ",format=nv12|vaapi,hwupload";
             }
 
             var videoSizeParam = string.Empty;
@@ -715,10 +838,10 @@ namespace MediaBrowser.Api.Playback
         {
             if (state.PlayableStreamFileNames.Count > 0)
             {
-                return MediaEncoder.GetProbeSizeArgument(state.PlayableStreamFileNames.ToArray(), state.InputProtocol);
+                return MediaEncoder.GetProbeSizeAndAnalyzeDurationArgument(state.PlayableStreamFileNames.ToArray(), state.InputProtocol);
             }
 
-            return MediaEncoder.GetProbeSizeArgument(new[] { state.MediaPath }, state.InputProtocol);
+            return MediaEncoder.GetProbeSizeAndAnalyzeDurationArgument(new[] { state.MediaPath }, state.InputProtocol);
         }
 
         /// <summary>
@@ -763,12 +886,9 @@ namespace MediaBrowser.Api.Playback
                 resultChannels = Math.Min(request.MaxAudioChannels.Value, channelLimit);
             }
 
-            if (resultChannels.HasValue && !string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
+            if (request.TranscodingMaxAudioChannels.HasValue && !string.Equals(codec, "copy", StringComparison.OrdinalIgnoreCase))
             {
-                if (request.TranscodingMaxAudioChannels.HasValue)
-                {
-                    resultChannels = Math.Min(request.TranscodingMaxAudioChannels.Value, resultChannels.Value);
-                }
+                resultChannels = Math.Min(request.TranscodingMaxAudioChannels.Value, resultChannels ?? inputChannels ?? request.TranscodingMaxAudioChannels.Value);
             }
 
             return resultChannels ?? request.AudioChannels;
@@ -930,6 +1050,23 @@ namespace MediaBrowser.Api.Playback
                 }
             }
 
+            if (state.VideoRequest != null)
+            {
+                var encodingOptions = ApiEntryPoint.Instance.GetEncodingOptions();
+                if (GetVideoEncoder(state).IndexOf("vaapi", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    var hasGraphicalSubs = state.SubtitleStream != null && !state.SubtitleStream.IsTextSubtitleStream && state.VideoRequest.SubtitleMethod == SubtitleDeliveryMethod.Encode;
+                    var hwOutputFormat = "vaapi";
+
+                    if (hasGraphicalSubs)
+                    {
+                        hwOutputFormat = "yuv420p";
+                    }
+
+                    arg = "-hwaccel vaapi -hwaccel_output_format " + hwOutputFormat + " -vaapi_device " + encodingOptions.VaapiDevice + " " + arg;
+                }
+            }
+
             return arg.Trim();
         }
 
@@ -1055,14 +1192,14 @@ namespace MediaBrowser.Api.Playback
             var commandLineLogMessage = process.StartInfo.FileName + " " + process.StartInfo.Arguments;
             Logger.Info(commandLineLogMessage);
 
-            var logFilePrefix = "transcode";
+            var logFilePrefix = "ffmpeg-transcode";
             if (state.VideoRequest != null && string.Equals(state.OutputVideoCodec, "copy", StringComparison.OrdinalIgnoreCase) && string.Equals(state.OutputAudioCodec, "copy", StringComparison.OrdinalIgnoreCase))
             {
-                logFilePrefix = "directstream";
+                logFilePrefix = "ffmpeg-directstream";
             }
             else if (state.VideoRequest != null && string.Equals(state.OutputVideoCodec, "copy", StringComparison.OrdinalIgnoreCase))
             {
-                logFilePrefix = "remux";
+                logFilePrefix = "ffmpeg-remux";
             }
 
             var logFilePath = Path.Combine(ServerConfigurationManager.ApplicationPaths.LogDirectoryPath, logFilePrefix + "-" + Guid.NewGuid() + ".txt");
@@ -1093,7 +1230,7 @@ namespace MediaBrowser.Api.Playback
             //process.BeginOutputReadLine();
 
             // Important - don't await the log task or we won't be able to kill ffmpeg when the user stops playback
-            Task.Run(() => StartStreamingLog(transcodingJob, state, process.StandardError.BaseStream, state.LogFileStream));
+            var task = Task.Run(() => StartStreamingLog(transcodingJob, state, process.StandardError.BaseStream, state.LogFileStream));
 
             // Wait for the file to exist before proceeeding
             while (!FileSystem.FileExists(state.WaitForPath ?? outputPath) && !transcodingJob.HasExited)
@@ -1101,39 +1238,45 @@ namespace MediaBrowser.Api.Playback
                 await Task.Delay(100, cancellationTokenSource.Token).ConfigureAwait(false);
             }
 
-            if (state.IsInputVideo && transcodingJob.Type == TranscodingJobType.Progressive)
+            if (state.IsInputVideo && transcodingJob.Type == TranscodingJobType.Progressive && !transcodingJob.HasExited)
             {
                 await Task.Delay(1000, cancellationTokenSource.Token).ConfigureAwait(false);
 
-                if (state.ReadInputAtNativeFramerate)
+                if (state.ReadInputAtNativeFramerate && !transcodingJob.HasExited)
                 {
                     await Task.Delay(1500, cancellationTokenSource.Token).ConfigureAwait(false);
                 }
             }
 
-            StartThrottler(state, transcodingJob);
+            if (!transcodingJob.HasExited)
+            {
+                StartThrottler(state, transcodingJob);
+            }
+
+            ReportUsage(state);
 
             return transcodingJob;
         }
 
         private void StartThrottler(StreamState state, TranscodingJob transcodingJob)
         {
-            if (EnableThrottling(state) && state.InputProtocol == MediaProtocol.File &&
-                           state.RunTimeTicks.HasValue &&
-                           state.VideoType == VideoType.VideoFile &&
-                           !string.Equals(state.OutputVideoCodec, "copy", StringComparison.OrdinalIgnoreCase))
+            if (EnableThrottling(state))
             {
-                if (state.RunTimeTicks.Value >= TimeSpan.FromMinutes(5).Ticks && state.IsInputVideo)
-                {
-                    transcodingJob.TranscodingThrottler = state.TranscodingThrottler = new TranscodingThrottler(transcodingJob, Logger, ServerConfigurationManager);
-                    state.TranscodingThrottler.Start();
-                }
+                transcodingJob.TranscodingThrottler = state.TranscodingThrottler = new TranscodingThrottler(transcodingJob, Logger, ServerConfigurationManager);
+                state.TranscodingThrottler.Start();
             }
         }
 
-        protected virtual bool EnableThrottling(StreamState state)
+        private bool EnableThrottling(StreamState state)
         {
-            return true;
+            // do not use throttling with hardware encoders
+            return state.InputProtocol == MediaProtocol.File &&
+                state.RunTimeTicks.HasValue &&
+                state.RunTimeTicks.Value >= TimeSpan.FromMinutes(5).Ticks &&
+                state.IsInputVideo &&
+                state.VideoType == VideoType.VideoFile &&
+                !string.Equals(state.OutputVideoCodec, "copy", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(GetVideoEncoder(state), "libx264", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task StartStreamingLog(TranscodingJob transcodingJob, StreamState state, Stream source, Stream target)
@@ -1171,6 +1314,7 @@ namespace MediaBrowser.Api.Playback
             double? percent = null;
             TimeSpan? transcodingPosition = null;
             long? bytesTranscoded = null;
+            int? bitRate = null;
 
             var parts = line.Split(' ');
 
@@ -1234,11 +1378,32 @@ namespace MediaBrowser.Api.Playback
                         }
                     }
                 }
+                else if (part.StartsWith("bitrate=", StringComparison.OrdinalIgnoreCase))
+                {
+                    var rate = part.Split(new[] { '=' }, 2).Last();
+
+                    int? scale = null;
+                    if (rate.IndexOf("kbits/s", StringComparison.OrdinalIgnoreCase) != -1)
+                    {
+                        scale = 1024;
+                        rate = rate.Replace("kbits/s", string.Empty, StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    if (scale.HasValue)
+                    {
+                        float val;
+
+                        if (float.TryParse(rate, NumberStyles.Any, UsCulture, out val))
+                        {
+                            bitRate = (int)Math.Ceiling(val * scale.Value);
+                        }
+                    }
+                }
             }
 
             if (framerate.HasValue || percent.HasValue)
             {
-                ApiEntryPoint.Instance.ReportTranscodingProgress(transcodingJob, state, transcodingPosition, framerate, percent, bytesTranscoded);
+                ApiEntryPoint.Instance.ReportTranscodingProgress(transcodingJob, state, transcodingPosition, framerate, percent, bytesTranscoded, bitRate);
             }
         }
 
@@ -1316,7 +1481,8 @@ namespace MediaBrowser.Api.Playback
                 // Make sure we don't request a bitrate higher than the source
                 var currentBitrate = audioStream == null ? request.AudioBitRate.Value : audioStream.BitRate ?? request.AudioBitRate.Value;
 
-                return request.AudioBitRate.Value;
+                // Don't encode any higher than this
+                return Math.Min(384000, request.AudioBitRate.Value);
                 //return Math.Min(currentBitrate, request.AudioBitRate.Value);
             }
 
@@ -1561,13 +1727,6 @@ namespace MediaBrowser.Api.Playback
                 }
                 else if (i == 25)
                 {
-                    if (videoRequest != null)
-                    {
-                        videoRequest.ForceLiveStream = string.Equals("true", val, StringComparison.OrdinalIgnoreCase);
-                    }
-                }
-                else if (i == 26)
-                {
                     if (!string.IsNullOrWhiteSpace(val) && videoRequest != null)
                     {
                         SubtitleDeliveryMethod method;
@@ -1577,15 +1736,26 @@ namespace MediaBrowser.Api.Playback
                         }
                     }
                 }
-                else if (i == 27)
+                else if (i == 26)
                 {
                     request.TranscodingMaxAudioChannels = int.Parse(val, UsCulture);
                 }
-                else if (i == 28)
+                else if (i == 27)
                 {
                     if (videoRequest != null)
                     {
                         videoRequest.EnableSubtitlesInManifest = string.Equals("true", val, StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+                else if (i == 28)
+                {
+                    request.Tag = val;
+                }
+                else if (i == 29)
+                {
+                    if (videoRequest != null)
+                    {
+                        videoRequest.EnableSplittingOnNonKeyFrames = string.Equals("true", val, StringComparison.OrdinalIgnoreCase);
                     }
                 }
             }
@@ -1690,6 +1860,15 @@ namespace MediaBrowser.Api.Playback
             //    state.SegmentLength = 6;
             //}
 
+            if (state.VideoRequest != null)
+            {
+                if (!string.IsNullOrWhiteSpace(state.VideoRequest.VideoCodec))
+                {
+                    state.SupportedVideoCodecs = state.VideoRequest.VideoCodec.Split(',').Where(i => !string.IsNullOrWhiteSpace(i)).ToList();
+                    state.VideoRequest.VideoCodec = state.SupportedVideoCodecs.FirstOrDefault();
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(request.AudioCodec))
             {
                 state.SupportedAudioCodecs = request.AudioCodec.Split(',').Where(i => !string.IsNullOrWhiteSpace(i)).ToList();
@@ -1701,26 +1880,37 @@ namespace MediaBrowser.Api.Playback
 
             state.IsInputVideo = string.Equals(item.MediaType, MediaType.Video, StringComparison.OrdinalIgnoreCase);
 
-            var archivable = item as IArchivable;
-            state.IsInputArchive = archivable != null && archivable.IsArchive;
-
-            MediaSourceInfo mediaSource;
+            MediaSourceInfo mediaSource = null;
             if (string.IsNullOrWhiteSpace(request.LiveStreamId))
             {
-                var mediaSources = (await MediaSourceManager.GetPlayackMediaSources(request.Id, null, false, new[] { MediaType.Audio, MediaType.Video }, cancellationToken).ConfigureAwait(false)).ToList();
+                TranscodingJob currentJob = !string.IsNullOrWhiteSpace(request.PlaySessionId) ?
+                    ApiEntryPoint.Instance.GetTranscodingJob(request.PlaySessionId)
+                    : null;
 
-                mediaSource = string.IsNullOrEmpty(request.MediaSourceId)
-                   ? mediaSources.First()
-                   : mediaSources.FirstOrDefault(i => string.Equals(i.Id, request.MediaSourceId));
-
-                if (mediaSource == null && string.Equals(request.Id, request.MediaSourceId, StringComparison.OrdinalIgnoreCase))
+                if (currentJob != null)
                 {
-                    mediaSource = mediaSources.First();
+                    mediaSource = currentJob.MediaSource;
+                }
+
+                if (mediaSource == null)
+                {
+                    var mediaSources = (await MediaSourceManager.GetPlayackMediaSources(request.Id, null, false, new[] { MediaType.Audio, MediaType.Video }, cancellationToken).ConfigureAwait(false)).ToList();
+
+                    mediaSource = string.IsNullOrEmpty(request.MediaSourceId)
+                       ? mediaSources.First()
+                       : mediaSources.FirstOrDefault(i => string.Equals(i.Id, request.MediaSourceId));
+
+                    if (mediaSource == null && string.Equals(request.Id, request.MediaSourceId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        mediaSource = mediaSources.First();
+                    }
                 }
             }
             else
             {
-                mediaSource = await MediaSourceManager.GetLiveStream(request.LiveStreamId, cancellationToken).ConfigureAwait(false);
+                var liveStreamInfo = await MediaSourceManager.GetLiveStreamWithDirectStreamProvider(request.LiveStreamId, cancellationToken).ConfigureAwait(false);
+                mediaSource = liveStreamInfo.Item1;
+                state.DirectStreamProvider = liveStreamInfo.Item2;
             }
 
             var videoRequest = request as VideoStreamRequest;
@@ -1932,7 +2122,7 @@ namespace MediaBrowser.Api.Playback
             }
 
             // Source and target codecs must match
-            if (!string.Equals(request.VideoCodec, videoStream.Codec, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(videoStream.Codec) || !state.SupportedVideoCodecs.Contains(videoStream.Codec, StringComparer.OrdinalIgnoreCase))
             {
                 return false;
             }
@@ -2163,7 +2353,8 @@ namespace MediaBrowser.Api.Playback
                 state.TargetRefFrames,
                 state.TargetVideoStreamCount,
                 state.TargetAudioStreamCount,
-                state.TargetVideoCodecTag);
+                state.TargetVideoCodecTag,
+                state.IsTargetAVC);
 
             if (mediaProfile != null)
             {
@@ -2185,11 +2376,127 @@ namespace MediaBrowser.Api.Playback
                     if (state.VideoRequest != null)
                     {
                         state.VideoRequest.CopyTimestamps = transcodingProfile.CopyTimestamps;
-                        state.VideoRequest.ForceLiveStream = transcodingProfile.ForceLiveStream;
                         state.VideoRequest.EnableSubtitlesInManifest = transcodingProfile.EnableSubtitlesInManifest;
+                        state.VideoRequest.EnableSplittingOnNonKeyFrames = transcodingProfile.EnableSplittingOnNonKeyFrames;
                     }
                 }
             }
+        }
+
+        private async void ReportUsage(StreamState state)
+        {
+            try
+            {
+                await ReportUsageInternal(state).ConfigureAwait(false);
+            }
+            catch
+            {
+
+            }
+        }
+
+        private Task ReportUsageInternal(StreamState state)
+        {
+            if (!ServerConfigurationManager.Configuration.EnableAnonymousUsageReporting)
+            {
+                return Task.FromResult(true);
+            }
+
+            if (!MediaEncoder.IsDefaultEncoderPath)
+            {
+                return Task.FromResult(true);
+            }
+
+            var dict = new Dictionary<string, string>();
+
+            var outputAudio = GetAudioEncoder(state);
+            if (!string.IsNullOrWhiteSpace(outputAudio))
+            {
+                dict["outputAudio"] = outputAudio;
+            }
+
+            var outputVideo = GetVideoEncoder(state);
+            if (!string.IsNullOrWhiteSpace(outputVideo))
+            {
+                dict["outputVideo"] = outputVideo;
+            }
+
+            if (ServerConfigurationManager.Configuration.CodecsUsed.Contains(outputAudio ?? string.Empty, StringComparer.OrdinalIgnoreCase) &&
+                ServerConfigurationManager.Configuration.CodecsUsed.Contains(outputVideo ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(true);
+            }
+
+            dict["id"] = AppHost.SystemId;
+            dict["type"] = state.VideoRequest == null ? "Audio" : "Video";
+
+            var audioStream = state.AudioStream;
+            if (audioStream != null && !string.IsNullOrWhiteSpace(audioStream.Codec))
+            {
+                dict["inputAudio"] = audioStream.Codec;
+            }
+
+            var videoStream = state.VideoStream;
+            if (videoStream != null && !string.IsNullOrWhiteSpace(videoStream.Codec))
+            {
+                dict["inputVideo"] = videoStream.Codec;
+            }
+
+            var cert = GetType().Assembly.GetModules().First().GetSignerCertificate();
+            if (cert != null)
+            {
+                dict["assemblySig"] = cert.GetCertHashString();
+                dict["certSubject"] = cert.Subject ?? string.Empty;
+                dict["certIssuer"] = cert.Issuer ?? string.Empty;
+            }
+            else
+            {
+                return Task.FromResult(true);
+            }
+
+            if (state.SupportedAudioCodecs.Count > 0)
+            {
+                dict["supportedAudioCodecs"] = string.Join(",", state.SupportedAudioCodecs.ToArray());
+            }
+
+            var auth = AuthorizationContext.GetAuthorizationInfo(Request);
+
+            dict["appName"] = auth.Client ?? string.Empty;
+            dict["appVersion"] = auth.Version ?? string.Empty;
+            dict["device"] = auth.Device ?? string.Empty;
+            dict["deviceId"] = auth.DeviceId ?? string.Empty;
+            dict["context"] = "streaming";
+
+            //Logger.Info(JsonSerializer.SerializeToString(dict));
+            if (!ServerConfigurationManager.Configuration.CodecsUsed.Contains(outputAudio ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            {
+                var list = ServerConfigurationManager.Configuration.CodecsUsed.ToList();
+                list.Add(outputAudio);
+                ServerConfigurationManager.Configuration.CodecsUsed = list.ToArray();
+            }
+
+            if (!ServerConfigurationManager.Configuration.CodecsUsed.Contains(outputVideo ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            {
+                var list = ServerConfigurationManager.Configuration.CodecsUsed.ToList();
+                list.Add(outputVideo);
+                ServerConfigurationManager.Configuration.CodecsUsed = list.ToArray();
+            }
+
+            ServerConfigurationManager.SaveConfiguration();
+
+            //Logger.Info(JsonSerializer.SerializeToString(dict));
+            var options = new HttpRequestOptions()
+            {
+                Url = "https://mb3admin.com/admin/service/transcoding/report",
+                CancellationToken = CancellationToken.None,
+                LogRequest = false,
+                LogErrors = false,
+                BufferContent = false
+            };
+            options.RequestContent = JsonSerializer.SerializeToString(dict);
+            options.RequestContentType = "application/json";
+
+            return HttpClient.Post(options);
         }
 
         /// <summary>
@@ -2267,7 +2574,8 @@ namespace MediaBrowser.Api.Playback
                     state.TargetRefFrames,
                     state.TargetVideoStreamCount,
                     state.TargetAudioStreamCount,
-                    state.TargetVideoCodecTag
+                    state.TargetVideoCodecTag,
+                    state.IsTargetAVC
 
                     ).FirstOrDefault() ?? string.Empty;
             }
@@ -2322,6 +2630,7 @@ namespace MediaBrowser.Api.Playback
             inputModifier += " " + GetFastSeekCommandLineParameter(state.Request);
             inputModifier = inputModifier.Trim();
 
+            //inputModifier += " -fflags +genpts+ignidx+igndts";
             if (state.VideoRequest != null && genPts)
             {
                 inputModifier += " -fflags +genpts";

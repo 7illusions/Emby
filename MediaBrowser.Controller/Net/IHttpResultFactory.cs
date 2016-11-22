@@ -12,14 +12,6 @@ namespace MediaBrowser.Controller.Net
     public interface IHttpResultFactory
     {
         /// <summary>
-        /// Throws the error.
-        /// </summary>
-        /// <param name="statusCode">The status code.</param>
-        /// <param name="errorMessage">The error message.</param>
-        /// <param name="responseHeaders">The response headers.</param>
-        void ThrowError(int statusCode, string errorMessage, IDictionary<string, string> responseHeaders = null);
-        
-        /// <summary>
         /// Gets the result.
         /// </summary>
         /// <param name="content">The content.</param>
@@ -28,7 +20,7 @@ namespace MediaBrowser.Controller.Net
         /// <returns>System.Object.</returns>
         object GetResult(object content, string contentType, IDictionary<string,string> responseHeaders = null);
 
-        object GetAsyncStreamWriter(Func<Stream,Task> streamWriter, IDictionary<string, string> responseHeaders = null);
+        object GetAsyncStreamWriter(IAsyncStreamSource streamSource);
 
         /// <summary>
         /// Gets the optimized result.

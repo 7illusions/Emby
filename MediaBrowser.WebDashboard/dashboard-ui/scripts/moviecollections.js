@@ -99,7 +99,8 @@
                         preferThumb: true,
                         context: 'movies',
                         lazy: true,
-                        overlayPlayButton: true
+                        overlayPlayButton: true,
+                        showTitle: true
                     });
                 }
                 else if (viewStyle == "ThumbCard") {
@@ -112,7 +113,8 @@
                         lazy: true,
                         cardLayout: true,
                         showTitle: true,
-                        showItemCounts: true
+                        showItemCounts: true,
+                        vibrant: true
                     });
                 }
                 else if (viewStyle == "Banner") {
@@ -140,10 +142,10 @@
                         shape: "auto",
                         context: 'movies',
                         showTitle: true,
-                        showYear: true,
-                        lazy: true,
+                        centerText: false,
                         cardLayout: true,
-                        showItemCounts: true
+                        showItemCounts: true,
+                        vibrant: true
                     });
                 }
                 else {
@@ -155,7 +157,8 @@
                         context: 'movies',
                         centerText: true,
                         lazy: true,
-                        overlayPlayButton: true
+                        overlayPlayButton: true,
+                        showTitle: true
                     });
                 }
 

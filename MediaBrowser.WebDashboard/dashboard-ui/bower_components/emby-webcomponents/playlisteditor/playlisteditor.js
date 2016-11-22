@@ -1,6 +1,6 @@
-﻿define(['shell', 'dialogHelper', 'loading', 'layoutManager', 'connectionManager', 'embyRouter', 'globalize', 'emby-input', 'paper-icon-button-light', 'emby-select', 'material-icons', 'css!./../formdialog', 'emby-button'], function (shell, dialogHelper, loading, layoutManager, connectionManager, embyRouter, globalize) {
+﻿define(['shell', 'dialogHelper', 'loading', 'layoutManager', 'connectionManager', 'userSettings', 'embyRouter', 'globalize', 'emby-input', 'paper-icon-button-light', 'emby-select', 'material-icons', 'css!./../formdialog', 'emby-button'], function (shell, dialogHelper, loading, layoutManager, connectionManager, userSettings, embyRouter, globalize) {
+    'use strict';
 
-    var lastPlaylistId = '';
     var currentServerId;
 
     function parentWithClass(elem, className) {
@@ -26,7 +26,7 @@
         var apiClient = connectionManager.getApiClient(currentServerId);
 
         if (playlistId) {
-            lastPlaylistId = playlistId;
+            userSettings.set('playlisteditor-lastplaylistid', playlistId);
             addToPlaylist(apiClient, panel, playlistId);
         } else {
             createPlaylist(apiClient, panel);
@@ -126,7 +126,7 @@
             });
 
             select.innerHTML = html;
-            select.value = lastPlaylistId || '';
+            select.value = userSettings.get('playlisteditor-lastplaylistid') || '';
             triggerChange(select);
 
             loading.hide();
@@ -137,11 +137,11 @@
 
         var html = '';
 
-        html += '<div class="dialogContent smoothScrollY" style="padding-top:2em;">';
+        html += '<div class="formDialogContent smoothScrollY" style="padding-top:2em;">';
         html += '<div class="dialogContentInner dialog-content-centered">';
         html += '<form style="margin:auto;">';
 
-        html += '<div class="fldSelectPlaylist">';
+        html += '<div class="fldSelectPlaylist selectContainer">';
         html += '<select is="emby-select" id="selectPlaylistToAddTo" label="' + globalize.translate('sharedcomponents#LabelPlaylist') + '" autofocus></select>';
         html += '</div>';
 
@@ -154,8 +154,8 @@
         // newPlaylistInfo
         html += '</div>';
 
-        html += '<div>';
-        html += '<button is="emby-button" type="submit" class="raised btnSubmit block">' + globalize.translate('sharedcomponents#ButtonOk') + '</button>';
+        html += '<div class="formDialogFooter">';
+        html += '<button is="emby-button" type="submit" class="raised btnSubmit block formDialogFooterItem button-submit">' + globalize.translate('sharedcomponents#ButtonOk') + '</button>';
         html += '</div>';
 
         html += '<input type="hidden" class="fldSelectedItemIds" />';
@@ -230,18 +230,17 @@
             var html = '';
             var title = globalize.translate('sharedcomponents#HeaderAddToPlaylist');
 
-            html += '<div class="dialogHeader">';
+            html += '<div class="formDialogHeader">';
             html += '<button is="paper-icon-button-light" class="btnCancel autoSize" tabindex="-1"><i class="md-icon">&#xE5C4;</i></button>';
-            html += '<div class="dialogHeaderTitle">';
+            html += '<h3 class="formDialogHeaderTitle">';
             html += title;
-            html += '</div>';
+            html += '</h3>';
 
             html += '</div>';
 
             html += getEditorHtml();
 
             dlg.innerHTML = html;
-            document.body.appendChild(dlg);
 
             initEditor(dlg, items);
 
@@ -251,13 +250,13 @@
             });
 
             if (layoutManager.tv) {
-                centerFocus(dlg.querySelector('.dialogContent'), false, true);
+                centerFocus(dlg.querySelector('.formDialogContent'), false, true);
             }
 
             return new Promise(function (resolve, reject) {
 
                 if (layoutManager.tv) {
-                    centerFocus(dlg.querySelector('.dialogContent'), false, false);
+                    centerFocus(dlg.querySelector('.formDialogContent'), false, false);
                 }
 
                 dlg.addEventListener('close', resolve);

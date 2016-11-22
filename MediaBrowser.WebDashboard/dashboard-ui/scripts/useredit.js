@@ -1,4 +1,4 @@
-﻿define(['jQuery'], function ($) {
+﻿define(['jQuery', 'fnchecked'], function ($) {
 
     var currentUser;
 
@@ -22,7 +22,7 @@
 
         $('.lnkEditUserPreferences', page).attr('href', 'mypreferencesmenu.html?userId=' + user.Id);
 
-        Dashboard.setPageTitle(user.Name);
+        LibraryMenu.setTitle(user.Name);
 
         $('#txtUserName', page).val(user.Name);
         $('#txtConnectUserName', page).val(currentUser.ConnectUserName);
@@ -45,6 +45,7 @@
         $('#chkEnableMediaPlayback', page).checked(user.Policy.EnableMediaPlayback);
         $('#chkEnableAudioPlaybackTranscoding', page).checked(user.Policy.EnableAudioPlaybackTranscoding);
         $('#chkEnableVideoPlaybackTranscoding', page).checked(user.Policy.EnableVideoPlaybackTranscoding);
+        $('#chkEnableVideoPlaybackRemuxing', page).checked(user.Policy.EnablePlaybackRemuxing);
 
         $('#chkEnableSync', page).checked(user.Policy.EnableSync);
         $('#chkEnableSyncTranscoding', page).checked(user.Policy.EnableSyncTranscoding);
@@ -111,9 +112,19 @@
 
                 });
 
-            }, function () {
+            }, function (response) {
 
-                showEmbyConnectErrorMessage('.');
+                if (response.status == 500) {
+
+                    Dashboard.alert({
+
+                        message: Globalize.translate('ErrorAddingEmbyConnectAccount3')
+
+                    });
+
+                } else {
+                    showEmbyConnectErrorMessage('.');
+                }
             });
 
         } else {
@@ -186,6 +197,7 @@
         user.Policy.EnableMediaPlayback = $('#chkEnableMediaPlayback', page).checked();
         user.Policy.EnableAudioPlaybackTranscoding = $('#chkEnableAudioPlaybackTranscoding', page).checked();
         user.Policy.EnableVideoPlaybackTranscoding = $('#chkEnableVideoPlaybackTranscoding', page).checked();
+        user.Policy.EnablePlaybackRemuxing = $('#chkEnableVideoPlaybackRemuxing', page).checked();
 
         user.Policy.EnableContentDownloading = $('#chkEnableDownloading', page).checked();
 

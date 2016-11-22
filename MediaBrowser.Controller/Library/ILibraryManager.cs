@@ -11,6 +11,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dto;
 
 namespace MediaBrowser.Controller.Library
@@ -32,15 +34,11 @@ namespace MediaBrowser.Controller.Library
         /// <summary>
         /// Resolves a set of files into a list of BaseItem
         /// </summary>
-        /// <param name="files">The files.</param>
-        /// <param name="directoryService">The directory service.</param>
-        /// <param name="parent">The parent.</param>
-        /// <param name="collectionType">Type of the collection.</param>
-        /// <returns>List{``0}.</returns>
         IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemMetadata> files,
             IDirectoryService directoryService,
-            Folder parent, string
-            collectionType = null);
+            Folder parent,
+            LibraryOptions libraryOptions,
+            string collectionType = null);
 
         /// <summary>
         /// Gets the root folder.
@@ -397,6 +395,9 @@ namespace MediaBrowser.Controller.Library
         /// <returns><c>true</c> if [is audio file] [the specified path]; otherwise, <c>false</c>.</returns>
         bool IsAudioFile(string path);
 
+        bool IsAudioFile(string path, LibraryOptions libraryOptions);
+        bool IsVideoFile(string path, LibraryOptions libraryOptions);
+
         /// <summary>
         /// Gets the season number from path.
         /// </summary>
@@ -453,6 +454,8 @@ namespace MediaBrowser.Controller.Library
         /// <returns>IEnumerable&lt;Folder&gt;.</returns>
         IEnumerable<Folder> GetCollectionFolders(BaseItem item);
 
+        LibraryOptions GetLibraryOptions(BaseItem item);
+
         /// <summary>
         /// Gets the people.
         /// </summary>
@@ -503,6 +506,8 @@ namespace MediaBrowser.Controller.Library
         /// <returns>QueryResult&lt;BaseItem&gt;.</returns>
         QueryResult<BaseItem> QueryItems(InternalItemsQuery query);
 
+        string GetPathAfterNetworkSubstitution(string path, BaseItem ownerItem = null);
+
         /// <summary>
         /// Substitutes the path.
         /// </summary>
@@ -551,9 +556,10 @@ namespace MediaBrowser.Controller.Library
         /// <returns><c>true</c> if XXXX, <c>false</c> otherwise.</returns>
         bool IgnoreFile(FileSystemMetadata file, BaseItem parent);
 
-        void AddVirtualFolder(string name, string collectionType, string[] mediaPaths, bool refreshLibrary);
+        void AddVirtualFolder(string name, string collectionType, LibraryOptions options, bool refreshLibrary);
         void RemoveVirtualFolder(string name, bool refreshLibrary);
-        void AddMediaPath(string virtualFolderName, string path);
+        void AddMediaPath(string virtualFolderName, MediaPathInfo path);
+        void UpdateMediaPath(string virtualFolderName, MediaPathInfo path);
         void RemoveMediaPath(string virtualFolderName, string path);
 
         QueryResult<Tuple<BaseItem, ItemCounts>> GetGenres(InternalItemsQuery query);
@@ -562,5 +568,9 @@ namespace MediaBrowser.Controller.Library
         QueryResult<Tuple<BaseItem, ItemCounts>> GetStudios(InternalItemsQuery query);
         QueryResult<Tuple<BaseItem, ItemCounts>> GetArtists(InternalItemsQuery query);
         QueryResult<Tuple<BaseItem, ItemCounts>> GetAlbumArtists(InternalItemsQuery query);
+        QueryResult<Tuple<BaseItem, ItemCounts>> GetAllArtists(InternalItemsQuery query);
+
+        void RegisterIgnoredPath(string path);
+        void UnRegisterIgnoredPath(string path);
     }
 }

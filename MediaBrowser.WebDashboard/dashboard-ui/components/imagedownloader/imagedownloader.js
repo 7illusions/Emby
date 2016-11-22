@@ -1,4 +1,4 @@
-﻿define(['dialogHelper', 'emby-checkbox', 'emby-button', 'paper-icon-button-light'], function (dialogHelper) {
+﻿define(['dialogHelper', 'emby-checkbox', 'emby-button', 'paper-icon-button-light', 'css!css/metadataeditor.css'], function (dialogHelper) {
 
     var currentItemId;
     var currentItemType;
@@ -7,7 +7,7 @@
     var hasChanges = false;
 
     // These images can be large and we're seeing memory problems in safari
-    var browsableImagePageSize = browserInfo.safari ? 6 : (browserInfo.mobile ? 10 : 40);
+    var browsableImagePageSize = browserInfo.slow ? 6 : 30;
 
     var browsableImageStartIndex = 0;
     var browsableImageType = 'Primary';
@@ -276,7 +276,7 @@
             reloadBrowsableImages(page);
         });
 
-        page.addEventListener('click', function(e) {
+        page.addEventListener('click', function (e) {
 
             var btnDownloadRemoteImage = parentWithClass(e.target, 'btnDownloadRemoteImage');
             if (btnDownloadRemoteImage) {
@@ -308,7 +308,6 @@
 
             dlg.classList.add('ui-body-' + theme);
             dlg.classList.add('background-theme-' + theme);
-            dlg.classList.add('popupEditor');
 
             var html = '';
             html += '<h2 class="dialogHeader">';
@@ -321,7 +320,6 @@
             html += '</div>';
 
             dlg.innerHTML = html;
-            document.body.appendChild(dlg);
 
             // Has to be assigned a z-index after the call to .open() 
             dlg.addEventListener('close', onDialogClosed);

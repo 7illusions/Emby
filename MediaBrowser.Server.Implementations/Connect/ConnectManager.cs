@@ -65,12 +65,11 @@ namespace MediaBrowser.Server.Implementations.Connect
 
                 if (!string.IsNullOrWhiteSpace(address))
                 {
-                    try
+                    Uri newUri;
+
+                    if (Uri.TryCreate(address, UriKind.Absolute, out newUri))
                     {
-                        address = new Uri(address).Host;
-                    }
-                    catch
-                    {
+                        address = newUri.Host;
                     }
                 }
 
@@ -151,7 +150,7 @@ namespace MediaBrowser.Server.Implementations.Connect
         {
             DiscoveredWanIpAddress = address;
 
-            UpdateConnectInfo();
+            var task = UpdateConnectInfo();
         }
 
         private async Task UpdateConnectInfo()
@@ -267,7 +266,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = CancellationToken.None
+                CancellationToken = CancellationToken.None,
+                BufferContent = false
             };
 
             options.SetPostData(postData);
@@ -315,7 +315,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = CancellationToken.None
+                CancellationToken = CancellationToken.None,
+                BufferContent = false
             };
 
             options.SetPostData(postData);
@@ -404,6 +405,14 @@ namespace MediaBrowser.Server.Implementations.Connect
 
         public async Task<UserLinkResult> LinkUser(string userId, string connectUsername)
         {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                throw new ArgumentNullException("userId");
+            }
+            if (string.IsNullOrWhiteSpace(connectUsername))
+            {
+                throw new ArgumentNullException("connectUsername");
+            }
             if (string.IsNullOrWhiteSpace(ConnectServerId))
             {
                 await UpdateConnectInfo().ConfigureAwait(false);
@@ -423,14 +432,6 @@ namespace MediaBrowser.Server.Implementations.Connect
 
         private async Task<UserLinkResult> LinkUserInternal(string userId, string connectUsername)
         {
-            if (string.IsNullOrWhiteSpace(userId))
-            {
-                throw new ArgumentNullException("userId");
-            }
-            if (string.IsNullOrWhiteSpace(connectUsername))
-            {
-                throw new ArgumentNullException("connectUsername");
-            }
             if (string.IsNullOrWhiteSpace(ConnectServerId))
             {
                 throw new ArgumentNullException("ConnectServerId");
@@ -447,11 +448,17 @@ namespace MediaBrowser.Server.Implementations.Connect
                 throw new ArgumentException("The Emby account has been disabled.");
             }
 
+            var existingUser = _userManager.Users.FirstOrDefault(i => string.Equals(i.ConnectUserId, connectUser.Id) && !string.IsNullOrWhiteSpace(i.ConnectAccessKey));
+            if (existingUser != null)
+            {
+                throw new InvalidOperationException("This connect user is already linked to local user " + existingUser.Name);
+            }
+
             var user = GetUser(userId);
 
             if (!string.IsNullOrWhiteSpace(user.ConnectUserId))
             {
-                await RemoveConnect(user, connectUser.Id).ConfigureAwait(false);
+                await RemoveConnect(user, user.ConnectUserId).ConfigureAwait(false);
             }
 
             var url = GetConnectUrl("ServerAuthorizations");
@@ -459,7 +466,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = CancellationToken.None
+                CancellationToken = CancellationToken.None,
+                BufferContent = false
             };
 
             var accessToken = Guid.NewGuid().ToString("N");
@@ -594,7 +602,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = CancellationToken.None
+                CancellationToken = CancellationToken.None,
+                BufferContent = false
             };
 
             var accessToken = Guid.NewGuid().ToString("N");
@@ -647,7 +656,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = CancellationToken.None
+                CancellationToken = CancellationToken.None,
+                BufferContent = false
             };
 
             var postData = new Dictionary<string, string>
@@ -721,7 +731,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 CancellationToken = cancellationToken,
-                Url = url
+                Url = url,
+                BufferContent = false
             };
 
             SetServerAccessToken(options);
@@ -785,7 +796,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = cancellationToken
+                CancellationToken = cancellationToken,
+                BufferContent = false
             };
 
             SetServerAccessToken(options);
@@ -1073,7 +1085,8 @@ namespace MediaBrowser.Server.Implementations.Connect
             var options = new HttpRequestOptions
             {
                 Url = url,
-                CancellationToken = CancellationToken.None
+                CancellationToken = CancellationToken.None,
+                BufferContent = false
             };
 
             var postData = new Dictionary<string, string>
@@ -1121,7 +1134,8 @@ namespace MediaBrowser.Server.Implementations.Connect
 
             var options = new HttpRequestOptions
             {
-                Url = GetConnectUrl("user/authenticate")
+                Url = GetConnectUrl("user/authenticate"),
+                BufferContent = false
             };
 
             options.SetPostData(new Dictionary<string, string>

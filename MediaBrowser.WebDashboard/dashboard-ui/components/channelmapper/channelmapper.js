@@ -1,4 +1,4 @@
-﻿define(['dialogHelper', 'loading', 'connectionManager', 'globalize', 'actionsheet', 'paper-checkbox', 'emby-input', 'paper-icon-button-light', 'emby-button', 'listViewStyle', 'material-icons'],
+﻿define(['dialogHelper', 'loading', 'connectionManager', 'globalize', 'actionsheet', 'emby-input', 'paper-icon-button-light', 'emby-button', 'listViewStyle', 'material-icons', 'formDialogStyle'],
 function (dialogHelper, loading, connectionManager, globalize, actionsheet) {
 
     return function (options) {
@@ -98,11 +98,11 @@ function (dialogHelper, loading, connectionManager, globalize, actionsheet) {
             html += '<i class="md-icon listItemIcon">dvr</i>';
 
             html += '<div class="listItemBody two-line">';
-            html += '<h3>';
+            html += '<h3 class="listItemBodyText">';
             html += channel.Name;
             html += '</h3>';
 
-            html += '<div class="secondary">';
+            html += '<div class="secondary listItemBodyText">';
             if (channel.ProviderChannelNumber || channel.ProviderChannelName) {
                 html += getMappingSecondaryName(channel, providerName);
             }
@@ -121,7 +121,7 @@ function (dialogHelper, loading, connectionManager, globalize, actionsheet) {
 
             var html = '';
 
-            html += '<div class="dialogContent">';
+            html += '<div class="formDialogContent">';
             html += '<div class="dialogContentInner dialog-content-centered">';
             html += '<form style="margin:auto;">';
 
@@ -170,18 +170,17 @@ function (dialogHelper, loading, connectionManager, globalize, actionsheet) {
             var html = '';
             var title = globalize.translate('MapChannels');
 
-            html += '<div class="dialogHeader" style="margin:0 0 2em;">';
+            html += '<div class="formDialogHeader">';
             html += '<button is="paper-icon-button-light" class="btnCancel autoSize" tabindex="-1"><i class="md-icon">&#xE5C4;</i></button>';
-            html += '<div class="dialogHeaderTitle">';
+            html += '<h3 class="formDialogHeaderTitle">';
             html += title;
-            html += '</div>';
+            html += '</h3>';
 
             html += '</div>';
 
             html += getEditorHtml();
 
             dlg.innerHTML = html;
-            document.body.appendChild(dlg);
 
             initEditor(dlg, options);
 

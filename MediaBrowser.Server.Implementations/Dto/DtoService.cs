@@ -329,7 +329,7 @@ namespace MediaBrowser.Server.Implementations.Dto
 
             if (user != null)
             {
-                await AttachUserSpecificInfo(dto, item, user, fields).ConfigureAwait(false);
+                await AttachUserSpecificInfo(dto, item, user, options).ConfigureAwait(false);
             }
 
             var hasMediaSources = item as IHasMediaSources;
@@ -408,8 +408,15 @@ namespace MediaBrowser.Server.Implementations.Dto
 
         private void SetItemByNameInfo(BaseItem item, BaseItemDto dto, List<BaseItem> taggedItems, User user = null)
         {
-            if (item is MusicArtist || item is MusicGenre)
+            if (item is MusicArtist)
             {
+                dto.AlbumCount = taggedItems.Count(i => i is MusicAlbum);
+                dto.MusicVideoCount = taggedItems.Count(i => i is MusicVideo);
+                dto.SongCount = taggedItems.Count(i => i is Audio);
+            }
+            else if (item is MusicGenre)
+            {
+                dto.ArtistCount = taggedItems.Count(i => i is MusicArtist);
                 dto.AlbumCount = taggedItems.Count(i => i is MusicAlbum);
                 dto.MusicVideoCount = taggedItems.Count(i => i is MusicVideo);
                 dto.SongCount = taggedItems.Count(i => i is Audio);
@@ -422,6 +429,7 @@ namespace MediaBrowser.Server.Implementations.Dto
             {
                 // This populates them all and covers Genre, Person, Studio, Year
 
+                dto.ArtistCount = taggedItems.Count(i => i is MusicArtist);
                 dto.AlbumCount = taggedItems.Count(i => i is MusicAlbum);
                 dto.EpisodeCount = taggedItems.Count(i => i is Episode);
                 dto.GameCount = taggedItems.Count(i => i is Game);
@@ -429,6 +437,7 @@ namespace MediaBrowser.Server.Implementations.Dto
                 dto.TrailerCount = taggedItems.Count(i => i is Trailer);
                 dto.MusicVideoCount = taggedItems.Count(i => i is MusicVideo);
                 dto.SeriesCount = taggedItems.Count(i => i is Series);
+                dto.ProgramCount = taggedItems.Count(i => i is LiveTvProgram);
                 dto.SongCount = taggedItems.Count(i => i is Audio);
             }
 
@@ -438,19 +447,20 @@ namespace MediaBrowser.Server.Implementations.Dto
         /// <summary>
         /// Attaches the user specific info.
         /// </summary>
-        /// <param name="dto">The dto.</param>
-        /// <param name="item">The item.</param>
-        /// <param name="user">The user.</param>
-        /// <param name="fields">The fields.</param>
-        private async Task AttachUserSpecificInfo(BaseItemDto dto, BaseItem item, User user, List<ItemFields> fields)
+        private async Task AttachUserSpecificInfo(BaseItemDto dto, BaseItem item, User user, DtoOptions dtoOptions)
         {
+            var fields = dtoOptions.Fields;
+
             if (item.IsFolder)
             {
                 var folder = (Folder)item;
 
-                dto.UserData = await _userDataRepository.GetUserDataDto(item, dto, user).ConfigureAwait(false);
+                if (dtoOptions.EnableUserData)
+                {
+                    dto.UserData = await _userDataRepository.GetUserDataDto(item, dto, user).ConfigureAwait(false);
+                }
 
-                if (item.SourceType == SourceType.Library)
+                if (!dto.ChildCount.HasValue && item.SourceType == SourceType.Library)
                 {
                     dto.ChildCount = GetChildCount(folder, user);
                 }
@@ -468,7 +478,10 @@ namespace MediaBrowser.Server.Implementations.Dto
 
             else
             {
-                dto.UserData = _userDataRepository.GetUserDataDto(item, user).Result;
+                if (dtoOptions.EnableUserData)
+                {
+                    dto.UserData = _userDataRepository.GetUserDataDto(item, user).Result;
+                }
             }
 
             dto.PlayAccess = item.GetPlayAccess(user);
@@ -476,7 +489,10 @@ namespace MediaBrowser.Server.Implementations.Dto
             if (fields.Contains(ItemFields.BasicSyncInfo) || fields.Contains(ItemFields.SyncInfo))
             {
                 var userCanSync = user != null && user.Policy.EnableSync;
-                dto.SupportsSync = userCanSync && _syncManager.SupportsSync(item);
+                if (userCanSync && _syncManager.SupportsSync(item))
+                {
+                    dto.SupportsSync = true;
+                }
             }
 
             if (fields.Contains(ItemFields.SeasonUserData))
@@ -582,7 +598,7 @@ namespace MediaBrowser.Server.Implementations.Dto
             dto.Altitude = item.Altitude;
             dto.IsoSpeedRating = item.IsoSpeedRating;
 
-            var album = item.Album;
+            var album = item.AlbumEntity;
 
             if (album != null)
             {
@@ -891,11 +907,6 @@ namespace MediaBrowser.Server.Implementations.Dto
                 dto.Keywords = item.Keywords;
             }
 
-            if (fields.Contains(ItemFields.ProductionLocations))
-            {
-                SetProductionLocations(item, dto);
-            }
-
             var hasAspectRatio = item as IHasAspectRatio;
             if (hasAspectRatio != null)
             {
@@ -940,20 +951,23 @@ namespace MediaBrowser.Server.Implementations.Dto
                 dto.Genres = item.Genres;
             }
 
-            dto.ImageTags = new Dictionary<ImageType, string>();
-
-            // Prevent implicitly captured closure
-            var currentItem = item;
-            foreach (var image in currentItem.ImageInfos.Where(i => !currentItem.AllowsMultipleImages(i.Type))
-                .ToList())
+            if (options.EnableImages)
             {
-                if (options.GetImageLimit(image.Type) > 0)
-                {
-                    var tag = GetImageCacheTag(item, image);
+                dto.ImageTags = new Dictionary<ImageType, string>();
 
-                    if (tag != null)
+                // Prevent implicitly captured closure
+                var currentItem = item;
+                foreach (var image in currentItem.ImageInfos.Where(i => !currentItem.AllowsMultipleImages(i.Type))
+                    .ToList())
+                {
+                    if (options.GetImageLimit(image.Type) > 0)
                     {
-                        dto.ImageTags[image.Type] = tag;
+                        var tag = GetImageCacheTag(item, image);
+
+                        if (tag != null)
+                        {
+                            dto.ImageTags[image.Type] = tag;
+                        }
                     }
                 }
             }
@@ -961,7 +975,16 @@ namespace MediaBrowser.Server.Implementations.Dto
             dto.Id = GetDtoId(item);
             dto.IndexNumber = item.IndexNumber;
             dto.ParentIndexNumber = item.ParentIndexNumber;
-            dto.IsFolder = item.IsFolder;
+
+            if (item.IsFolder)
+            {
+                dto.IsFolder = true;
+            }
+            else if (item is IHasMediaSources)
+            {
+                dto.IsFolder = false;
+            }
+
             dto.MediaType = item.MediaType;
             dto.LocationType = item.LocationType;
             if (item.IsHD.HasValue && item.IsHD.Value)
@@ -970,8 +993,11 @@ namespace MediaBrowser.Server.Implementations.Dto
             }
             dto.Audio = item.Audio;
 
-            dto.PreferredMetadataCountryCode = item.PreferredMetadataCountryCode;
-            dto.PreferredMetadataLanguage = item.PreferredMetadataLanguage;
+            if (fields.Contains(ItemFields.Settings))
+            {
+                dto.PreferredMetadataCountryCode = item.PreferredMetadataCountryCode;
+                dto.PreferredMetadataLanguage = item.PreferredMetadataLanguage;
+            }
 
             dto.CriticRating = item.CriticRating;
 
@@ -1061,10 +1087,9 @@ namespace MediaBrowser.Server.Implementations.Dto
 
             if (fields.Contains(ItemFields.Taglines))
             {
-                var hasTagline = item as IHasTaglines;
-                if (hasTagline != null)
+                if (!string.IsNullOrWhiteSpace(item.Tagline))
                 {
-                    dto.Taglines = hasTagline.Taglines;
+                    dto.Taglines = new List<string> { item.Tagline };
                 }
 
                 if (dto.Taglines == null)
@@ -1141,6 +1166,32 @@ namespace MediaBrowser.Server.Implementations.Dto
                         };
                     })
                     .ToList();
+
+                // Include artists that are not in the database yet, e.g., just added via metadata editor
+                var foundArtists = artistItems.Items.Select(i => i.Item1.Name).ToList();
+                dto.ArtistItems.AddRange(hasArtist.Artists
+                    .Except(foundArtists, new DistinctNameComparer())
+                    .Select(i =>
+                    {
+                        // This should not be necessary but we're seeing some cases of it
+                        if (string.IsNullOrWhiteSpace(i))
+                        {
+                            return null;
+                        }
+
+                        var artist = _libraryManager.GetArtist(i);
+                        if (artist != null)
+                        {
+                            return new NameIdPair
+                            {
+                                Name = artist.Name,
+                                Id = artist.Id.ToString("N")
+                            };
+                        }
+
+                        return null;
+
+                    }).Where(i => i != null));
             }
 
             var hasAlbumArtist = item as IHasAlbumArtist;
@@ -1372,6 +1423,11 @@ namespace MediaBrowser.Server.Implementations.Dto
                 SetBookProperties(dto, book);
             }
 
+            if (item.ProductionLocations.Count > 0 || item is Movie)
+            {
+                dto.ProductionLocations = item.ProductionLocations.ToArray();
+            }
+
             var photo = item as Photo;
             if (photo != null)
             {
@@ -1461,7 +1517,7 @@ namespace MediaBrowser.Server.Implementations.Dto
             }
         }
 
-        private string GetMappedPath(IHasMetadata item)
+        private string GetMappedPath(BaseItem item)
         {
             var path = item.Path;
 
@@ -1469,129 +1525,10 @@ namespace MediaBrowser.Server.Implementations.Dto
 
             if (locationType == LocationType.FileSystem || locationType == LocationType.Offline)
             {
-                foreach (var map in _config.Configuration.PathSubstitutions)
-                {
-                    path = _libraryManager.SubstitutePath(path, map.From, map.To);
-                }
+                path = _libraryManager.GetPathAfterNetworkSubstitution(path, item);
             }
 
             return path;
-        }
-
-        private void SetProductionLocations(BaseItem item, BaseItemDto dto)
-        {
-            var hasProductionLocations = item as IHasProductionLocations;
-
-            if (hasProductionLocations != null)
-            {
-                dto.ProductionLocations = hasProductionLocations.ProductionLocations;
-            }
-
-            var person = item as Person;
-            if (person != null)
-            {
-                dto.ProductionLocations = new List<string>();
-                if (!string.IsNullOrEmpty(person.PlaceOfBirth))
-                {
-                    dto.ProductionLocations.Add(person.PlaceOfBirth);
-                }
-            }
-
-            if (dto.ProductionLocations == null)
-            {
-                dto.ProductionLocations = new List<string>();
-            }
-        }
-
-        /// <summary>
-        /// Since it can be slow to make all of these calculations independently, this method will provide a way to do them all at once
-        /// </summary>
-        /// <param name="folder">The folder.</param>
-        /// <param name="user">The user.</param>
-        /// <param name="dto">The dto.</param>
-        /// <param name="fields">The fields.</param>
-        /// <param name="syncProgress">The synchronize progress.</param>
-        /// <returns>Task.</returns>
-        private async Task SetSpecialCounts(Folder folder, User user, BaseItemDto dto, List<ItemFields> fields, Dictionary<string, SyncJobItemStatus> syncProgress)
-        {
-            var recursiveItemCount = 0;
-            var unplayed = 0;
-
-            double totalPercentPlayed = 0;
-            double totalSyncPercent = 0;
-
-            var children = await folder.GetItems(new InternalItemsQuery
-            {
-                IsFolder = false,
-                Recursive = true,
-                ExcludeLocationTypes = new[] { LocationType.Virtual },
-                User = user
-
-            }).ConfigureAwait(false);
-
-            // Loop through each recursive child
-            foreach (var child in children.Items)
-            {
-                var userdata = _userDataRepository.GetUserData(user, child);
-
-                recursiveItemCount++;
-
-                var isUnplayed = true;
-
-                // Incrememt totalPercentPlayed
-                if (userdata != null)
-                {
-                    if (userdata.Played)
-                    {
-                        totalPercentPlayed += 100;
-
-                        isUnplayed = false;
-                    }
-                    else if (userdata.PlaybackPositionTicks > 0 && child.RunTimeTicks.HasValue && child.RunTimeTicks.Value > 0)
-                    {
-                        double itemPercent = userdata.PlaybackPositionTicks;
-                        itemPercent /= child.RunTimeTicks.Value;
-                        totalPercentPlayed += itemPercent;
-                    }
-                }
-
-                if (isUnplayed)
-                {
-                    unplayed++;
-                }
-
-                double percent = 0;
-                SyncJobItemStatus syncItemProgress;
-                if (syncProgress.TryGetValue(child.Id.ToString("N"), out syncItemProgress))
-                {
-                    switch (syncItemProgress)
-                    {
-                        case SyncJobItemStatus.Synced:
-                            percent = 100;
-                            break;
-                        case SyncJobItemStatus.Converting:
-                        case SyncJobItemStatus.ReadyToTransfer:
-                        case SyncJobItemStatus.Transferring:
-                            percent = 50;
-                            break;
-                    }
-                }
-                totalSyncPercent += percent;
-            }
-
-            dto.RecursiveItemCount = recursiveItemCount;
-            dto.UserData.UnplayedItemCount = unplayed;
-
-            if (recursiveItemCount > 0)
-            {
-                dto.UserData.PlayedPercentage = totalPercentPlayed / recursiveItemCount;
-
-                var pct = totalSyncPercent / recursiveItemCount;
-                if (pct > 0)
-                {
-                    dto.SyncPercent = pct;
-                }
-            }
         }
 
         /// <summary>
@@ -1620,7 +1557,7 @@ namespace MediaBrowser.Server.Implementations.Dto
             {
                 size = _imageProcessor.GetImageSize(imageInfo);
             }
-            catch (Exception ex)
+            catch
             {
                 //_logger.ErrorException("Failed to determine primary image aspect ratio for {0}", ex, path);
                 return null;

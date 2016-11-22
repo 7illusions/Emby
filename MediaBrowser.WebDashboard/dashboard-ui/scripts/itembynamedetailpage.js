@@ -4,6 +4,19 @@
 
         var sections = [];
 
+        if (item.ArtistCount) {
+            sections.push({
+                name: Globalize.translate('TabArtists'),
+                type: 'MusicArtist'
+            });
+        }
+        if (item.ProgramCount && item.Type == 'Person') {
+
+            sections.push({
+                name: Globalize.translate('HeaderUpcomingOnTV'),
+                type: 'Program'
+            });
+        }
         if (item.MovieCount) {
 
             sections.push({
@@ -101,6 +114,26 @@
 
         switch (type) {
 
+            case 'Program':
+                loadItems(element, item, type, {
+                    MediaTypes: "",
+                    IncludeItemTypes: "Program",
+                    PersonTypes: "",
+                    ArtistIds: "",
+                    Limit: 10
+                }, {
+                    shape: "backdrop",
+                    showTitle: true,
+                    centerText: true,
+                    overlayMoreButton: true,
+                    preferThumb: true,
+                    overlayText: false,
+                    showAirTime: true,
+                    showAirDateTime: true,
+                    showChannelName: true
+                });
+                break;
+
             case 'Movie':
                 loadItems(element, item, type, {
                     MediaTypes: "",
@@ -112,7 +145,8 @@
                     shape: "portrait",
                     showTitle: true,
                     centerText: true,
-                    overlayMoreButton: true
+                    overlayMoreButton: true,
+                    overlayText: false
                 });
                 break;
 
@@ -188,6 +222,25 @@
                     playFromHere: true,
                     showTitle: true,
                     showParentTitle: true,
+                    coverImage: true,
+                    centerText: true,
+                    overlayPlayButton: true
+                });
+                break;
+
+            case 'MusicArtist':
+                loadItems(element, item, type, {
+                    MediaTypes: "",
+                    IncludeItemTypes: "MusicArtist",
+                    PersonTypes: "",
+                    ArtistIds: "",
+                    Limit: 8
+                }, {
+                    shape: "square",
+                    playFromHere: true,
+                    showTitle: true,
+                    showParentTitle: true,
+                    coverImage: true,
                     centerText: true,
                     overlayPlayButton: true
                 });

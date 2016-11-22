@@ -1,8 +1,10 @@
-﻿define([], function () {
+﻿define(['appSettings'], function (appSettings) {
 
     function login(page, username, password) {
 
         Dashboard.showLoadingMsg();
+
+        appSettings.enableAutoLogin(true);
 
         ConnectionManager.loginToConnect(username, password).then(function () {
 
@@ -77,16 +79,20 @@
 
         Dashboard.showLoadingMsg();
 
-        ConnectionManager.connect().then(function (result) {
+        ConnectionManager.connect({
+
+            enableAutoLogin: appSettings.enableAutoLogin()
+
+        }).then(function (result) {
 
             handleConnectionResult(page, result);
 
         });
     }
 
-    function loadPage(page) {
+    function loadPage(page, params) {
 
-        var mode = getParameterByName('mode') || 'auto';
+        var mode = params.mode || 'auto';
 
         if (mode == 'auto') {
 
@@ -177,7 +183,11 @@
 
         Dashboard.showLoadingMsg();
 
-        ConnectionManager.connectToAddress(host).then(function (result) {
+        ConnectionManager.connectToAddress(host, {
+
+            enableAutoLogin: appSettings.enableAutoLogin()
+
+        }).then(function (result) {
 
             handleConnectionResult(page, result);
 
@@ -232,10 +242,14 @@
                 passwordConfirm: page.querySelector('#txtSignupPasswordConfirm', page).value,
                 grecaptcha: greResponse
 
-            }).then(function () {
+            }).then(function (result) {
+
+                var msg = result.Validated ?
+                    Globalize.translate('MessageThankYouForConnectSignUpNoValidation') :
+                    Globalize.translate('MessageThankYouForConnectSignUp');
 
                 Dashboard.alert({
-                    message: Globalize.translate('MessageThankYouForConnectSignUp'),
+                    message: msg,
                     callback: function () {
                         Dashboard.navigate('connectlogin.html?mode=welcome');
                     }
@@ -284,13 +298,14 @@
             }
         });
 
-        view.querySelector('.btnCancelSignup').addEventListener('click', function () {
-            history.back();
-        });
+        function goBack() {
+            require(['embyRouter'], function (embyRouter) {
+                embyRouter.back();
+            });
+        }
 
-        view.querySelector('.btnCancelManualServer').addEventListener('click', function () {
-            history.back();
-        });
+        view.querySelector('.btnCancelSignup').addEventListener('click', goBack);
+        view.querySelector('.btnCancelManualServer').addEventListener('click', goBack);
 
         view.querySelector('.btnWelcomeNext').addEventListener('click', function () {
             Dashboard.navigate('connectlogin.html?mode=connect');
@@ -326,7 +341,7 @@
         });
 
         view.addEventListener('viewshow', function () {
-            loadPage(view);
+            loadPage(view, params);
         });
     };
 });

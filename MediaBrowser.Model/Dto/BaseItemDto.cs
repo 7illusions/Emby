@@ -169,6 +169,8 @@ namespace MediaBrowser.Model.Dto
         /// <value>The game system.</value>
         public string GameSystem { get; set; }
 
+        public string[] ProductionLocations { get; set; }
+
         /// <summary>
         /// Gets or sets the critic rating summary.
         /// </summary>
@@ -346,7 +348,16 @@ namespace MediaBrowser.Model.Dto
         /// Gets or sets a value indicating whether this instance is folder.
         /// </summary>
         /// <value><c>true</c> if this instance is folder; otherwise, <c>false</c>.</value>
-        public bool IsFolder { get; set; }
+        public bool? IsFolder { get; set; }
+
+        [IgnoreDataMember]
+        public bool IsFolderItem
+        {
+            get
+            {
+                return IsFolder ?? false;
+            }
+        }
 
         /// <summary>
         /// Gets or sets the parent id.
@@ -656,7 +667,7 @@ namespace MediaBrowser.Model.Dto
         {
             get
             {
-                return RunTimeTicks.HasValue || IsFolder || IsGenre || IsMusicGenre || IsArtist;
+                return RunTimeTicks.HasValue || IsFolderItem || IsGenre || IsMusicGenre || IsArtist;
             }
         }
 
@@ -779,12 +790,6 @@ namespace MediaBrowser.Model.Dto
         public string HomePageUrl { get; set; }
 
         /// <summary>
-        /// Gets or sets the production locations.
-        /// </summary>
-        /// <value>The production locations.</value>
-        public List<string> ProductionLocations { get; set; }
-
-        /// <summary>
         /// Gets or sets the budget.
         /// </summary>
         /// <value>The budget.</value>
@@ -817,6 +822,7 @@ namespace MediaBrowser.Model.Dto
         /// </summary>
         /// <value>The series count.</value>
         public int? SeriesCount { get; set; }
+        public int? ProgramCount { get; set; }
         /// <summary>
         /// Gets or sets the episode count.
         /// </summary>
@@ -837,6 +843,7 @@ namespace MediaBrowser.Model.Dto
         /// </summary>
         /// <value>The album count.</value>
         public int? AlbumCount { get; set; }
+        public int? ArtistCount { get; set; }
         /// <summary>
         /// Gets or sets the music video count.
         /// </summary>

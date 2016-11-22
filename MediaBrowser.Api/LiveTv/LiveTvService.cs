@@ -12,9 +12,15 @@ using ServiceStack;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using CommonIO;
+using MediaBrowser.Api.Playback.Progressive;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Server.Implementations.LiveTv.EmbyTV;
 
 namespace MediaBrowser.Api.LiveTv
 {
@@ -43,6 +49,21 @@ namespace MediaBrowser.Api.LiveTv
         /// <value>The start index.</value>
         [ApiMember(Name = "StartIndex", Description = "Optional. The record index to start at. All items with a lower index will be dropped from the results.", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
         public int? StartIndex { get; set; }
+
+        [ApiMember(Name = "IsMovie", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsMovie { get; set; }
+
+        [ApiMember(Name = "IsSeries", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsSeries { get; set; }
+
+        [ApiMember(Name = "IsNews", Description = "Optional filter for news.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsNews { get; set; }
+
+        [ApiMember(Name = "IsKids", Description = "Optional filter for kids.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsKids { get; set; }
+
+        [ApiMember(Name = "IsSports", Description = "Optional filter for sports.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsSports { get; set; }
 
         /// <summary>
         /// The maximum number of items to return
@@ -81,6 +102,29 @@ namespace MediaBrowser.Api.LiveTv
 
         [ApiMember(Name = "AddCurrentProgram", Description = "Optional. Adds current program info to each channel", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public bool AddCurrentProgram { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
+        public string SortBy { get; set; }
+
+        public SortOrder? SortOrder { get; set; }
+
+        /// <summary>
+        /// Gets the order by.
+        /// </summary>
+        /// <returns>IEnumerable{ItemSortBy}.</returns>
+        public string[] GetOrderBy()
+        {
+            var val = SortBy;
+
+            if (string.IsNullOrEmpty(val))
+            {
+                return new string[] { };
+            }
+
+            return val.Split(',');
+        }
 
         public GetChannels()
         {
@@ -149,7 +193,71 @@ namespace MediaBrowser.Api.LiveTv
 
         public bool EnableTotalRecordCount { get; set; }
 
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
+        public bool? IsMovie { get; set; }
+        public bool? IsSeries { get; set; }
+        public bool? IsKids { get; set; }
+        public bool? IsSports { get; set; }
+        public bool? IsNews { get; set; }
+
         public GetRecordings()
+        {
+            EnableTotalRecordCount = true;
+        }
+    }
+
+    [Route("/LiveTv/Recordings/Series", "GET", Summary = "Gets live tv recordings")]
+    [Authenticated]
+    public class GetRecordingSeries : IReturn<QueryResult<BaseItemDto>>, IHasDtoOptions
+    {
+        [ApiMember(Name = "ChannelId", Description = "Optional filter by channel id.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string ChannelId { get; set; }
+
+        [ApiMember(Name = "UserId", Description = "Optional filter by user and attach user data.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string UserId { get; set; }
+
+        [ApiMember(Name = "GroupId", Description = "Optional filter by recording group.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string GroupId { get; set; }
+
+        [ApiMember(Name = "StartIndex", Description = "Optional. The record index to start at. All items with a lower index will be dropped from the results.", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? StartIndex { get; set; }
+
+        [ApiMember(Name = "Limit", Description = "Optional. The maximum number of records to return", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? Limit { get; set; }
+
+        [ApiMember(Name = "Status", Description = "Optional filter by recording status.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public RecordingStatus? Status { get; set; }
+
+        [ApiMember(Name = "Status", Description = "Optional filter by recordings that are in progress, or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
+        public bool? IsInProgress { get; set; }
+
+        [ApiMember(Name = "SeriesTimerId", Description = "Optional filter by recordings belonging to a series timer", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string SeriesTimerId { get; set; }
+
+        [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableImages { get; set; }
+
+        [ApiMember(Name = "ImageTypeLimit", Description = "Optional, the max number of images to return, per image type", IsRequired = false, DataType = "int", ParameterType = "query", Verb = "GET")]
+        public int? ImageTypeLimit { get; set; }
+
+        [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
+        public string EnableImageTypes { get; set; }
+
+        /// <summary>
+        /// Fields to return within the items, in addition to basic information
+        /// </summary>
+        /// <value>The fields.</value>
+        [ApiMember(Name = "Fields", Description = "Optional. Specify additional fields of information to return in the output. This allows multiple, comma delimeted. Options: Budget, Chapters, CriticRatingSummary, DateCreated, Genres, HomePageUrl, IndexOptions, MediaStreams, Overview, ParentId, Path, People, ProviderIds, PrimaryImageAspectRatio, Revenue, SortName, Studios, Taglines", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
+        public string Fields { get; set; }
+
+        public bool EnableTotalRecordCount { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
+        public GetRecordingSeries()
         {
             EnableTotalRecordCount = true;
         }
@@ -209,6 +317,8 @@ namespace MediaBrowser.Api.LiveTv
         public string SeriesTimerId { get; set; }
 
         public bool? IsActive { get; set; }
+
+        public bool? IsScheduled { get; set; }
     }
 
     [Route("/LiveTv/Programs", "GET,POST", Summary = "Gets available live tv epgs..")]
@@ -238,6 +348,12 @@ namespace MediaBrowser.Api.LiveTv
 
         [ApiMember(Name = "IsMovie", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
         public bool? IsMovie { get; set; }
+
+        [ApiMember(Name = "IsSeries", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsSeries { get; set; }
+
+        [ApiMember(Name = "IsNews", Description = "Optional filter for news.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsNews { get; set; }
 
         [ApiMember(Name = "IsKids", Description = "Optional filter for kids.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
         public bool? IsKids { get; set; }
@@ -270,6 +386,12 @@ namespace MediaBrowser.Api.LiveTv
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
+        public string SeriesTimerId { get; set; }
+        public string LibrarySeriesId { get; set; }
 
         /// <summary>
         /// Fields to return within the items, in addition to basic information
@@ -307,14 +429,20 @@ namespace MediaBrowser.Api.LiveTv
         [ApiMember(Name = "HasAired", Description = "Optional. Filter by programs that have completed airing, or not.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
         public bool? HasAired { get; set; }
 
-        [ApiMember(Name = "IsSports", Description = "Optional filter for sports.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
-        public bool? IsSports { get; set; }
+        [ApiMember(Name = "IsSeries", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsSeries { get; set; }
 
-        [ApiMember(Name = "IsMovie", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
+        [ApiMember(Name = "IsMovie", Description = "Optional filter for movies.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
         public bool? IsMovie { get; set; }
 
-        [ApiMember(Name = "IsKids", Description = "Optional filter for kids.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET")]
+        [ApiMember(Name = "IsNews", Description = "Optional filter for news.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsNews { get; set; }
+
+        [ApiMember(Name = "IsKids", Description = "Optional filter for kids.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
         public bool? IsKids { get; set; }
+
+        [ApiMember(Name = "IsSports", Description = "Optional filter for sports.", IsRequired = false, DataType = "bool", ParameterType = "query", Verb = "GET,POST")]
+        public bool? IsSports { get; set; }
 
         [ApiMember(Name = "EnableImages", Description = "Optional, include image information in output", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
         public bool? EnableImages { get; set; }
@@ -331,6 +459,9 @@ namespace MediaBrowser.Api.LiveTv
         /// <value>The fields.</value>
         [ApiMember(Name = "Fields", Description = "Optional. Specify additional fields of information to return in the output. This allows multiple, comma delimeted. Options: Budget, Chapters, CriticRatingSummary, DateCreated, Genres, HomePageUrl, IndexOptions, MediaStreams, Overview, ParentId, Path, People, ProviderIds, PrimaryImageAspectRatio, Revenue, SortName, Studios, Taglines", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET", AllowMultiple = true)]
         public string Fields { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
     }
 
     [Route("/LiveTv/Programs/{Id}", "GET", Summary = "Gets a live tv program")]
@@ -523,12 +654,6 @@ namespace MediaBrowser.Api.LiveTv
     [Authenticated]
     public class GetLiveTvRegistrationInfo : IReturn<MBRegistrationRecord>
     {
-        [ApiMember(Name = "ChannelId", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
-        public string ChannelId { get; set; }
-
-        [ApiMember(Name = "ProgramId", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
-        public string ProgramId { get; set; }
-
         [ApiMember(Name = "Feature", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string Feature { get; set; }
     }
@@ -547,16 +672,30 @@ namespace MediaBrowser.Api.LiveTv
 
     }
 
+    [Route("/LiveTv/LiveStreamFiles/{Id}/stream.{Container}", "GET", Summary = "Gets a live tv channel")]
+    public class GetLiveStreamFile
+    {
+        public string Id { get; set; }
+        public string Container { get; set; }
+    }
+
+    [Route("/LiveTv/LiveRecordings/{Id}/stream", "GET", Summary = "Gets a live tv channel")]
+    public class GetLiveRecordingFile
+    {
+        public string Id { get; set; }
+    }
+
     public class LiveTvService : BaseApiService
     {
         private readonly ILiveTvManager _liveTvManager;
         private readonly IUserManager _userManager;
-        private readonly IConfigurationManager _config;
+        private readonly IServerConfigurationManager _config;
         private readonly IHttpClient _httpClient;
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
+        private readonly IFileSystem _fileSystem;
 
-        public LiveTvService(ILiveTvManager liveTvManager, IUserManager userManager, IConfigurationManager config, IHttpClient httpClient, ILibraryManager libraryManager, IDtoService dtoService)
+        public LiveTvService(ILiveTvManager liveTvManager, IUserManager userManager, IServerConfigurationManager config, IHttpClient httpClient, ILibraryManager libraryManager, IDtoService dtoService, IFileSystem fileSystem)
         {
             _liveTvManager = liveTvManager;
             _userManager = userManager;
@@ -564,6 +703,41 @@ namespace MediaBrowser.Api.LiveTv
             _httpClient = httpClient;
             _libraryManager = libraryManager;
             _dtoService = dtoService;
+            _fileSystem = fileSystem;
+        }
+
+        public async Task<object> Get(GetLiveRecordingFile request)
+        {
+            var path = EmbyTV.Current.GetActiveRecordingPath(request.Id);
+
+            if (path == null)
+            {
+                throw new FileNotFoundException();
+            }
+
+            var outputHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            outputHeaders["Content-Type"] = Model.Net.MimeTypes.GetMimeType(path);
+
+            var streamSource = new ProgressiveFileCopier(_fileSystem, path, outputHeaders, null, Logger, CancellationToken.None)
+            {
+                AllowEndOfFile = false
+            };
+            return ResultFactory.GetAsyncStreamWriter(streamSource);
+        }
+
+        public async Task<object> Get(GetLiveStreamFile request)
+        {
+            var directStreamProvider = (await EmbyTV.Current.GetLiveStream(request.Id).ConfigureAwait(false)) as IDirectStreamProvider;
+            var outputHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            outputHeaders["Content-Type"] = Model.Net.MimeTypes.GetMimeType("file." + request.Container);
+
+            var streamSource = new ProgressiveFileCopier(directStreamProvider, outputHeaders, null, Logger, CancellationToken.None)
+            {
+                AllowEndOfFile = false
+            };
+            return ResultFactory.GetAsyncStreamWriter(streamSource);
         }
 
         public object Get(GetDefaultListingProvider request)
@@ -580,7 +754,7 @@ namespace MediaBrowser.Api.LiveTv
 
         public async Task<object> Get(GetLiveTvRegistrationInfo request)
         {
-            var result = await _liveTvManager.GetRegistrationInfo(request.ChannelId, request.ProgramId, request.Feature).ConfigureAwait(false);
+            var result = await _liveTvManager.GetRegistrationInfo(request.Feature).ConfigureAwait(false);
 
             return ToOptimizedResult(result);
         }
@@ -636,7 +810,8 @@ namespace MediaBrowser.Api.LiveTv
 
             var response = await _httpClient.Get(new HttpRequestOptions
             {
-                Url = "https://json.schedulesdirect.org/20141201/available/countries"
+                Url = "https://json.schedulesdirect.org/20141201/available/countries",
+                BufferContent = false
 
             }).ConfigureAwait(false);
 
@@ -720,13 +895,25 @@ namespace MediaBrowser.Api.LiveTv
                 IsLiked = request.IsLiked,
                 IsDisliked = request.IsDisliked,
                 EnableFavoriteSorting = request.EnableFavoriteSorting,
+                IsMovie = request.IsMovie,
+                IsSeries = request.IsSeries,
+                IsNews = request.IsNews,
+                IsKids = request.IsKids,
+                IsSports = request.IsSports,
+                SortBy = request.GetOrderBy(),
+                SortOrder = request.SortOrder ?? SortOrder.Ascending,
                 AddCurrentProgram = request.AddCurrentProgram
 
             }, CancellationToken.None).ConfigureAwait(false);
 
             var user = string.IsNullOrEmpty(request.UserId) ? null : _userManager.GetUserById(request.UserId);
 
-            var returnArray = (await _dtoService.GetBaseItemDtos(channelResult.Items, GetDtoOptions(Request), user).ConfigureAwait(false)).ToArray();
+            var options = GetDtoOptions(request);
+            RemoveFields(options);
+
+            options.AddCurrentProgram = request.AddCurrentProgram;
+
+            var returnArray = (await _dtoService.GetBaseItemDtos(channelResult.Items, options, user).ConfigureAwait(false)).ToArray();
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -735,6 +922,14 @@ namespace MediaBrowser.Api.LiveTv
             };
 
             return ToOptimizedSerializedResultUsingCache(result);
+        }
+
+        private void RemoveFields(DtoOptions options)
+        {
+            options.Fields.Remove(ItemFields.CanDelete);
+            options.Fields.Remove(ItemFields.CanDownload);
+            options.Fields.Remove(ItemFields.DisplayPreferencesId);
+            options.Fields.Remove(ItemFields.Etag);
         }
 
         public object Get(GetChannel request)
@@ -789,10 +984,24 @@ namespace MediaBrowser.Api.LiveTv
             query.Limit = request.Limit;
             query.SortBy = (request.SortBy ?? String.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
             query.SortOrder = request.SortOrder;
+            query.IsNews = request.IsNews;
             query.IsMovie = request.IsMovie;
+            query.IsSeries = request.IsSeries;
             query.IsKids = request.IsKids;
             query.IsSports = request.IsSports;
+            query.SeriesTimerId = request.SeriesTimerId;
             query.Genres = (request.Genres ?? String.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+            if (!string.IsNullOrWhiteSpace(request.LibrarySeriesId))
+            {
+                query.IsSeries = true;
+
+                var series = _libraryManager.GetItemById(request.LibrarySeriesId) as Series;
+                if (series != null)
+                {
+                    query.Name = series.Name;
+                }
+            }
 
             var result = await _liveTvManager.GetPrograms(query, GetDtoOptions(request), CancellationToken.None).ConfigureAwait(false);
 
@@ -807,8 +1016,10 @@ namespace MediaBrowser.Api.LiveTv
                 IsAiring = request.IsAiring,
                 Limit = request.Limit,
                 HasAired = request.HasAired,
+                IsSeries = request.IsSeries,
                 IsMovie = request.IsMovie,
                 IsKids = request.IsKids,
+                IsNews = request.IsNews,
                 IsSports = request.IsSports,
                 EnableTotalRecordCount = request.EnableTotalRecordCount
             };
@@ -829,6 +1040,33 @@ namespace MediaBrowser.Api.LiveTv
             options.DeviceId = AuthorizationContext.GetAuthorizationInfo(Request).DeviceId;
 
             var result = await _liveTvManager.GetRecordings(new RecordingQuery
+            {
+                ChannelId = request.ChannelId,
+                UserId = request.UserId,
+                GroupId = request.GroupId,
+                StartIndex = request.StartIndex,
+                Limit = request.Limit,
+                Status = request.Status,
+                SeriesTimerId = request.SeriesTimerId,
+                IsInProgress = request.IsInProgress,
+                EnableTotalRecordCount = request.EnableTotalRecordCount,
+                IsMovie = request.IsMovie,
+                IsNews = request.IsNews,
+                IsSeries = request.IsSeries,
+                IsKids = request.IsKids,
+                IsSports = request.IsSports
+
+            }, options, CancellationToken.None).ConfigureAwait(false);
+
+            return ToOptimizedResult(result);
+        }
+
+        public async Task<object> Get(GetRecordingSeries request)
+        {
+            var options = GetDtoOptions(request);
+            options.DeviceId = AuthorizationContext.GetAuthorizationInfo(Request).DeviceId;
+
+            var result = await _liveTvManager.GetRecordingSeries(new RecordingQuery
             {
                 ChannelId = request.ChannelId,
                 UserId = request.UserId,
@@ -870,7 +1108,8 @@ namespace MediaBrowser.Api.LiveTv
             {
                 ChannelId = request.ChannelId,
                 SeriesTimerId = request.SeriesTimerId,
-                IsActive = request.IsActive
+                IsActive = request.IsActive,
+                IsScheduled = request.IsScheduled
 
             }, CancellationToken.None).ConfigureAwait(false);
 

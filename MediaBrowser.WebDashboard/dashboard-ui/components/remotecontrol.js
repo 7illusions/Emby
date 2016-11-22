@@ -194,7 +194,7 @@
 
             // This should be outside of the IF
             // But for now, if you change songs but keep the same artist, the backdrop will flicker because in-between songs it clears out the image
-            if (!browser.mobile) {
+            if (!browser.slow) {
                 // Exclude from mobile because it just doesn't perform well
                 require(['backdrop'], function (backdrop) {
                     backdrop.setBackdrop(backdropUrl);
@@ -202,14 +202,17 @@
             }
 
             ApiClient.getItem(Dashboard.getCurrentUserId(), item.Id).then(function (fullItem) {
-                context.querySelector('.nowPlayingPageUserDataButtons').innerHTML = userdataButtons.getIconsHtml({
+                userdataButtons.fill({
                     item: fullItem,
                     includePlayed: false,
-                    style: 'fab-mini'
+                    style: 'fab-mini',
+                    element: context.querySelector('.nowPlayingPageUserDataButtons')
                 });
             });
         } else {
-            context.querySelector('.nowPlayingPageUserDataButtons').innerHTML = '';
+            userdataButtons.destroy({
+                element: context.querySelector('.nowPlayingPageUserDataButtons')
+            });
         }
     }
 
@@ -541,7 +544,7 @@
 
             } else {
 
-                btnCast.querySelector('i').innerHTML = 'cast-connected';
+                btnCast.querySelector('i').innerHTML = 'cast_connected';
                 btnCast.classList.add('btnActiveCast');
                 context.querySelector('.nowPlayingSelectedPlayer').innerHTML = info.deviceName || info.name;
             }
@@ -757,11 +760,7 @@
 
             var mdlTabs = context.querySelector('.libraryViewNav');
 
-            if (AppInfo.enableNowPlayingPageBottomTabs) {
-                context.querySelector('.libraryViewNav').classList.add('bottom');
-            } else {
-                context.querySelector('.libraryViewNav').classList.remove('bottom');
-            }
+            context.querySelector('.libraryViewNav').classList.add('bottom');
 
             libraryBrowser.configurePaperLibraryTabs(ownerView, mdlTabs, ownerView.querySelectorAll('.pageTabContent'));
 
@@ -796,11 +795,6 @@
         self.init = function (ownerView, context) {
 
             dlg = context;
-
-            if (!AppInfo.enableNowPlayingPageBottomTabs) {
-                context.querySelector('.btnExitRemoteControl').style.position = 'relative';
-                context.querySelector('.topRightContainer').style.position = 'relative';
-            }
 
             init(ownerView, dlg);
         };

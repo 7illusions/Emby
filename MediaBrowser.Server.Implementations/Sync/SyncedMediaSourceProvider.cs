@@ -99,7 +99,7 @@ namespace MediaBrowser.Server.Implementations.Sync
         // Do not use a pipe here because Roku http requests to the server will fail, without any explicit error message.
         private const string StreamIdDelimeterString = "_";
 
-        public async Task<MediaSourceInfo> OpenMediaSource(string openToken, CancellationToken cancellationToken)
+        public async Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> OpenMediaSource(string openToken, CancellationToken cancellationToken)
         {
             var openKeys = openToken.Split(new[] { StreamIdDelimeterString[0] }, 3);
 
@@ -137,16 +137,20 @@ namespace MediaBrowser.Server.Implementations.Sync
             mediaSource.Protocol = dynamicInfo.Protocol;
             mediaSource.RequiredHttpHeaders = dynamicInfo.RequiredHttpHeaders;
 
-            return mediaSource;
+            return new Tuple<MediaSourceInfo, IDirectStreamProvider>(mediaSource, null);
         }
 
         private void SetStaticMediaSourceInfo(LocalItem item, MediaSourceInfo mediaSource)
         {
             mediaSource.Id = item.Id;
             mediaSource.SupportsTranscoding = false;
+            if (mediaSource.Protocol == Model.MediaInfo.MediaProtocol.File)
+            {
+                mediaSource.ETag = item.Id;
+            }
         }
 
-        public Task CloseMediaSource(string liveStreamId, CancellationToken cancellationToken)
+        public Task CloseMediaSource(string liveStreamId)
         {
             throw new NotImplementedException();
         }

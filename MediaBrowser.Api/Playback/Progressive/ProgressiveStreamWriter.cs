@@ -4,52 +4,109 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
+using MediaBrowser.Controller.Net;
+using System.Collections.Generic;
+using ServiceStack.Web;
+using MediaBrowser.Controller.Library;
 
 namespace MediaBrowser.Api.Playback.Progressive
 {
-    public class ProgressiveFileCopier
+    public class ProgressiveFileCopier : IAsyncStreamSource, IHasOptions
     {
         private readonly IFileSystem _fileSystem;
         private readonly TranscodingJob _job;
         private readonly ILogger _logger;
+        private readonly string _path;
+        private readonly CancellationToken _cancellationToken;
+        private readonly Dictionary<string, string> _outputHeaders;
 
         // 256k
         private const int BufferSize = 81920;
 
         private long _bytesWritten = 0;
+        public long StartPosition { get; set; }
+        public bool AllowEndOfFile = true;
 
-        public ProgressiveFileCopier(IFileSystem fileSystem, TranscodingJob job, ILogger logger)
+        private IDirectStreamProvider _directStreamProvider;
+
+        public ProgressiveFileCopier(IFileSystem fileSystem, string path, Dictionary<string, string> outputHeaders, TranscodingJob job, ILogger logger, CancellationToken cancellationToken)
         {
             _fileSystem = fileSystem;
+            _path = path;
+            _outputHeaders = outputHeaders;
             _job = job;
             _logger = logger;
+            _cancellationToken = cancellationToken;
         }
 
-        public async Task StreamFile(string path, Stream outputStream, CancellationToken cancellationToken)
+        public ProgressiveFileCopier(IDirectStreamProvider directStreamProvider, Dictionary<string, string> outputHeaders, TranscodingJob job, ILogger logger, CancellationToken cancellationToken)
         {
-            var eofCount = 0;
+            _directStreamProvider = directStreamProvider;
+            _outputHeaders = outputHeaders;
+            _job = job;
+            _logger = logger;
+            _cancellationToken = cancellationToken;
+        }
 
-            using (var fs = _fileSystem.GetFileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, true))
+        public IDictionary<string, string> Options
+        {
+            get
             {
-                while (eofCount < 15)
+                return _outputHeaders;
+            }
+        }
+
+        private Stream GetInputStream()
+        {
+            return _fileSystem.GetFileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, true);
+        }
+
+        public async Task WriteToAsync(Stream outputStream)
+        {
+            try
+            {
+                if (_directStreamProvider != null)
                 {
-                    var bytesRead = await CopyToAsyncInternal(fs, outputStream, BufferSize, cancellationToken).ConfigureAwait(false);
+                    await _directStreamProvider.CopyToAsync(outputStream, _cancellationToken).ConfigureAwait(false);
+                    return;
+                }
 
-                    //var position = fs.Position;
-                    //_logger.Debug("Streamed {0} bytes to position {1} from file {2}", bytesRead, position, path);
+                var eofCount = 0;
 
-                    if (bytesRead == 0)
+                using (var inputStream = GetInputStream())
+                {
+                    if (StartPosition > 0)
                     {
-                        if (_job == null || _job.HasExited)
+                        inputStream.Position = StartPosition;
+                    }
+
+                    while (eofCount < 15 || !AllowEndOfFile)
+                    {
+                        var bytesRead = await CopyToAsyncInternal(inputStream, outputStream, BufferSize, _cancellationToken).ConfigureAwait(false);
+
+                        //var position = fs.Position;
+                        //_logger.Debug("Streamed {0} bytes to position {1} from file {2}", bytesRead, position, path);
+
+                        if (bytesRead == 0)
                         {
-                            eofCount++;
+                            if (_job == null || _job.HasExited)
+                            {
+                                eofCount++;
+                            }
+                            await Task.Delay(100, _cancellationToken).ConfigureAwait(false);
                         }
-                        await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                        else
+                        {
+                            eofCount = 0;
+                        }
                     }
-                    else
-                    {
-                        eofCount = 0;
-                    }
+                }
+            }
+            finally
+            {
+                if (_job != null)
+                {
+                    ApiEntryPoint.Instance.OnTranscodeEndRequest(_job);
                 }
             }
         }

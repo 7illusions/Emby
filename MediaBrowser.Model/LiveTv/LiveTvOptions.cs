@@ -13,8 +13,10 @@ namespace MediaBrowser.Model.LiveTv
         public string SeriesRecordingPath { get; set; }
         public bool EnableAutoOrganize { get; set; }
         public bool EnableRecordingEncoding { get; set; }
+        public string RecordingEncodingFormat { get; set; }
         public bool EnableRecordingSubfolders { get; set; }
         public bool EnableOriginalAudioWithEncodedRecordings { get; set; }
+        public bool EnableOriginalVideoWithEncodedRecordings { get; set; }
 
         public List<TunerHostInfo> TunerHosts { get; set; }
         public List<ListingsProviderInfo> ListingProviders { get; set; }
@@ -31,6 +33,7 @@ namespace MediaBrowser.Model.LiveTv
             TunerHosts = new List<TunerHostInfo>();
             ListingProviders = new List<ListingsProviderInfo>();
             MediaLocationsCreated = new string[] { };
+            RecordingEncodingFormat = "mp4";
         }
     }
 

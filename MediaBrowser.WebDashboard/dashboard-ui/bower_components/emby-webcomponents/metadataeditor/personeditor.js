@@ -1,4 +1,5 @@
 ﻿define(['dialogHelper', 'layoutManager', 'globalize', 'require', 'paper-icon-button-light', 'emby-input', 'emby-select', 'css!./../formdialog'], function (dialogHelper, layoutManager, globalize, require) {
+    'use strict';
 
     function centerFocus(elem, horiz, on) {
         require(['scrollHelper'], function (scrollHelper) {
@@ -20,13 +21,10 @@
                 if (layoutManager.tv) {
                     dialogOptions.size = 'fullscreen';
                 } else {
-                    dialogOptions.size = 'medium';
+                    dialogOptions.size = 'medium-tall';
                 }
 
                 var dlg = dialogHelper.createDialog(dialogOptions);
-
-                dlg.classList.add('ui-body-b');
-                dlg.classList.add('background-theme-b');
 
                 dlg.classList.add('formDialog');
 
@@ -36,14 +34,13 @@
                 html += globalize.translateDocument(template, 'sharedcomponents');
 
                 dlg.innerHTML = html;
-                document.body.appendChild(dlg);
 
                 dlg.querySelector('.txtPersonName', dlg).value = person.Name || '';
                 dlg.querySelector('.selectPersonType', dlg).value = person.Type || '';
                 dlg.querySelector('.txtPersonRole', dlg).value = person.Role || '';
 
                 if (layoutManager.tv) {
-                    centerFocus(dlg.querySelector('.dialogContent'), false, true);
+                    centerFocus(dlg.querySelector('.formDialogContent'), false, true);
                 }
 
                 dialogHelper.open(dlg);
@@ -51,13 +48,22 @@
                 dlg.addEventListener('close', function () {
 
                     if (layoutManager.tv) {
-                        centerFocus(dlg.querySelector('.dialogContent'), false, false);
+                        centerFocus(dlg.querySelector('.formDialogContent'), false, false);
                     }
 
                     if (submitted) {
                         resolve(person);
                     } else {
                         reject();
+                    }
+                });
+
+                dlg.querySelector('.selectPersonType').addEventListener('change', function (e) {
+
+                    if (this.value === 'Actor') {
+                        dlg.querySelector('.fldRole').classList.remove('hide');
+                    } else {
+                        dlg.querySelector('.fldRole').classList.add('hide');
                     }
                 });
 
@@ -79,6 +85,10 @@
                     e.preventDefault();
                     return false;
                 });
+
+                dlg.querySelector('.selectPersonType').dispatchEvent(new CustomEvent('change', {
+                    bubbles: true
+                }));
             });
         });
     }

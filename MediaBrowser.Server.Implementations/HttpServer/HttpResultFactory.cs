@@ -93,11 +93,13 @@ namespace MediaBrowser.Server.Implementations.HttpServer
                     }
                 }
             }
-
-            if (responseHeaders != null)
+            if (responseHeaders == null)
             {
-                AddResponseHeaders(result, responseHeaders);
+                responseHeaders = new Dictionary<string, string>();
             }
+
+            responseHeaders["Expires"] = "-1";
+            AddResponseHeaders(result, responseHeaders);
 
             return result;
         }
@@ -275,7 +277,7 @@ namespace MediaBrowser.Server.Implementations.HttpServer
         /// <returns>System.Object.</returns>
         private object GetCachedResult(IRequest requestContext, IDictionary<string, string> responseHeaders, Guid cacheKey, string cacheKeyString, DateTime? lastDateModified, TimeSpan? cacheDuration, string contentType)
         {
-            responseHeaders["ETag"] = cacheKeyString;
+            responseHeaders["ETag"] = string.Format("\"{0}\"", cacheKeyString);
 
             if (IsNotModified(requestContext, cacheKey, lastDateModified, cacheDuration))
             {
@@ -534,7 +536,7 @@ namespace MediaBrowser.Server.Implementations.HttpServer
             if (lastDateModified.HasValue && (string.IsNullOrEmpty(cacheKey) || cacheDuration.HasValue))
             {
                 AddAgeHeader(responseHeaders, lastDateModified);
-                responseHeaders["LastModified"] = lastDateModified.Value.ToString("r");
+                responseHeaders["Last-Modified"] = lastDateModified.Value.ToString("r");
             }
 
             if (cacheDuration.HasValue)
@@ -681,32 +683,9 @@ namespace MediaBrowser.Server.Implementations.HttpServer
             }
         }
 
-        /// <summary>
-        /// Gets the error result.
-        /// </summary>
-        /// <param name="statusCode">The status code.</param>
-        /// <param name="errorMessage">The error message.</param>
-        /// <param name="responseHeaders">The response headers.</param>
-        /// <returns>System.Object.</returns>
-        public void ThrowError(int statusCode, string errorMessage, IDictionary<string, string> responseHeaders = null)
+        public object GetAsyncStreamWriter(IAsyncStreamSource streamSource)
         {
-            var error = new HttpError
-            {
-                Status = statusCode,
-                ErrorCode = errorMessage
-            };
-
-            if (responseHeaders != null)
-            {
-                AddResponseHeaders(error, responseHeaders);
-            }
-
-            throw error;
-        }
-
-        public object GetAsyncStreamWriter(Func<Stream, Task> streamWriter, IDictionary<string, string> responseHeaders = null)
-        {
-            return new AsyncStreamWriterFunc(streamWriter, responseHeaders);
+            return new AsyncStreamWriter(streamSource);
         }
     }
 }

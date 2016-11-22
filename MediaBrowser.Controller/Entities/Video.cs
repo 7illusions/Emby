@@ -12,6 +12,7 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
+using MediaBrowser.Common.Extensions;
 using MediaBrowser.Controller.Channels;
 
 namespace MediaBrowser.Controller.Entities
@@ -23,9 +24,7 @@ namespace MediaBrowser.Controller.Entities
         IHasAspectRatio,
         ISupportsPlaceHolders,
         IHasMediaSources,
-        IHasShortOverview,
-        IThemeMedia,
-        IArchivable
+        IThemeMedia
     {
         [IgnoreDataMember]
         public string PrimaryVersionId { get; set; }
@@ -45,21 +44,44 @@ namespace MediaBrowser.Controller.Entities
         }
 
         [IgnoreDataMember]
-        public override string PresentationUniqueKey
+        public override bool SupportsPlayedStatus
         {
             get
             {
-                if (!string.IsNullOrWhiteSpace(PrimaryVersionId))
-                {
-                    return PrimaryVersionId;
-                }
-
-                return base.PresentationUniqueKey;
+                return true;
             }
         }
 
         [IgnoreDataMember]
-        public override bool EnableForceSaveOnDateModifiedChange
+        protected override bool SupportsIsInMixedFolderDetection
+        {
+            get
+            {
+                return true;
+            }
+        }
+
+        public override string CreatePresentationUniqueKey()
+        {
+            if (!string.IsNullOrWhiteSpace(PrimaryVersionId))
+            {
+                return PrimaryVersionId;
+            }
+
+            return base.CreatePresentationUniqueKey();
+        }
+
+        [IgnoreDataMember]
+        public override bool EnableRefreshOnDateModifiedChange
+        {
+            get
+            {
+                return VideoType == VideoType.VideoFile || VideoType == VideoType.Iso;
+            }
+        }
+
+        [IgnoreDataMember]
+        public override bool SupportsThemeMedia
         {
             get { return true; }
         }
@@ -165,7 +187,7 @@ namespace MediaBrowser.Controller.Entities
         [IgnoreDataMember]
         public override bool SupportsAddingToPlaylist
         {
-            get { return LocationType == LocationType.FileSystem && RunTimeTicks.HasValue; }
+            get { return true; }
         }
 
         [IgnoreDataMember]
@@ -195,21 +217,6 @@ namespace MediaBrowser.Controller.Entities
         public bool HasLocalAlternateVersions
         {
             get { return LocalAlternateVersions.Count > 0; }
-        }
-
-        [IgnoreDataMember]
-        public bool IsArchive
-        {
-            get
-            {
-                if (string.IsNullOrWhiteSpace(Path))
-                {
-                    return false;
-                }
-                var ext = System.IO.Path.GetExtension(Path) ?? string.Empty;
-
-                return new[] { ".zip", ".rar", ".7z" }.Contains(ext, StringComparer.OrdinalIgnoreCase);
-            }
         }
 
         public IEnumerable<Guid> GetAdditionalPartIds()
@@ -419,7 +426,7 @@ namespace MediaBrowser.Controller.Entities
             if (IsStacked)
             {
                 var tasks = AdditionalParts
-                    .Select(i => RefreshMetadataForOwnedVideo(options, i, cancellationToken));
+                    .Select(i => RefreshMetadataForOwnedVideo(options, true, i, cancellationToken));
 
                 await Task.WhenAll(tasks).ConfigureAwait(false);
             }
@@ -434,7 +441,7 @@ namespace MediaBrowser.Controller.Entities
                     RefreshLinkedAlternateVersions();
 
                     var tasks = LocalAlternateVersions
-                        .Select(i => RefreshMetadataForOwnedVideo(options, i, cancellationToken));
+                        .Select(i => RefreshMetadataForOwnedVideo(options, false, i, cancellationToken));
 
                     await Task.WhenAll(tasks).ConfigureAwait(false);
                 }
@@ -480,7 +487,7 @@ namespace MediaBrowser.Controller.Entities
 
         public override IEnumerable<string> GetDeletePaths()
         {
-            if (!IsInMixedFolder)
+            if (!DetectIsInMixedFolder())
             {
                 return new[] { ContainingFolderPath };
             }
@@ -600,7 +607,7 @@ namespace MediaBrowser.Controller.Entities
                 Protocol = locationType == LocationType.Remote ? MediaProtocol.Http : MediaProtocol.File,
                 MediaStreams = mediaStreams,
                 Name = GetMediaSourceName(i, mediaStreams),
-                Path = enablePathSubstitution ? GetMappedPath(i.Path, locationType) : i.Path,
+                Path = enablePathSubstitution ? GetMappedPath(i, i.Path, locationType) : i.Path,
                 RunTimeTicks = i.RunTimeTicks,
                 Video3DFormat = i.Video3DFormat,
                 VideoType = i.VideoType,
@@ -611,6 +618,11 @@ namespace MediaBrowser.Controller.Entities
                 PlayableStreamFileNames = i.PlayableStreamFileNames.ToList(),
                 SupportsDirectStream = i.VideoType == VideoType.VideoFile
             };
+
+            if (info.Protocol == MediaProtocol.File)
+            {
+                info.ETag = i.DateModified.Ticks.ToString(CultureInfo.InvariantCulture).GetMD5().ToString("N");
+            }
 
             if (i.IsShortcut)
             {

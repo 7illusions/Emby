@@ -9,6 +9,9 @@ using System.Linq;
 using System.Text;
 using System.Xml;
 using CommonIO;
+using MediaBrowser.Common.IO;
+using MediaBrowser.Controller.IO;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.MediaInfo;
 
@@ -19,11 +22,13 @@ namespace MediaBrowser.MediaEncoding.Probing
         private readonly CultureInfo _usCulture = new CultureInfo("en-US");
         private readonly ILogger _logger;
         private readonly IFileSystem _fileSystem;
+        private readonly IMemoryStreamProvider _memoryStreamProvider;
 
-        public ProbeResultNormalizer(ILogger logger, IFileSystem fileSystem)
+        public ProbeResultNormalizer(ILogger logger, IFileSystem fileSystem, IMemoryStreamProvider memoryStreamProvider)
         {
             _logger = logger;
             _fileSystem = fileSystem;
+            _memoryStreamProvider = memoryStreamProvider;
         }
 
         public MediaInfo GetMediaInfo(InternalMediaInfoResult data, VideoType videoType, bool isAudio, string path, MediaProtocol protocol)
@@ -168,6 +173,12 @@ namespace MediaBrowser.MediaEncoding.Probing
                 }
 
                 ExtractTimestamp(info);
+
+                var stereoMode = GetDictionaryValue(tags, "stereo_mode");
+                if (string.Equals(stereoMode, "left_right", StringComparison.OrdinalIgnoreCase))
+                {
+                    info.Video3DFormat = Video3DFormat.FullSideBySide;
+                }
             }
 
             return info;
@@ -180,7 +191,7 @@ namespace MediaBrowser.MediaEncoding.Probing
             xml = "<?xml version=\"1.0\"?>" + xml;
 
             // <?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n\t<key>cast</key>\n\t<array>\n\t\t<dict>\n\t\t\t<key>name</key>\n\t\t\t<string>Blender Foundation</string>\n\t\t</dict>\n\t\t<dict>\n\t\t\t<key>name</key>\n\t\t\t<string>Janus Bager Kristensen</string>\n\t\t</dict>\n\t</array>\n\t<key>directors</key>\n\t<array>\n\t\t<dict>\n\t\t\t<key>name</key>\n\t\t\t<string>Sacha Goedegebure</string>\n\t\t</dict>\n\t</array>\n\t<key>studio</key>\n\t<string>Blender Foundation</string>\n</dict>\n</plist>\n
-            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml)))
+            using (var stream = _memoryStreamProvider.CreateNew(Encoding.UTF8.GetBytes(xml)))
             {
                 using (var streamReader = new StreamReader(stream))
                 {
@@ -386,6 +397,24 @@ namespace MediaBrowser.MediaEncoding.Probing
             };
         }
 
+        private string NormalizeSubtitleCodec(string codec)
+        {
+            if (string.Equals(codec, "dvb_subtitle", StringComparison.OrdinalIgnoreCase))
+            {
+                codec = "dvbsub";
+            }
+            else if ((codec ?? string.Empty).IndexOf("PGS", StringComparison.OrdinalIgnoreCase) != -1)
+            {
+                codec = "PGSSUB";
+            }
+            else if ((codec ?? string.Empty).IndexOf("DVD", StringComparison.OrdinalIgnoreCase) != -1)
+            {
+                codec = "DVDSUB";
+            }
+
+            return codec;
+        }
+
         /// <summary>
         /// Converts ffprobe stream info to our MediaStream class
         /// </summary>
@@ -398,7 +427,8 @@ namespace MediaBrowser.MediaEncoding.Probing
             // These are mp4 chapters
             if (string.Equals(streamInfo.codec_name, "mov_text", StringComparison.OrdinalIgnoreCase))
             {
-                return null;
+                // Edit: but these are also sometimes subtitles?
+                //return null;
             }
 
             var stream = new MediaStream
@@ -466,6 +496,7 @@ namespace MediaBrowser.MediaEncoding.Probing
             else if (string.Equals(streamInfo.codec_type, "subtitle", StringComparison.OrdinalIgnoreCase))
             {
                 stream.Type = MediaStreamType.Subtitle;
+                stream.Codec = NormalizeSubtitleCodec(stream.Codec);
             }
             else if (string.Equals(streamInfo.codec_type, "video", StringComparison.OrdinalIgnoreCase))
             {
@@ -550,8 +581,7 @@ namespace MediaBrowser.MediaEncoding.Probing
 
         private void NormalizeStreamTitle(MediaStream stream)
         {
-            if (string.Equals(stream.Title, "sdh", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(stream.Title, "cc", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(stream.Title, "cc", StringComparison.OrdinalIgnoreCase))
             {
                 stream.Title = null;
             }
@@ -786,7 +816,7 @@ namespace MediaBrowser.MediaEncoding.Probing
             if (!string.IsNullOrWhiteSpace(artists))
             {
                 audio.Artists = SplitArtists(artists, new[] { '/', ';' }, false)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .DistinctNames()
                     .ToList();
             }
             else
@@ -799,7 +829,7 @@ namespace MediaBrowser.MediaEncoding.Probing
                 else
                 {
                     audio.Artists = SplitArtists(artist, _nameDelimiters, true)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .DistinctNames()
                         .ToList();
                 }
             }
@@ -821,7 +851,7 @@ namespace MediaBrowser.MediaEncoding.Probing
             else
             {
                 audio.AlbumArtists = SplitArtists(albumArtist, _nameDelimiters, true)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .DistinctNames()
                     .ToList();
 
             }

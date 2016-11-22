@@ -1,4 +1,4 @@
-﻿define(['datetime', 'jQuery', 'cardStyle'], function (datetime, $) {
+﻿define(['datetime', 'jQuery', 'dom', 'humanedate', 'cardStyle', 'listViewStyle'], function (datetime, $, dom) {
 
     function renderNoHealthAlertsMessage(page) {
 
@@ -16,9 +16,55 @@
         renderNoHealthAlertsMessage(page);
     }
 
+    function onConnectionHelpClick(e) {
+
+        e.preventDefault();
+        return false;
+    }
+
+    function onEditServerNameClick(e) {
+
+        var page = dom.parentWithClass(this, 'page');
+
+        require(['prompt'], function (prompt) {
+
+            prompt({
+                label: Globalize.translate('LabelFriendlyServerName'),
+                description: Globalize.translate('LabelFriendlyServerNameHelp'),
+                value: page.querySelector('.serverNameHeader').innerHTML,
+                confirmText: Globalize.translate('ButtonSave')
+
+            }).then(function (value) {
+
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getServerConfiguration().then(function (config) {
+
+                    config.ServerName = value;
+
+                    ApiClient.updateServerConfiguration(config).then(function () {
+                        page.querySelector('.serverNameHeader').innerHTML = value;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+            });
+        });
+
+        e.preventDefault();
+        return false;
+    }
+
     window.DashboardPage = {
 
         newsStartIndex: 0,
+
+        onPageInit: function () {
+
+            var page = this;
+
+            page.querySelector('.btnConnectionHelp').addEventListener('click', onConnectionHelpClick);
+            page.querySelector('.btnEditServerName').addEventListener('click', onEditServerNameClick);
+        },
 
         onPageShow: function () {
 
@@ -28,10 +74,6 @@
 
             if (!apiClient) {
                 return;
-            }
-
-            if (Dashboard.lastSystemInfo) {
-                page.querySelector('.serverNameHeader').innerHTML = Dashboard.lastSystemInfo.ServerName;
             }
 
             DashboardPage.newsStartIndex = 0;
@@ -105,14 +147,18 @@
             ApiClient.getSystemInfo().then(function (systemInfo) {
 
                 page.querySelector('.serverNameHeader').innerHTML = systemInfo.ServerName;
-                Dashboard.updateSystemInfo(systemInfo);
 
-                $('#appVersionNumber', page).html(Globalize.translate('LabelVersionNumber').replace('{0}', systemInfo.Version));
+                var localizedVersion = Globalize.translate('LabelVersionNumber', systemInfo.Version);
+                if (systemInfo.SystemUpdateLevel && systemInfo.SystemUpdateLevel != 'Release') {
+                    localizedVersion += " " + Globalize.translate('Option' + systemInfo.SystemUpdateLevel).toLowerCase();
+                }
+
+                $('#appVersionNumber', page).html(localizedVersion);
 
                 if (systemInfo.SupportsHttps) {
-                    $('#ports', page).html(Globalize.translate('LabelRunningOnPorts', '<b>' + systemInfo.HttpServerPortNumber + '</b>', '<b>' + systemInfo.HttpsPortNumber + '</b>'));
+                    $('#ports', page).html(Globalize.translate('LabelRunningOnPorts', systemInfo.HttpServerPortNumber, systemInfo.HttpsPortNumber));
                 } else {
-                    $('#ports', page).html(Globalize.translate('LabelRunningOnPort', '<b>' + systemInfo.HttpServerPortNumber + '</b>'));
+                    $('#ports', page).html(Globalize.translate('LabelRunningOnPort', systemInfo.HttpServerPortNumber));
                 }
 
                 if (systemInfo.CanSelfRestart) {
@@ -130,6 +176,12 @@
                 } else {
                     $('#btnUpdateApplicationContainer', page).hide();
                     $('#btnManualUpdateContainer', page).show();
+                }
+
+                if (systemInfo.PackageName == 'synology') {
+                    $('#btnManualUpdateContainer').html(Globalize.translate('SynologyUpdateInstructions'));
+                } else {
+                    $('#btnManualUpdateContainer').html('<a href="http://emby.media/download" target="_blank">' + Globalize.translate('PleaseUpdateManually') + '</a>');
                 }
 
                 DashboardPage.renderPaths(page, systemInfo);
@@ -151,28 +203,28 @@
                     var itemHtml = '';
 
                     itemHtml += '<a class="clearLink" href="' + item.Link + '" target="_blank">';
-                    itemHtml += '<paper-icon-item>';
+                    itemHtml += '<div class="listItem listItem-noborder">';
 
-                    itemHtml += '<paper-fab mini class="blue" icon="dvr" item-icon></paper-fab>';
+                    itemHtml += '<i class="listItemIcon md-icon">dvr</i>';
 
-                    itemHtml += '<paper-item-body three-line>';
+                    itemHtml += '<div class="listItemBody two-line">';
 
-                    itemHtml += '<div>';
+                    itemHtml += '<div class="listItemBodyText">';
                     itemHtml += item.Title;
                     itemHtml += '</div>';
 
-                    itemHtml += '<div secondary>';
+                    itemHtml += '<div class="listItemBodyText secondary">';
                     var date = datetime.parseISO8601Date(item.Date, true);
                     itemHtml += date.toLocaleDateString();
                     itemHtml += '</div>';
 
-                    itemHtml += '<div secondary>';
-                    itemHtml += item.Description;
+                    //itemHtml += '<div class="listItemBodyText secondary listItemBodyText-nowrap">';
+                    //itemHtml += item.Description;
+                    //itemHtml += '</div>';
+
                     itemHtml += '</div>';
 
-                    itemHtml += '</paper-item-body>';
-
-                    itemHtml += '</paper-icon-item>';
+                    itemHtml += '</div>';
                     itemHtml += '</a>';
 
                     return itemHtml;
@@ -309,7 +361,7 @@
 
                 var nowPlayingItem = session.NowPlayingItem;
 
-                var className = nowPlayingItem ? 'scalableCard card activeSession' : 'scalableCard card activeSession';
+                var className = nowPlayingItem ? 'scalableCard card activeSession backdropCard backdropCard-scalable' : 'scalableCard card activeSession backdropCard backdropCard-scalable';
 
                 if (session.TranscodingInfo && session.TranscodingInfo.CompletionPercentage) {
                     className += ' transcodingSession';
@@ -318,9 +370,9 @@
                 html += '<div class="' + className + '" id="' + rowId + '">';
 
                 html += '<div class="cardBox visualCardBox">';
-                html += '<div class="cardScalable">';
+                html += '<div class="cardScalable visualCardBox-cardScalable">';
 
-                html += '<div class="cardPadder"></div>';
+                html += '<div class="cardPadder cardPadder-backdrop"></div>';
                 html += '<div class="cardContent">';
 
                 html += '<div class="sessionNowPlayingContent"';
@@ -398,7 +450,7 @@
                 html += '<div style="display:flex;align-items:center;justify-content:center;text-transform:uppercase;">';
                 var userImage = DashboardPage.getUserImage(session);
                 if (userImage) {
-                    html += '<img style="border-radius:50px;margin-right:.5em;" src="' + userImage + '" />';
+                    html += '<img style="height:24px;border-radius:50px;margin-right:.5em;" src="' + userImage + '" />';
                 } else {
                     html += '<div style="height:24px;"></div>';
                 }
@@ -427,6 +479,7 @@
 
             //html += '<div>';
             var showTranscodingInfo = false;
+
             if (session.TranscodingInfo && session.TranscodingInfo.IsAudioDirect && session.TranscodingInfo.IsVideoDirect) {
                 html += Globalize.translate('LabelPlayMethodDirectStream');
             }
@@ -455,28 +508,30 @@
 
                 var line = [];
 
-                if (session.TranscodingInfo.Bitrate) {
+                if (session.TranscodingInfo) {
+                    if (session.TranscodingInfo.Bitrate) {
 
-                    if (session.TranscodingInfo.Bitrate > 1000000) {
-                        line.push((session.TranscodingInfo.Bitrate / 1000000).toFixed(1) + ' Mbps');
-                    } else {
-                        line.push(Math.floor(session.TranscodingInfo.Bitrate / 1000) + ' kbps');
+                        if (session.TranscodingInfo.Bitrate > 1000000) {
+                            line.push((session.TranscodingInfo.Bitrate / 1000000).toFixed(1) + ' Mbps');
+                        } else {
+                            line.push(Math.floor(session.TranscodingInfo.Bitrate / 1000) + ' kbps');
+                        }
                     }
-                }
-                if (session.TranscodingInfo.Container) {
+                    if (session.TranscodingInfo.Container) {
 
-                    line.push(session.TranscodingInfo.Container);
-                }
+                        line.push(session.TranscodingInfo.Container);
+                    }
 
-                if (session.TranscodingInfo.VideoCodec) {
+                    if (session.TranscodingInfo.VideoCodec) {
 
-                    //line.push(Globalize.translate('LabelVideoCodec').replace('{0}', session.TranscodingInfo.VideoCodec));
-                    line.push(session.TranscodingInfo.VideoCodec);
-                }
-                if (session.TranscodingInfo.AudioCodec && session.TranscodingInfo.AudioCodec != session.TranscodingInfo.Container) {
+                        //line.push(Globalize.translate('LabelVideoCodec').replace('{0}', session.TranscodingInfo.VideoCodec));
+                        line.push(session.TranscodingInfo.VideoCodec);
+                    }
+                    if (session.TranscodingInfo.AudioCodec && session.TranscodingInfo.AudioCodec != session.TranscodingInfo.Container) {
 
-                    //line.push(Globalize.translate('LabelAudioCodec').replace('{0}', session.TranscodingInfo.AudioCodec));
-                    line.push(session.TranscodingInfo.AudioCodec);
+                        //line.push(Globalize.translate('LabelAudioCodec').replace('{0}', session.TranscodingInfo.AudioCodec));
+                        line.push(session.TranscodingInfo.AudioCodec);
+                    }
                 }
 
                 if (line.length) {
@@ -803,11 +858,13 @@
 
         renderUrls: function (page, systemInfo) {
 
+            var helpButton = '<a href="https://github.com/MediaBrowser/Wiki/wiki/Connectivity" target="_blank" style="margin-left:1em;color:#fff;background:#52B54B;padding:.25em 1em;border-radius:.5em;">' + Globalize.translate('ButtonHelp') + '</a>';
+
             if (systemInfo.LocalAddress) {
 
                 var localAccessHtml = Globalize.translate('LabelLocalAccessUrl', '<a href="' + systemInfo.LocalAddress + '" target="_blank">' + systemInfo.LocalAddress + '</a>');
 
-                $('.localUrl', page).html(localAccessHtml).show().trigger('create');
+                $('.localUrl', page).html(localAccessHtml + helpButton).show().trigger('create');
             } else {
                 $('.externalUrl', page).hide();
             }
@@ -818,7 +875,7 @@
 
                 var remoteAccessHtml = Globalize.translate('LabelRemoteAccessUrl', '<a href="' + externalUrl + '" target="_blank">' + externalUrl + '</a>');
 
-                $('.externalUrl', page).html(remoteAccessHtml).show().trigger('create');
+                $('.externalUrl', page).html(remoteAccessHtml + helpButton).show().trigger('create');
             } else {
                 $('.externalUrl', page).hide();
             }
@@ -937,7 +994,7 @@
 
                     html += '<p><strong>' + Globalize.translate('NewVersionOfSomethingAvailable').replace('{0}', update.name) + '</strong></p>';
 
-                    html += '<button type="button" data-icon="arrow-d" data-theme="b" onclick="DashboardPage.installPluginUpdate(this);" data-name="' + update.name + '" data-guid="' + update.guid + '" data-version="' + update.versionStr + '" data-classification="' + update.classification + '">' + Globalize.translate('ButtonUpdateNow') + '</button>';
+                    html += '<button type="button" is="emby-button" class="raised block" onclick="DashboardPage.installPluginUpdate(this);" data-name="' + update.name + '" data-guid="' + update.guid + '" data-version="' + update.versionStr + '" data-classification="' + update.classification + '">' + Globalize.translate('ButtonUpdateNow') + '</button>';
                 }
 
                 elem.html(html);
@@ -1000,7 +1057,14 @@
 
             require(['confirm'], function (confirm) {
 
-                confirm(Globalize.translate('MessageConfirmRestart'), Globalize.translate('HeaderRestart')).then(function () {
+                confirm({
+
+                    title: Globalize.translate('HeaderRestart'),
+                    text: Globalize.translate('MessageConfirmRestart'),
+                    confirmText: Globalize.translate('ButtonRestart'),
+                    primary: 'cancel'
+
+                }).then(function () {
 
                     $('#btnRestartServer').buttonEnabled(false);
                     $('#btnShutdown').buttonEnabled(false);
@@ -1013,7 +1077,14 @@
 
             require(['confirm'], function (confirm) {
 
-                confirm(Globalize.translate('MessageConfirmShutdown'), Globalize.translate('HeaderShutdown')).then(function () {
+                confirm({
+
+                    title: Globalize.translate('HeaderShutdown'),
+                    text: Globalize.translate('MessageConfirmShutdown'),
+                    confirmText: Globalize.translate('ButtonShutdown'),
+                    primary: 'cancel'
+
+                }).then(function () {
 
                     $('#btnRestartServer').buttonEnabled(false);
                     $('#btnShutdown').buttonEnabled(false);
@@ -1023,7 +1094,7 @@
         }
     };
 
-    $(document).on('pageshow', "#dashboardPage", DashboardPage.onPageShow).on('pagebeforehide', "#dashboardPage", DashboardPage.onPageHide);
+    $(document).on('pageinit', "#dashboardPage", DashboardPage.onPageInit).on('pageshow', "#dashboardPage", DashboardPage.onPageShow).on('pagebeforehide', "#dashboardPage", DashboardPage.onPageHide);
 
     (function ($, document, window) {
 
@@ -1031,7 +1102,7 @@
 
             var html = '';
 
-            html += '<paper-icon-item>';
+            html += '<div class="listItem listItem-noborder">';
 
             var color = entry.Severity == 'Error' || entry.Severity == 'Fatal' || entry.Severity == 'Warn' ? '#cc0000' : '#52B54B';
 
@@ -1043,30 +1114,30 @@
                     height: 40
                 });
 
-                html += '<paper-fab mini style="background-color:' + color + ';background-image:url(\'' + userImgUrl + '\');background-repeat:no-repeat;background-position:center center;background-size: cover;" item-icon></paper-fab>';
+                html += '<i class="listItemIcon md-icon" style="width:2em!important;height:2em!important;padding:0;color:transparent;background-color:' + color + ';background-image:url(\'' + userImgUrl + '\');background-repeat:no-repeat;background-position:center center;background-size: cover;">dvr</i>';
             }
             else {
-                html += '<paper-fab mini icon="dvr" style="background-color:' + color + '" item-icon></paper-fab>';
+                html += '<i class="listItemIcon md-icon" style="background-color:' + color + '">dvr</i>';
             }
 
-            html += '<paper-item-body three-line>';
+            html += '<div class="listItemBody three-line">';
 
-            html += '<div>';
+            html += '<div class="listItemBodyText">';
             html += entry.Name;
             html += '</div>';
 
-            html += '<div secondary>';
+            html += '<div class="listItemBodyText secondary">';
             var date = datetime.parseISO8601Date(entry.Date, true);
             html += date.toLocaleDateString() + ' ' + date.toLocaleTimeString().toLowerCase();
             html += '</div>';
 
-            html += '<div secondary>';
+            html += '<div class="listItemBodyText secondary listItemBodyText-nowrap">';
             html += entry.ShortOverview || '';
             html += '</div>';
 
-            html += '</paper-item-body>';
+            html += '</div>';
 
-            html += '</paper-icon-item>';
+            html += '</div>';
 
             return html;
         }

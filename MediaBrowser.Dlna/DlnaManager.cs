@@ -73,8 +73,13 @@ namespace MediaBrowser.Dlna
             lock (_profiles)
             {
                 var list = _profiles.Values.ToList();
-                return list.Select(i => i.Item2).OrderBy(i => i.Name);
+                return list
+                    .OrderBy(i => i.Item1.Info.Type == DeviceProfileType.User ? 0 : 1)
+                    .ThenBy(i => i.Item1.Info.Name)
+                    .Select(i => i.Item2)
+                    .ToList();
             }
+
         }
 
         public DeviceProfile GetDefaultProfile()
@@ -201,7 +206,6 @@ namespace MediaBrowser.Dlna
                 throw new ArgumentNullException("headers");
             }
 
-            //_logger.Debug("GetProfile. Headers: " + _jsonSerializer.SerializeToString(headers));
             // Convert to case insensitive
             headers = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
 
@@ -213,16 +217,12 @@ namespace MediaBrowser.Dlna
             }
             else
             {
-                string userAgent = null;
-                headers.TryGetValue("User-Agent", out userAgent);
-
-                var msg = "No matching device profile via headers found. The default will be used. ";
-                if (!string.IsNullOrEmpty(userAgent))
+                var msg = new StringBuilder();
+                foreach (var header in headers)
                 {
-                    msg += "User-agent: " + userAgent + ". ";
+                    msg.AppendLine(header.Key + ": " + header.Value);
                 }
-
-                _logger.Debug(msg);
+                _logger.LogMultiline("No matching device profile found. The default will need to be used.", LogSeverity.Info, msg);
             }
 
             return profile;
@@ -248,8 +248,7 @@ namespace MediaBrowser.Dlna
                         //_logger.Debug("IsMatch-Substring value: {0} testValue: {1} isMatch: {2}", value, header.Value, isMatch);
                         return isMatch;
                     case HeaderMatchType.Regex:
-                        // Reports of IgnoreCase not working on linux so try it a couple different ways.
-                        return Regex.IsMatch(value, header.Value, RegexOptions.IgnoreCase) || Regex.IsMatch(value.ToUpper(), header.Value.ToUpper(), RegexOptions.IgnoreCase);
+                        return Regex.IsMatch(value, header.Value, RegexOptions.IgnoreCase);
                     default:
                         throw new ArgumentException("Unrecognized HeaderMatchType");
                 }
@@ -562,7 +561,10 @@ namespace MediaBrowser.Dlna
                 new SonyBravia2012Profile(),
                 new SonyBravia2013Profile(),
                 new SonyBravia2014Profile(),
-                new SonyBlurayPlayer2013Profile(),
+                new SonyBlurayPlayer2013(),
+                new SonyBlurayPlayer2014(),
+                new SonyBlurayPlayer2015(),
+                new SonyBlurayPlayer2016(),
                 new SonyBlurayPlayerProfile(),
                 new PanasonicVieraProfile(),
                 new WdtvLiveProfile(),

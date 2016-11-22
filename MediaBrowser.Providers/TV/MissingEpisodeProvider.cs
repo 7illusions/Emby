@@ -118,7 +118,7 @@ namespace MediaBrowser.Providers.TV
 
             var hasNewEpisodes = false;
 
-            if (_config.Configuration.EnableInternetProviders && addNewItems)
+            if (addNewItems && !group.Any(i => !i.IsInternetMetadataEnabled()))
             {
                 var seriesConfig = _config.Configuration.MetadataOptions.FirstOrDefault(i => string.Equals(i.ItemType, typeof(Series).Name, StringComparison.OrdinalIgnoreCase));
 
@@ -133,7 +133,7 @@ namespace MediaBrowser.Providers.TV
             {
                 foreach (var series in group)
                 {
-                    var directoryService = new DirectoryService(_fileSystem);
+                    var directoryService = new DirectoryService(_logger, _fileSystem);
 
                     await series.RefreshMetadata(new MetadataRefreshOptions(directoryService), cancellationToken).ConfigureAwait(false);
 

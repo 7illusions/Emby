@@ -1,8 +1,8 @@
-﻿define(['libraryBrowser', 'cardBuilder', 'scrollStyles', 'emby-itemscontainer'], function (libraryBrowser, cardBuilder) {
+﻿define(['libraryBrowser', 'cardBuilder', 'dom', 'apphost', 'scrollStyles', 'emby-itemscontainer', 'emby-tabs', 'emby-button'], function (libraryBrowser, cardBuilder, dom, appHost) {
 
     function itemsPerRow() {
 
-        var screenWidth = window.innerWidth;
+        var screenWidth = dom.getWindowSize().innerWidth;
 
         return screenWidth >= 1920 ? 9 : (screenWidth >= 1200 ? 12 : (screenWidth >= 1000 ? 10 : 8));
     }
@@ -24,7 +24,7 @@
         var options = {
             IncludeItemTypes: "Audio",
             Limit: itemsPerRow(),
-            Fields: "PrimaryImageAspectRatio,SyncInfo",
+            Fields: "PrimaryImageAspectRatio,BasicSyncInfo",
             ParentId: parentId,
             ImageTypeLimit: 1,
             EnableImageTypes: "Primary,Backdrop,Banner,Thumb",
@@ -34,6 +34,9 @@
         ApiClient.getJSON(ApiClient.getUrl('Users/' + userId + '/Items/Latest', options)).then(function (items) {
 
             var elem = page.querySelector('#recentlyAddedSongs');
+
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+
             elem.innerHTML = cardBuilder.getCardsHtml({
                 items: items,
                 showUnplayedIndicator: false,
@@ -42,8 +45,11 @@
                 showTitle: true,
                 showParentTitle: true,
                 lazy: true,
-                centerText: true,
-                overlayPlayButton: true
+                centerText: !supportsImageAnalysis,
+                overlayPlayButton: !supportsImageAnalysis,
+                allowBottomPadding: !enableScrollX(),
+                cardLayout: supportsImageAnalysis,
+                vibrant: supportsImageAnalysis
 
             });
             ImageLoader.lazyChildren(elem);
@@ -80,6 +86,9 @@
             }
 
             var itemsContainer = elem.querySelector('.itemsContainer');
+
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+
             itemsContainer.innerHTML = cardBuilder.getCardsHtml({
                 items: result.Items,
                 showUnplayedIndicator: false,
@@ -88,8 +97,11 @@
                 showParentTitle: true,
                 action: 'instantmix',
                 lazy: true,
-                centerText: true,
-                overlayMoreButton: true
+                centerText: !supportsImageAnalysis,
+                overlayMoreButton: !supportsImageAnalysis,
+                allowBottomPadding: !enableScrollX(),
+                cardLayout: supportsImageAnalysis,
+                vibrant: supportsImageAnalysis
 
             });
             ImageLoader.lazyChildren(itemsContainer);
@@ -126,6 +138,9 @@
             }
 
             var itemsContainer = elem.querySelector('.itemsContainer');
+
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+
             itemsContainer.innerHTML = cardBuilder.getCardsHtml({
                 items: result.Items,
                 showUnplayedIndicator: false,
@@ -134,8 +149,11 @@
                 showParentTitle: true,
                 action: 'instantmix',
                 lazy: true,
-                centerText: true,
-                overlayMoreButton: true
+                centerText: !supportsImageAnalysis,
+                overlayMoreButton: !supportsImageAnalysis,
+                allowBottomPadding: !enableScrollX(),
+                cardLayout: supportsImageAnalysis,
+                vibrant: supportsImageAnalysis
 
             });
             ImageLoader.lazyChildren(itemsContainer);
@@ -169,6 +187,9 @@
             }
 
             var itemsContainer = elem.querySelector('.itemsContainer');
+
+            var supportsImageAnalysis = appHost.supports('imageanalysis');
+
             itemsContainer.innerHTML = cardBuilder.getCardsHtml({
                 items: result.Items,
                 shape: getSquareShape(),
@@ -176,8 +197,11 @@
                 lazy: true,
                 coverImage: true,
                 showItemCounts: true,
-                centerText: true,
-                overlayPlayButton: true
+                centerText: !supportsImageAnalysis,
+                overlayPlayButton: !supportsImageAnalysis,
+                allowBottomPadding: !enableScrollX(),
+                cardLayout: supportsImageAnalysis,
+                vibrant: supportsImageAnalysis
 
             });
             ImageLoader.lazyChildren(itemsContainer);
@@ -241,10 +265,6 @@
 
         function enableScrollX() {
             return browserInfo.mobile && AppInfo.enableAppLayouts;
-        }
-
-        function getThumbShape() {
-            return enableScrollX() ? 'overflowBackdrop' : 'backdrop';
         }
 
         self.initTab = function () {
@@ -349,25 +369,27 @@
             });
         }
 
-        var mdlTabs = view.querySelector('.libraryViewNav');
+        var viewTabs = view.querySelector('.libraryViewNav');
 
-        var baseUrl = 'music.html';
-        var topParentId = params.topParentId;
-        if (topParentId) {
-            baseUrl += '?topParentId=' + topParentId;
-        }
+        libraryBrowser.configurePaperLibraryTabs(view, viewTabs, view.querySelectorAll('.pageTabContent'), [0, 4, 5, 6]);
 
-        libraryBrowser.configurePaperLibraryTabs(view, mdlTabs, view.querySelectorAll('.pageTabContent'), [0, 4, 5, 6]);
-
-        mdlTabs.addEventListener('beforetabchange', function (e) {
+        viewTabs.addEventListener('beforetabchange', function (e) {
             preLoadTab(view, parseInt(e.detail.selectedTabIndex));
         });
-        mdlTabs.addEventListener('tabchange', function (e) {
+        viewTabs.addEventListener('tabchange', function (e) {
             loadTab(view, parseInt(e.detail.selectedTabIndex));
+        });
+
+        require(["headroom-window"], function (headroom) {
+            headroom.add(viewTabs);
+            self.headroom = headroom;
         });
 
         view.addEventListener('viewdestroy', function (e) {
 
+            if (self.headroom) {
+                self.headroom.remove(viewTabs);
+            }
             tabControllers.forEach(function (t) {
                 if (t.destroy) {
                     t.destroy();

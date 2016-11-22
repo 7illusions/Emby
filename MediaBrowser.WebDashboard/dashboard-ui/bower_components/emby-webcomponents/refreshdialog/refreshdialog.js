@@ -1,4 +1,5 @@
 ﻿define(['shell', 'dialogHelper', 'loading', 'layoutManager', 'connectionManager', 'embyRouter', 'globalize', 'emby-input', 'emby-checkbox', 'paper-icon-button-light', 'emby-select', 'material-icons', 'css!./../formdialog', 'emby-button'], function (shell, dialogHelper, loading, layoutManager, connectionManager, embyRouter, globalize) {
+    'use strict';
 
     function parentWithClass(elem, className) {
 
@@ -17,7 +18,7 @@
 
         var html = '';
 
-        html += '<div class="dialogContent smoothScrollY" style="padding-top:2em;">';
+        html += '<div class="formDialogContent smoothScrollY" style="padding-top:2em;">';
         html += '<div class="dialogContentInner dialog-content-centered">';
         html += '<form style="margin:auto;">';
 
@@ -37,12 +38,12 @@
         html += globalize.translate('sharedcomponents#RefreshDialogHelp');
         html += '</div>';
 
-        html += '<br />';
-        html += '<div>';
-        html += '<button is="emby-button" type="submit" class="raised btnSubmit block" autofocus>' + globalize.translate('sharedcomponents#ButtonOk') + '</button>';
-        html += '</div>';
-
         html += '<input type="hidden" class="fldSelectedItemIds" />';
+
+        html += '<br />';
+        html += '<div class="formDialogFooter">';
+        html += '<button is="emby-button" type="submit" class="raised btnSubmit block formDialogFooterItem button-submit">' + globalize.translate('sharedcomponents#ButtonOk') + '</button>';
+        html += '</div>';
 
         html += '</form>';
         html += '</div>';
@@ -71,7 +72,7 @@
             var apiClient = connectionManager.getApiClient(options.serverId);
 
             var replaceAllImages = dlg.querySelector('.chkReplaceImages').checked;
-            var replaceAllMetadata = dlg.querySelector('#selectMetadataRefreshMode').value == 'all';
+            var replaceAllMetadata = dlg.querySelector('#selectMetadataRefreshMode').value === 'all';
 
             options.itemIds.forEach(function (itemId) {
                 apiClient.refreshItem(itemId, {
@@ -121,18 +122,17 @@
             var html = '';
             var title = globalize.translate('sharedcomponents#RefreshMetadata');
 
-            html += '<div class="dialogHeader">';
+            html += '<div class="formDialogHeader">';
             html += '<button is="paper-icon-button-light" class="btnCancel autoSize" tabindex="-1"><i class="md-icon">&#xE5C4;</i></button>';
-            html += '<div class="dialogHeaderTitle">';
+            html += '<h3 class="formDialogHeaderTitle">';
             html += title;
-            html += '</div>';
+            html += '</h3>';
 
             html += '</div>';
 
             html += getEditorHtml();
 
             dlg.innerHTML = html;
-            document.body.appendChild(dlg);
 
             initEditor(dlg);
 
@@ -142,13 +142,13 @@
             });
 
             if (layoutManager.tv) {
-                centerFocus(dlg.querySelector('.dialogContent'), false, true);
+                centerFocus(dlg.querySelector('.formDialogContent'), false, true);
             }
 
             return new Promise(function (resolve, reject) {
 
                 if (layoutManager.tv) {
-                    centerFocus(dlg.querySelector('.dialogContent'), false, false);
+                    centerFocus(dlg.querySelector('.formDialogContent'), false, false);
                 }
 
                 dlg.addEventListener('close', resolve);

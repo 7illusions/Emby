@@ -164,8 +164,6 @@ namespace MediaBrowser.Api.UserLibrary
                     case ItemFilter.IsPlayed:
                         query.IsPlayed = true;
                         break;
-                    case ItemFilter.IsRecentlyAdded:
-                        break;
                     case ItemFilter.IsResumable:
                         query.IsResumable = true;
                         break;
@@ -207,6 +205,7 @@ namespace MediaBrowser.Api.UserLibrary
         private void SetItemCounts(BaseItemDto dto, ItemCounts counts)
         {
             dto.ChildCount = counts.ItemCount;
+            dto.ProgramCount = counts.ProgramCount;
             dto.SeriesCount = counts.SeriesCount;
             dto.EpisodeCount = counts.EpisodeCount;
             dto.MovieCount = counts.MovieCount;
@@ -214,6 +213,7 @@ namespace MediaBrowser.Api.UserLibrary
             dto.AlbumCount = counts.AlbumCount;
             dto.SongCount = counts.SongCount;
             dto.GameCount = counts.GameCount;
+            dto.ArtistCount = counts.ArtistCount;
         }
 
         /// <summary>

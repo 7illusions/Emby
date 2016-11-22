@@ -17,6 +17,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CommonIO;
+using ServiceStack;
 
 namespace MediaBrowser.Api.Playback.Progressive
 {
@@ -26,12 +27,10 @@ namespace MediaBrowser.Api.Playback.Progressive
     public abstract class BaseProgressiveStreamingService : BaseStreamingService
     {
         protected readonly IImageProcessor ImageProcessor;
-        protected readonly IHttpClient HttpClient;
 
         protected BaseProgressiveStreamingService(IServerConfigurationManager serverConfig, IUserManager userManager, ILibraryManager libraryManager, IIsoManager isoManager, IMediaEncoder mediaEncoder, IFileSystem fileSystem, IDlnaManager dlnaManager, ISubtitleEncoder subtitleEncoder, IDeviceManager deviceManager, IMediaSourceManager mediaSourceManager, IZipClient zipClient, IJsonSerializer jsonSerializer, IImageProcessor imageProcessor, IHttpClient httpClient) : base(serverConfig, userManager, libraryManager, isoManager, mediaEncoder, fileSystem, dlnaManager, subtitleEncoder, deviceManager, mediaSourceManager, zipClient, jsonSerializer)
         {
             ImageProcessor = imageProcessor;
-            HttpClient = httpClient;
         }
 
         /// <summary>
@@ -122,6 +121,25 @@ namespace MediaBrowser.Api.Playback.Progressive
 
             var responseHeaders = new Dictionary<string, string>();
 
+            if (request.Static && state.DirectStreamProvider != null)
+            {
+                AddDlnaHeaders(state, responseHeaders, true);
+
+                using (state)
+                {
+                    var outputHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                    // TODO: Don't hardcode this
+                    outputHeaders["Content-Type"] = MediaBrowser.Model.Net.MimeTypes.GetMimeType("file.ts");
+
+                    var streamSource = new ProgressiveFileCopier(state.DirectStreamProvider, outputHeaders, null, Logger, CancellationToken.None)
+                    {
+                        AllowEndOfFile = false
+                    };
+                    return ResultFactory.GetAsyncStreamWriter(streamSource);
+                }
+            }
+
             // Static remote stream
             if (request.Static && state.InputProtocol == MediaProtocol.Http)
             {
@@ -129,8 +147,7 @@ namespace MediaBrowser.Api.Playback.Progressive
 
                 using (state)
                 {
-                    return await GetStaticRemoteStreamResult(state, responseHeaders, isHeadRequest, cancellationTokenSource)
-                                .ConfigureAwait(false);
+                    return await GetStaticRemoteStreamResult(state, responseHeaders, isHeadRequest, cancellationTokenSource).ConfigureAwait(false);
                 }
             }
 
@@ -142,7 +159,8 @@ namespace MediaBrowser.Api.Playback.Progressive
             var outputPath = state.OutputFilePath;
             var outputPathExists = FileSystem.FileExists(outputPath);
 
-            var isTranscodeCached = outputPathExists && !ApiEntryPoint.Instance.HasActiveTranscodingJob(outputPath, TranscodingJobType.Progressive);
+            var transcodingJob = ApiEntryPoint.Instance.GetTranscodingJob(outputPath, TranscodingJobType.Progressive);
+            var isTranscodeCached = outputPathExists && transcodingJob != null;
 
             AddDlnaHeaders(state, responseHeaders, request.Static || isTranscodeCached);
 
@@ -153,38 +171,72 @@ namespace MediaBrowser.Api.Playback.Progressive
 
                 using (state)
                 {
+                    if (state.MediaSource.IsInfiniteStream)
+                    {
+                        var outputHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                        outputHeaders["Content-Type"] = contentType;
+
+                        var streamSource = new ProgressiveFileCopier(FileSystem, state.MediaPath, outputHeaders, null, Logger, CancellationToken.None)
+                        {
+                            AllowEndOfFile = false
+                        };
+                        return ResultFactory.GetAsyncStreamWriter(streamSource);
+                    }
+
+                    TimeSpan? cacheDuration = null;
+
+                    if (!string.IsNullOrEmpty(request.Tag))
+                    {
+                        cacheDuration = TimeSpan.FromDays(365);
+                    }
+
                     return await ResultFactory.GetStaticFileResult(Request, new StaticFileResultOptions
                     {
                         ResponseHeaders = responseHeaders,
                         ContentType = contentType,
                         IsHeadRequest = isHeadRequest,
-                        Path = state.MediaPath
+                        Path = state.MediaPath,
+                        CacheDuration = cacheDuration
+
                     }).ConfigureAwait(false);
                 }
             }
 
-            // Not static but transcode cache file exists
-            if (isTranscodeCached)
-            {
-                var contentType = state.GetMimeType(outputPath);
+            //// Not static but transcode cache file exists
+            //if (isTranscodeCached && state.VideoRequest == null)
+            //{
+            //    var contentType = state.GetMimeType(outputPath);
 
-                try
-                {
-                    return await ResultFactory.GetStaticFileResult(Request, new StaticFileResultOptions
-                    {
-                        ResponseHeaders = responseHeaders,
-                        ContentType = contentType,
-                        IsHeadRequest = isHeadRequest,
-                        Path = outputPath,
-                        FileShare = FileShare.ReadWrite
+            //    try
+            //    {
+            //        if (transcodingJob != null)
+            //        {
+            //            ApiEntryPoint.Instance.OnTranscodeBeginRequest(transcodingJob);
+            //        }
 
-                    }).ConfigureAwait(false);
-                }
-                finally
-                {
-                    state.Dispose();
-                }
-            }
+            //        return await ResultFactory.GetStaticFileResult(Request, new StaticFileResultOptions
+            //        {
+            //            ResponseHeaders = responseHeaders,
+            //            ContentType = contentType,
+            //            IsHeadRequest = isHeadRequest,
+            //            Path = outputPath,
+            //            FileShare = FileShare.ReadWrite,
+            //            OnComplete = () =>
+            //            {
+            //                if (transcodingJob != null)
+            //                {
+            //                    ApiEntryPoint.Instance.OnTranscodeEndRequest(transcodingJob);
+            //                }
+            //            }
+
+            //        }).ConfigureAwait(false);
+            //    }
+            //    finally
+            //    {
+            //        state.Dispose();
+            //    }
+            //}
 
             // Need to start ffmpeg
             try
@@ -323,7 +375,8 @@ namespace MediaBrowser.Api.Playback.Progressive
                 return streamResult;
             }
 
-            await ApiEntryPoint.Instance.TranscodingStartLock.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
+            var transcodingLock = ApiEntryPoint.Instance.GetTranscodingLock(outputPath);
+            await transcodingLock.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
             try
             {
                 TranscodingJob job;
@@ -348,13 +401,13 @@ namespace MediaBrowser.Api.Playback.Progressive
                     outputHeaders[item.Key] = item.Value;
                 }
 
-                Func<Stream,Task> streamWriter = stream => new ProgressiveFileCopier(FileSystem, job, Logger).StreamFile(outputPath, stream, CancellationToken.None);
+                var streamSource = new ProgressiveFileCopier(FileSystem, outputPath, outputHeaders, job, Logger, CancellationToken.None);
 
-                return ResultFactory.GetAsyncStreamWriter(streamWriter, outputHeaders);
+                return ResultFactory.GetAsyncStreamWriter(streamSource);
             }
             finally
             {
-                ApiEntryPoint.Instance.TranscodingStartLock.Release();
+                transcodingLock.Release();
             }
         }
 
@@ -369,7 +422,7 @@ namespace MediaBrowser.Api.Playback.Progressive
 
             if (totalBitrate > 0 && state.RunTimeTicks.HasValue)
             {
-                return Convert.ToInt64(totalBitrate * TimeSpan.FromTicks(state.RunTimeTicks.Value).TotalSeconds);
+                return Convert.ToInt64(totalBitrate * TimeSpan.FromTicks(state.RunTimeTicks.Value).TotalSeconds / 8);
             }
 
             return null;

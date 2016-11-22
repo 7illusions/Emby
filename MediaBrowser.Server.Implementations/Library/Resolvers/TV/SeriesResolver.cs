@@ -12,6 +12,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CommonIO;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Configuration;
 
 namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
 {
@@ -52,13 +54,22 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
         {
             if (args.IsDirectory)
             {
+                if (args.HasParent<Series>() || args.HasParent<Season>())
+                {
+                    return null;
+                }
+
                 var collectionType = args.GetCollectionType();
                 if (string.Equals(collectionType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (args.HasParent<Series>())
-                    {
-                        return null;
-                    }
+                    //if (args.ContainsFileSystemEntryByName("tvshow.nfo"))
+                    //{
+                    //    return new Series
+                    //    {
+                    //        Path = args.Path,
+                    //        Name = Path.GetFileName(args.Path)
+                    //    };
+                    //}
 
                     var configuredContentType = _libraryManager.GetConfiguredContentType(args.Path);
                     if (!string.Equals(configuredContentType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
@@ -70,27 +81,35 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
                         };
                     }
                 }
-                else
+                else if (string.IsNullOrWhiteSpace(collectionType))
                 {
-                    if (string.IsNullOrWhiteSpace(collectionType))
+                    if (args.ContainsFileSystemEntryByName("tvshow.nfo"))
                     {
-                        if (args.HasParent<Series>())
+                        if (args.Parent.IsRoot)
                         {
+                            // For now, return null, but if we want to allow this in the future then add some additional checks to guard against a misplaced tvshow.nfo
                             return null;
                         }
 
-                        if (args.Parent.IsRoot)
+                        return new Series
                         {
-                            return null;
-                        }
-                        if (IsSeriesFolder(args.Path, args.FileSystemChildren, args.DirectoryService, _fileSystem, _logger, _libraryManager, false))
+                            Path = args.Path,
+                            Name = Path.GetFileName(args.Path)
+                        };
+                    }
+
+                    if (args.Parent.IsRoot)
+                    {
+                        return null;
+                    }
+
+                    if (IsSeriesFolder(args.Path, args.FileSystemChildren, args.DirectoryService, _fileSystem, _logger, _libraryManager, args.GetLibraryOptions(), false))
+                    {
+                        return new Series
                         {
-                            return new Series
-                            {
-                                Path = args.Path,
-                                Name = Path.GetFileName(args.Path)
-                            };
-                        }
+                            Path = args.Path,
+                            Name = Path.GetFileName(args.Path)
+                        };
                     }
                 }
             }
@@ -104,6 +123,7 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
             IFileSystem fileSystem,
             ILogger logger,
             ILibraryManager libraryManager,
+            LibraryOptions libraryOptions,
             bool isTvContentType)
         {
             foreach (var child in fileSystemChildren)
@@ -134,7 +154,7 @@ namespace MediaBrowser.Server.Implementations.Library.Resolvers.TV
                 else
                 {
                     string fullName = child.FullName;
-                    if (libraryManager.IsVideoFile(fullName))
+                    if (libraryManager.IsVideoFile(fullName, libraryOptions))
                     {
                         if (isTvContentType)
                         {

@@ -1,4 +1,5 @@
-define(['playbackManager', 'focusManager', 'embyRouter'], function (playbackManager, focusManager, embyRouter) {
+define(['playbackManager', 'focusManager', 'embyRouter', 'dom'], function (playbackManager, focusManager, embyRouter, dom) {
+    'use strict';
 
     var lastInputTime = new Date().getTime();
 
@@ -123,13 +124,13 @@ define(['playbackManager', 'focusManager', 'embyRouter'], function (playbackMana
                 break;
             case 'next':
                 if (playbackManager.isPlaying()) {
-                    playbackManager.nextTrack();
+                    playbackManager.nextChapter();
                 }
                 break;
             case 'previous':
 
                 if (playbackManager.isPlaying()) {
-                    playbackManager.previousTrack();
+                    playbackManager.previousChapter();
                 }
                 break;
             case 'guide':
@@ -152,6 +153,12 @@ define(['playbackManager', 'focusManager', 'embyRouter'], function (playbackMana
                 break;
             case 'togglemute':
                 playbackManager.toggleMute();
+                break;
+            case 'channelup':
+                playbackManager.nextTrack();
+                break;
+            case 'channeldown':
+                playbackManager.previousTrack();
                 break;
             case 'volumedown':
                 playbackManager.volumeDown();
@@ -231,7 +238,9 @@ define(['playbackManager', 'focusManager', 'embyRouter'], function (playbackMana
         }
     }
 
-    document.addEventListener('click', notify);
+    dom.addEventListener(document, 'click', notify, {
+        passive: true
+    });
 
     return {
         trigger: handleCommand,

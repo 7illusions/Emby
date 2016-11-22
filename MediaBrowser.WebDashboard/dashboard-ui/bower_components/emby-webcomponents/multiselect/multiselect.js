@@ -1,4 +1,5 @@
 ﻿define(['browser', 'appStorage', 'apphost', 'loading', 'connectionManager', 'globalize', 'embyRouter', 'dom', 'css!./multiselect'], function (browser, appStorage, appHost, loading, connectionManager, globalize, embyRouter, dom) {
+    'use strict';
 
     var selectedItems = [];
     var selectedElements = [];
@@ -22,35 +23,6 @@
                 parent.classList.remove('withMultiSelect');
             }
         }
-    }
-
-    var initCount = 0;
-    function showTapHoldHelp(element) {
-
-        if (initCount >= 15) {
-            // All done
-            return;
-        }
-
-        initCount++;
-
-        if (initCount < 15) {
-            return;
-        }
-
-        var expectedValue = "8";
-        if (appStorage.getItem("tapholdhelp") == expectedValue) {
-            return;
-        }
-
-        appStorage.setItem("tapholdhelp", expectedValue);
-
-        require(['alert'], function (alert) {
-            alert({
-                text: globalize.translate('sharedcomponents#TryMultiSelectMessage'),
-                title: globalize.translate('sharedcomponents#TryMultiSelect')
-            });
-        });
     }
 
     function onItemSelectionPanelClick(e, itemSelectionPanel) {
@@ -83,7 +55,7 @@
         if (selected) {
 
             var current = selectedItems.filter(function (i) {
-                return i == id;
+                return i === id;
             });
 
             if (!current.length) {
@@ -93,10 +65,10 @@
 
         } else {
             selectedItems = selectedItems.filter(function (i) {
-                return i != id;
+                return i !== id;
             });
             selectedElements = selectedElements.filter(function (i) {
-                return i != chkItemSelect;
+                return i !== chkItemSelect;
             });
         }
 
@@ -140,26 +112,6 @@
         }
     }
 
-    function shake(elem, iterations) {
-        var keyframes = [
-          { transform: 'translate3d(0, 0, 0)', offset: 0 },
-          { transform: 'translate3d(-10px, 0, 0)', offset: 0.1 },
-          { transform: 'translate3d(10px, 0, 0)', offset: 0.2 },
-          { transform: 'translate3d(-10px, 0, 0)', offset: 0.3 },
-          { transform: 'translate3d(10px, 0, 0)', offset: 0.4 },
-          { transform: 'translate3d(-10px, 0, 0)', offset: 0.5 },
-          { transform: 'translate3d(10px, 0, 0)', offset: 0.6 },
-          { transform: 'translate3d(-10px, 0, 0)', offset: 0.7 },
-          { transform: 'translate3d(10px, 0, 0)', offset: 0.8 },
-          { transform: 'translate3d(-10px, 0, 0)', offset: 0.9 },
-          { transform: 'translate3d(0, 0, 0)', offset: 1 }];
-        var timing = { duration: 900, iterations: iterations };
-
-        if (elem.animate) {
-            elem.animate(keyframes, timing);
-        }
-    }
-
     function showSelectionCommands() {
 
         var selectionCommandsPanel = currentSelectionCommandsPanel;
@@ -179,7 +131,7 @@
             html += '<span class="itemSelectionCount"></span>';
             html += '</div>';
 
-            var moreIcon = appHost.moreIcon == 'dots-horiz' ? '&#xE5D3;' : '&#xE5D4;';
+            var moreIcon = appHost.moreIcon === 'dots-horiz' ? '&#xE5D3;' : '&#xE5D4;';
             html += '<button is="paper-icon-button-light" class="btnSelectionPanelOptions autoSize" style="margin-left:auto;"><i class="md-icon">' + moreIcon + '</i></button>';
 
             selectionCommandsPanel.innerHTML = html;
@@ -189,10 +141,6 @@
             var btnSelectionPanelOptions = selectionCommandsPanel.querySelector('.btnSelectionPanelOptions');
 
             btnSelectionPanelOptions.addEventListener('click', showMenuForSelectedItems);
-
-            if (!browser.mobile) {
-                shake(btnSelectionPanelOptions, 1);
-            }
         }
     }
 
@@ -200,23 +148,22 @@
 
         return new Promise(function (resolve, reject) {
 
-            var msg = globalize.translate('ConfirmDeleteItem');
-            var title = globalize.translate('HeaderDeleteItem');
+            var msg = globalize.translate('sharedcomponents#ConfirmDeleteItem');
+            var title = globalize.translate('sharedcomponents#HeaderDeleteItem');
 
             if (itemIds.length > 1) {
-                msg = globalize.translate('ConfirmDeleteItems');
-                title = globalize.translate('HeaderDeleteItems');
+                msg = globalize.translate('sharedcomponents#ConfirmDeleteItems');
+                title = globalize.translate('sharedcomponents#HeaderDeleteItems');
             }
 
             require(['confirm'], function (confirm) {
 
                 confirm(msg, title).then(function () {
-
                     var promises = itemIds.map(function (itemId) {
                         apiClient.deleteItem(itemId);
                     });
 
-                    resolve();
+                    Promise.all(promises).then(resolve);
                 }, reject);
 
             });
@@ -265,6 +212,13 @@
                 ironIcon: 'call-merge'
             });
 
+            if (user.Policy.EnableSync && appHost.supports('sync')) {
+                menuItems.push({
+                    name: globalize.translate('sharedcomponents#MakeAvailableOffline'),
+                    id: 'synclocal'
+                });
+            }
+
             menuItems.push({
                 name: globalize.translate('sharedcomponents#MarkPlayed'),
                 id: 'markplayed'
@@ -277,16 +231,16 @@
 
             menuItems.push({
                 name: globalize.translate('sharedcomponents#Refresh'),
-                id: 'refresh',
-                ironIcon: 'refresh'
+                id: 'refresh'
             });
 
-            menuItems.push({
-                name: globalize.translate('sharedcomponents#Sync'),
-                id: 'sync',
-                ironIcon: 'sync'
-            });
-            dispatchNeedsRefresh();
+            if (user.Policy.EnableSync) {
+                menuItems.push({
+                    name: globalize.translate('sharedcomponents#SyncToOtherDevice'),
+                    id: 'sync'
+                });
+            }
+
             require(['actionsheet'], function (actionsheet) {
 
                 actionsheet.show({
@@ -308,6 +262,7 @@
                                     });
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             case 'playlist':
                                 require(['playlistEditor'], function (playlistEditor) {
@@ -317,12 +272,14 @@
                                     });
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             case 'delete':
-                                deleteItems(items).then(function () {
+                                deleteItems(apiClient, items).then(function () {
                                     embyRouter.goHome();
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             case 'groupvideos':
                                 combineVersions(apiClient, items);
@@ -332,12 +289,14 @@
                                     apiClient.markPlayed(apiClient.getCurrentUserId(), itemId);
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             case 'markunplayed':
                                 items.forEach(function (itemId) {
                                     apiClient.markUnplayed(apiClient.getCurrentUserId(), itemId);
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             case 'refresh':
                                 require(['refreshDialog'], function (refreshDialog) {
@@ -347,6 +306,7 @@
                                     }).show();
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             case 'sync':
                                 require(['syncDialog'], function (syncDialog) {
@@ -355,10 +315,27 @@
                                             return {
                                                 Id: i
                                             };
-                                        })
+                                        }),
+                                        serverId: serverId
                                     });
                                 });
                                 hideSelections();
+                                dispatchNeedsRefresh();
+                                break;
+                            case 'synclocal':
+                                require(['syncDialog'], function (syncDialog) {
+                                    syncDialog.showMenu({
+                                        items: items.map(function (i) {
+                                            return {
+                                                Id: i
+                                            };
+                                        }),
+                                        isLocalSync: true,
+                                        serverId: serverId
+                                    });
+                                });
+                                hideSelections();
+                                dispatchNeedsRefresh();
                                 break;
                             default:
                                 break;
@@ -378,7 +355,7 @@
 
             var container = dom.parentWithAttribute(i, 'is', 'emby-itemscontainer');
 
-            if (container && elems.indexOf(container) == -1) {
+            if (container && elems.indexOf(container) === -1) {
                 elems.push(container);
             }
         });
@@ -404,26 +381,18 @@
             return;
         }
 
-        var msg = globalize.translate('sharedcomponents#TheSelectedItemsWillBeGrouped');
+        loading.show();
 
-        require(['confirm'], function (confirm) {
+        apiClient.ajax({
 
-            confirm(msg, globalize.translate('sharedcomponents#GroupVersions')).then(function () {
+            type: "POST",
+            url: apiClient.getUrl("Videos/MergeVersions", { Ids: selection.join(',') })
 
-                loading.show();
+        }).then(function () {
 
-                apiClient.ajax({
-
-                    type: "POST",
-                    url: apiClient.getUrl("Videos/MergeVersions", { Ids: selection.join(',') })
-
-                }).then(function () {
-
-                    loading.hide();
-                    hideSelections();
-                    dispatchNeedsRefresh();
-                });
-            });
+            loading.hide();
+            hideSelections();
+            dispatchNeedsRefresh();
         });
     }
 
@@ -432,7 +401,7 @@
         require(['emby-checkbox'], function () {
             var cards = document.querySelectorAll('.card');
             for (var i = 0, length = cards.length; i < length; i++) {
-                showSelection(cards[i], initialCard == cards[i]);
+                showSelection(cards[i], initialCard === cards[i]);
             }
 
             showSelectionCommands();
@@ -488,7 +457,7 @@
         function initTapHold(element) {
 
             // mobile safari doesn't allow contextmenu override
-            if (browser.mobile && !browser.safari) {
+            if (browser.touch && !browser.safari) {
                 container.addEventListener('contextmenu', onTapHold);
             } else {
                 require(['hammer'], function (Hammer) {
@@ -507,8 +476,6 @@
                     self.manager = manager;
                 });
             }
-
-            showTapHoldHelp(element);
         }
 
         initTapHold(container);

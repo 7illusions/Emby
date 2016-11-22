@@ -70,17 +70,18 @@ namespace MediaBrowser.Api
                 Cultures = _localizationManager.GetCultures().ToList()
             };
 
-            if (!item.IsVirtualItem && !(item is ICollectionFolder) && !(item is UserView) && !(item is AggregateFolder) && !(item is LiveTvChannel) && !(item is IItemByName))
+            if (!item.IsVirtualItem && !(item is ICollectionFolder) && !(item is UserView) && !(item is AggregateFolder) && !(item is LiveTvChannel) && !(item is IItemByName) &&
+                item.SourceType == SourceType.Library)
             {
                 var inheritedContentType = _libraryManager.GetInheritedContentType(item);
                 var configuredContentType = _libraryManager.GetConfiguredContentType(item);
 
-                if (string.IsNullOrWhiteSpace(inheritedContentType) || string.Equals(inheritedContentType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase) || !string.IsNullOrWhiteSpace(configuredContentType))
+                if (string.IsNullOrWhiteSpace(inheritedContentType) || !string.IsNullOrWhiteSpace(configuredContentType))
                 {
                     info.ContentTypeOptions = GetContentTypeOptions(true);
                     info.ContentType = configuredContentType;
 
-                    if (string.Equals(inheritedContentType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
+                    if (string.IsNullOrWhiteSpace(inheritedContentType) || string.Equals(inheritedContentType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
                     {
                         info.ContentTypeOptions = info.ContentTypeOptions
                             .Where(i => string.IsNullOrWhiteSpace(i.Value) || string.Equals(i.Value, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
@@ -242,18 +243,10 @@ namespace MediaBrowser.Api
                 hasBudget.Revenue = request.Revenue;
             }
 
-            var hasOriginalTitle = item as IHasOriginalTitle;
-            if (hasOriginalTitle != null)
-            {
-                hasOriginalTitle.OriginalTitle = hasOriginalTitle.OriginalTitle;
-            }
+            item.OriginalTitle = string.IsNullOrWhiteSpace(request.OriginalTitle) ? null : request.OriginalTitle;
 
-            var hasCriticRating = item as IHasCriticRating;
-            if (hasCriticRating != null)
-            {
-                hasCriticRating.CriticRating = request.CriticRating;
-                hasCriticRating.CriticRatingSummary = request.CriticRatingSummary;
-            }
+            item.CriticRating = request.CriticRating;
+            item.CriticRatingSummary = request.CriticRatingSummary;
 
             item.DisplayMediaType = request.DisplayMediaType;
             item.CommunityRating = request.CommunityRating;
@@ -277,17 +270,12 @@ namespace MediaBrowser.Api
 
             item.Tags = request.Tags;
 
-            var hasTaglines = item as IHasTaglines;
-            if (hasTaglines != null)
+            if (request.Taglines != null)
             {
-                hasTaglines.Taglines = request.Taglines;
+                item.Tagline = request.Taglines.FirstOrDefault();
             }
 
-            var hasShortOverview = item as IHasShortOverview;
-            if (hasShortOverview != null)
-            {
-                hasShortOverview.ShortOverview = request.ShortOverview;
-            }
+            item.ShortOverview = request.ShortOverview;
 
             item.Keywords = request.Keywords;
 
@@ -304,10 +292,13 @@ namespace MediaBrowser.Api
             item.EndDate = request.EndDate.HasValue ? NormalizeDateTime(request.EndDate.Value) : (DateTime?)null;
             item.PremiereDate = request.PremiereDate.HasValue ? NormalizeDateTime(request.PremiereDate.Value) : (DateTime?)null;
             item.ProductionYear = request.ProductionYear;
-            item.OfficialRating = request.OfficialRating;
+            item.OfficialRating = string.IsNullOrWhiteSpace(request.OfficialRating) ? null : request.OfficialRating;
             item.CustomRating = request.CustomRating;
 
-            SetProductionLocations(item, request);
+            if (request.ProductionLocations != null)
+            {
+                item.ProductionLocations = request.ProductionLocations.ToList();
+            }
 
             item.PreferredMetadataCountryCode = request.PreferredMetadataCountryCode;
             item.PreferredMetadataLanguage = request.PreferredMetadataLanguage;
@@ -414,24 +405,6 @@ namespace MediaBrowser.Api
                 series.Status = request.SeriesStatus;
                 series.AirDays = request.AirDays;
                 series.AirTime = request.AirTime;
-            }
-        }
-
-        private void SetProductionLocations(BaseItem item, BaseItemDto request)
-        {
-            var hasProductionLocations = item as IHasProductionLocations;
-
-            if (hasProductionLocations != null)
-            {
-                hasProductionLocations.ProductionLocations = request.ProductionLocations;
-            }
-
-            var person = item as Person;
-            if (person != null)
-            {
-                person.PlaceOfBirth = request.ProductionLocations == null
-                    ? null
-                    : request.ProductionLocations.FirstOrDefault();
             }
         }
     }

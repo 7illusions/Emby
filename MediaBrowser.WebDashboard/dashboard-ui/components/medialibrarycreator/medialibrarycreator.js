@@ -1,13 +1,13 @@
-﻿define(['dialogHelper', 'jQuery', 'emby-input', 'emby-select', 'paper-fab', 'paper-item-body', 'paper-icon-item', 'paper-icon-button-light'], function (dialogHelper, $) {
+﻿define(['dialogHelper', 'jQuery', 'components/libraryoptionseditor/libraryoptionseditor', 'emby-input', 'emby-select', 'paper-icon-button-light', 'listViewStyle', 'formDialogStyle'], function (dialogHelper, $, libraryoptionseditor) {
 
     var currentDeferred;
     var hasChanges;
     var currentOptions;
-    var paths = [];
+    var pathInfos = [];
 
     function onSubmit() {
 
-        if (paths.length == 0) {
+        if (pathInfos.length == 0) {
             require(['alert'], function (alert) {
                 alert({
                     text: Globalize.translate('PleaseAddAtLeastOneFolder'),
@@ -27,7 +27,11 @@
             type = null;
         }
 
-        ApiClient.addVirtualFolder(name, type, currentOptions.refresh, paths).then(function () {
+        var libraryOptions = libraryoptionseditor.getLibraryOptions(dlg.querySelector('.libraryOptions'));
+
+        libraryOptions.PathInfos = pathInfos;
+
+        ApiClient.addVirtualFolder(name, type, currentOptions.refresh, libraryOptions).then(function () {
 
             hasChanges = true;
             dialogHelper.close(dlg);
@@ -59,11 +63,21 @@
 
         $('#selectCollectionType', page).html(getCollectionTypeOptionsHtml(collectionTypeOptions)).val('').on('change', function () {
 
-            if (this.value == 'mixed') {
-                return;
-            }
+            var value = this.value;
 
             var dlg = $(this).parents('.dialog')[0];
+
+            libraryoptionseditor.setContentType(dlg.querySelector('.libraryOptions'), (value == 'mixed' ? '' : value));
+
+            if (value) {
+                dlg.querySelector('.libraryOptions').classList.remove('hide');
+            } else {
+                dlg.querySelector('.libraryOptions').classList.add('hide');
+            }
+
+            if (value == 'mixed') {
+                return;
+            }
 
             var index = this.selectedIndex;
             if (index != -1) {
@@ -71,8 +85,6 @@
                 var name = this.options[index].innerHTML
                     .replace('*', '')
                     .replace('&amp;', '&');
-
-                var value = this.value;
 
                 $('#txtValue', dlg).val(name);
 
@@ -84,6 +96,7 @@
 
                 $('.collectionTypeFieldDescription', dlg).html(folderOption.message || '');
             }
+
         });
 
         $('.btnAddFolder', page).on('click', onAddButtonClick);
@@ -92,7 +105,7 @@
 
     function onAddButtonClick() {
 
-        var page = $(this).parents('.popupEditor')[0];
+        var page = $(this).parents('.dlg-librarycreator')[0];
 
         require(['directorybrowser'], function (directoryBrowser) {
 
@@ -100,10 +113,11 @@
 
             picker.show({
 
-                callback: function (path) {
+                enableNetworkSharePath: true,
+                callback: function (path, networkSharePath) {
 
                     if (path) {
-                        addMediaLocation(page, path);
+                        addMediaLocation(page, path, networkSharePath);
                     }
                     picker.close();
                 }
@@ -112,27 +126,33 @@
         });
     }
 
-    function getFolderHtml(path, index) {
+    function getFolderHtml(pathInfo, index) {
 
         var html = '';
 
-        html += '<paper-icon-item role="menuitem" class="lnkPath">';
+        html += '<div class="listItem lnkPath">';
 
-        html += '<paper-fab mini style="background:#52B54B;" icon="folder" item-icon></paper-fab>';
+        html += '<i class="listItemIcon md-icon">folder</i>';
 
-        html += '<paper-item-body>';
-        html += path;
-        html += '</paper-item-body>';
+        var cssClass = pathInfo.NetworkPath ? 'listItemBody two-line' : 'listItemBody';
 
-        html += '<button is="paper-icon-button-light"" class="btnRemovePath" data-index="' + index + '"><iron-icon icon="remove-circle"></iron-icon></button>';
+        html += '<div class="' + cssClass + '">';
+        html += '<div class="listItemBodyText">' + pathInfo.Path + '</div>';
 
-        html += '</paper-icon-item>';
+        if (pathInfo.NetworkPath) {
+            html += '<div class="listItemBodyText secondary">' + pathInfo.NetworkPath + '</div>';
+        }
+        html += '</div>';
+
+        html += '<button is="paper-icon-button-light"" class="listItemButton btnRemovePath" data-index="' + index + '"><i class="md-icon">remove_circle</i></button>';
+
+        html += '</div>';
 
         return html;
     }
 
     function renderPaths(page) {
-        var foldersHtml = paths.map(getFolderHtml).join('');
+        var foldersHtml = pathInfos.map(getFolderHtml).join('');
 
         var folderList = page.querySelector('.folderList');
         folderList.innerHTML = foldersHtml;
@@ -146,14 +166,21 @@
         $(page.querySelectorAll('.btnRemovePath')).on('click', onRemoveClick);
     }
 
-    function addMediaLocation(page, path) {
+    function addMediaLocation(page, path, networkSharePath) {
 
-        if (paths.filter(function (p) {
+        if (pathInfos.filter(function (p) {
 
-            return p.toLowerCase() == path.toLowerCase();
+            return p.Path.toLowerCase() == path.toLowerCase();
 
         }).length == 0) {
-            paths.push(path);
+
+            var pathInfo = {
+                Path: path
+            };
+            if (networkSharePath) {
+                pathInfo.NetworkPath = networkSharePath;
+            }
+            pathInfos.push(pathInfo);
             renderPaths(page);
         }
     }
@@ -163,12 +190,12 @@
         var button = this;
         var index = parseInt(button.getAttribute('data-index'));
 
-        var location = paths[index];
-        paths = paths.filter(function (p) {
+        var location = pathInfos[index];
+        pathInfos = pathInfos.filter(function (p) {
 
-            return p.toLowerCase() != location.toLowerCase();
+            return p.Path.toLowerCase() != location.toLowerCase();
         });
-        var page = $(this).parents('.popupEditor')[0];
+        var page = $(this).parents('.dlg-librarycreator')[0];
         renderPaths(page);
     }
 
@@ -176,6 +203,12 @@
 
         Dashboard.hideLoadingMsg();
         currentDeferred.resolveWith(null, [hasChanges]);
+    }
+
+    function initLibraryOptions(dlg) {
+        libraryoptionseditor.embed(dlg.querySelector('.libraryOptions')).then(function () {
+            $('#selectCollectionType', dlg).trigger('change');
+        });
     }
 
     function editor() {
@@ -197,20 +230,21 @@
 
                 var template = this.response;
                 var dlg = dialogHelper.createDialog({
-                    size: 'small',
+                    size: 'medium',
 
                     // In (at least) chrome this is causing the text field to not be editable
                     modal: false,
 
-                    removeOnClose: true
+                    removeOnClose: true,
+                    scrollY: false
                 });
 
                 dlg.classList.add('ui-body-a');
                 dlg.classList.add('background-theme-a');
-                dlg.classList.add('popupEditor');
+                dlg.classList.add('dlg-librarycreator');
+                dlg.classList.add('formDialog');
 
                 dlg.innerHTML = Globalize.translateDocument(template);
-                document.body.appendChild(dlg);
 
                 initEditor(dlg, options.collectionTypeOptions);
 
@@ -223,8 +257,9 @@
                     dialogHelper.close(dlg);
                 });
 
-                paths = [];
+                pathInfos = [];
                 renderPaths(dlg);
+                initLibraryOptions(dlg);
             }
 
             xhr.send();

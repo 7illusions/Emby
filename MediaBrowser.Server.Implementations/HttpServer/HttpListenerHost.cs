@@ -19,6 +19,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.IO;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Common.Security;
 using MediaBrowser.Model.Extensions;
@@ -45,16 +46,18 @@ namespace MediaBrowser.Server.Implementations.HttpServer
 
         private readonly IServerConfigurationManager _config;
         private readonly INetworkManager _networkManager;
+        private readonly IMemoryStreamProvider _memoryStreamProvider;
 
         public HttpListenerHost(IApplicationHost applicationHost,
             ILogManager logManager,
             IServerConfigurationManager config,
             string serviceName,
-            string defaultRedirectPath, INetworkManager networkManager, params Assembly[] assembliesWithServices)
+            string defaultRedirectPath, INetworkManager networkManager, IMemoryStreamProvider memoryStreamProvider, params Assembly[] assembliesWithServices)
             : base(serviceName, assembliesWithServices)
         {
             DefaultRedirectPath = defaultRedirectPath;
             _networkManager = networkManager;
+            _memoryStreamProvider = memoryStreamProvider;
             _config = config;
 
             _logger = logManager.GetLogger("HttpServer");
@@ -71,26 +74,32 @@ namespace MediaBrowser.Server.Implementations.HttpServer
 
             HostConfig.Instance.MapExceptionToStatusCode = new Dictionary<Type, int>
             {
-                {typeof (InvalidOperationException), 422},
+                {typeof (InvalidOperationException), 500},
+                {typeof (NotImplementedException), 500},
                 {typeof (ResourceNotFoundException), 404},
                 {typeof (FileNotFoundException), 404},
                 {typeof (DirectoryNotFoundException), 404},
                 {typeof (SecurityException), 401},
                 {typeof (PaymentRequiredException), 402},
                 {typeof (UnauthorizedAccessException), 500},
-                {typeof (ApplicationException), 500}
+                {typeof (ApplicationException), 500},
+                {typeof (PlatformNotSupportedException), 500},
+                {typeof (NotSupportedException), 500}
             };
 
+            HostConfig.Instance.GlobalResponseHeaders = new Dictionary<string, string>();
             HostConfig.Instance.DebugMode = false;
 
             HostConfig.Instance.LogFactory = LogManager.LogFactory;
+            HostConfig.Instance.AllowJsonpRequests = false;
 
             // The Markdown feature causes slow startup times (5 mins+) on cold boots for some users
             // Custom format allows images
-            HostConfig.Instance.EnableFeatures = Feature.Csv | Feature.Html | Feature.Json | Feature.Jsv | Feature.Metadata | Feature.Xml | Feature.CustomFormat;
+            HostConfig.Instance.EnableFeatures = Feature.Html | Feature.Json | Feature.Xml | Feature.CustomFormat;
 
             container.Adapter = _containerAdapter;
 
+            Plugins.RemoveAll(x => x is NativeTypesFeature);
             Plugins.Add(new SwaggerFeature());
             Plugins.Add(new CorsFeature(allowedHeaders: "Content-Type, Authorization, Range, X-MediaBrowser-Token, X-Emby-Authorization"));
 
@@ -98,14 +107,14 @@ namespace MediaBrowser.Server.Implementations.HttpServer
             //    new SessionAuthProvider(_containerAdapter.Resolve<ISessionContext>()),
             //}));
 
-            PreRequestFilters.Add((httpReq, httpRes) =>
-            {
-                //Handles Request and closes Responses after emitting global HTTP Headers
-                if (string.Equals(httpReq.Verb, "OPTIONS", StringComparison.OrdinalIgnoreCase))
-                {
-                    httpRes.EndRequest(); //add a 'using ServiceStack;'
-                }
-            });
+            //PreRequestFilters.Add((httpReq, httpRes) =>
+            //{
+            //    //Handles Request and closes Responses after emitting global HTTP Headers
+            //    if (string.Equals(httpReq.Verb, "OPTIONS", StringComparison.OrdinalIgnoreCase))
+            //    {
+            //        httpRes.EndRequest(); //add a 'using ServiceStack;'
+            //    }
+            //});
 
             HostContext.GlobalResponseFilters.Add(new ResponseFilter(_logger).FilterResponse);
         }
@@ -175,7 +184,7 @@ namespace MediaBrowser.Server.Implementations.HttpServer
 
         private IHttpListener GetListener()
         {
-            return new WebSocketSharpListener(_logger, CertificatePath);
+            return new WebSocketSharpListener(_logger, CertificatePath, _memoryStreamProvider);
         }
 
         private void OnWebSocketConnecting(WebSocketConnectingEventArgs args)
@@ -251,7 +260,7 @@ namespace MediaBrowser.Server.Implementations.HttpServer
 
                 httpRes.Close();
             }
-            catch (Exception errorEx)
+            catch
             {
                 //_logger.ErrorException("Error this.ProcessRequest(context)(Exception while writing error to the response)", errorEx);
             }
@@ -330,6 +339,46 @@ namespace MediaBrowser.Server.Implementations.HttpServer
             return url;
         }
 
+        private string NormalizeConfiguredLocalAddress(string address)
+        {
+            var index = address.Trim('/').IndexOf('/');
+
+            if (index != -1)
+            {
+                address = address.Substring(index + 1);
+            }
+
+            return address.Trim('/');
+        }
+
+        private bool ValidateHost(Uri url)
+        {
+            var hosts = _config
+                .Configuration
+                .LocalNetworkAddresses
+                .Select(NormalizeConfiguredLocalAddress)
+                .ToList();
+
+            if (hosts.Count == 0)
+            {
+                return true;
+            }
+
+            var host = url.Host ?? string.Empty;
+
+            _logger.Debug("Validating host {0}", host);
+
+            if (_networkManager.IsInPrivateAddressSpace(host))
+            {
+                hosts.Add("localhost");
+                hosts.Add("127.0.0.1");
+
+                return hosts.Any(i => host.IndexOf(i, StringComparison.OrdinalIgnoreCase) != -1);
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Overridable method that can be used to implement a custom hnandler
         /// </summary>
@@ -347,6 +396,27 @@ namespace MediaBrowser.Server.Implementations.HttpServer
                 httpRes.StatusCode = 503;
                 httpRes.Close();
                 return ;
+            }
+
+            if (!ValidateHost(url))
+            {
+                httpRes.StatusCode = 400;
+                httpRes.ContentType = "text/plain";
+                httpRes.Write("Invalid host");
+
+                httpRes.Close();
+                return;
+            }
+
+            if (string.Equals(httpReq.Verb, "OPTIONS", StringComparison.OrdinalIgnoreCase))
+            {
+                httpRes.StatusCode = 200;
+                httpRes.AddHeader("Access-Control-Allow-Origin", "*");
+                httpRes.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+                httpRes.AddHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Range, X-MediaBrowser-Token, X-Emby-Authorization");
+                httpRes.ContentType = "text/html";
+
+                httpRes.Close();
             }
 
             var operationName = httpReq.OperationName;
@@ -377,8 +447,24 @@ namespace MediaBrowser.Server.Implementations.HttpServer
 
             if (string.Equals(localPath, "/mediabrowser/", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(localPath, "/mediabrowser", StringComparison.OrdinalIgnoreCase) ||
-                localPath.IndexOf("mediabrowser/web", StringComparison.OrdinalIgnoreCase) != -1 ||
-                localPath.IndexOf("dashboard/", StringComparison.OrdinalIgnoreCase) != -1)
+                localPath.IndexOf("mediabrowser/web", StringComparison.OrdinalIgnoreCase) != -1)
+            {
+                httpRes.StatusCode = 200;
+                httpRes.ContentType = "text/html";
+                var newUrl = urlString.Replace("mediabrowser", "emby", StringComparison.OrdinalIgnoreCase)
+                    .Replace("/dashboard/", "/web/", StringComparison.OrdinalIgnoreCase);
+
+                if (!string.Equals(newUrl, urlString, StringComparison.OrdinalIgnoreCase))
+                {
+                    httpRes.Write("<!doctype html><html><head><title>Emby</title></head><body>Please update your Emby bookmark to <a href=\"" + newUrl + "\">" + newUrl + "</a></body></html>");
+
+                    httpRes.Close();
+                    return;
+                }
+            }
+
+            if (localPath.IndexOf("dashboard/", StringComparison.OrdinalIgnoreCase) != -1 && 
+                localPath.IndexOf("web/dashboard", StringComparison.OrdinalIgnoreCase) == -1)
             {
                 httpRes.StatusCode = 200;
                 httpRes.ContentType = "text/html";
@@ -461,8 +547,10 @@ namespace MediaBrowser.Server.Implementations.HttpServer
                     }
                 }
             }
-
-            throw new NotImplementedException("Cannot execute handler: " + handler + " at PathInfo: " + httpReq.PathInfo);
+            else
+            {
+                httpRes.Close();
+            }
         }
 
         /// <summary>

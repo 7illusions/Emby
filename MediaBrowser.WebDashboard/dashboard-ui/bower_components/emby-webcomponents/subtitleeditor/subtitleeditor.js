@@ -1,4 +1,5 @@
-﻿define(['dialogHelper', 'require', 'layoutManager', 'globalize', 'appStorage', 'connectionManager', 'loading', 'focusManager', 'dom', 'apphost', 'emby-select', 'listViewStyle', 'paper-icon-button-light', 'css!./../formdialog', 'material-icons', 'css!./subtitleeditor', 'emby-button'], function (dialogHelper, require, layoutManager, globalize, appStorage, connectionManager, loading, focusManager, dom, appHost) {
+﻿define(['dialogHelper', 'require', 'layoutManager', 'globalize', 'userSettings', 'connectionManager', 'loading', 'focusManager', 'dom', 'apphost', 'emby-select', 'listViewStyle', 'paper-icon-button-light', 'css!./../formdialog', 'material-icons', 'css!./subtitleeditor', 'emby-button'], function (dialogHelper, require, layoutManager, globalize, userSettings, connectionManager, loading, focusManager, dom, appHost) {
+    'use strict';
 
     var currentItem;
     var hasChanges;
@@ -68,7 +69,14 @@
 
         require(['confirm'], function (confirm) {
 
-            confirm(msg, globalize.translate('sharedcomponents#ConfirmDeletion')).then(function () {
+            confirm({
+
+                title: globalize.translate('sharedcomponents#ConfirmDeletion'),
+                text: msg,
+                confirmText: globalize.translate('sharedcomponents#Delete'),
+                primary: 'cancel'
+
+            }).then(function () {
 
                 loading.show();
 
@@ -97,7 +105,7 @@
 
         var subs = streams.filter(function (s) {
 
-            return s.Type == 'Subtitle';
+            return s.Type === 'Subtitle';
         });
 
         var html = '';
@@ -107,7 +115,7 @@
             html += '<h1>' + globalize.translate('sharedcomponents#MySubtitles') + '</h1>';
 
             if (layoutManager.tv) {
-                html += '<div class="paperList clear">';
+                html += '<div class="paperList paperList-clear">';
             } else {
                 html += '<div class="paperList">';
             }
@@ -118,6 +126,12 @@
 
                 var tagName = layoutManager.tv ? 'button' : 'div';
                 var className = layoutManager.tv && s.Path ? 'listItem btnDelete' : 'listItem';
+
+                if (layoutManager.tv) {
+                    className += ' listItem-focusscale listItem-button';
+                }
+
+                className += ' listItem-noborder';
 
                 itemHtml += '<' + tagName + ' class="' + className + '" data-index="' + s.Index + '">';
 
@@ -138,7 +152,7 @@
 
                 if (!layoutManager.tv) {
                     if (s.Path) {
-                        itemHtml += '<button is="paper-icon-button-light" data-index="' + s.Index + '" title="' + globalize.translate('sharedcomponents#Delete') + '" class="btnDelete"><i class="md-icon">delete</i></button>';
+                        itemHtml += '<button is="paper-icon-button-light" data-index="' + s.Index + '" title="' + globalize.translate('sharedcomponents#Delete') + '" class="btnDelete listItemButton"><i class="md-icon">delete</i></button>';
                     }
                 }
 
@@ -178,7 +192,7 @@
             return '<option value="' + l.ThreeLetterISOLanguageName + '">' + l.DisplayName + '</option>';
         });
 
-        var lastLanguage = appStorage.getItem('subtitleeditor-language');
+        var lastLanguage = userSettings.get('subtitleeditor-language');
         if (lastLanguage) {
             selectLanguage.value = lastLanguage;
         }
@@ -210,7 +224,7 @@
 
         context.querySelector('.noSearchResults').classList.add('hide');
 
-        var moreIcon = appHost.moreIcon == 'dots-horiz' ? '&#xE5D3;' : '&#xE5D4;';
+        var moreIcon = appHost.moreIcon === 'dots-horiz' ? '&#xE5D3;' : '&#xE5D4;';
 
         for (var i = 0, length = results.length; i < length; i++) {
 
@@ -218,14 +232,14 @@
 
             var provider = result.ProviderName;
 
-            if (provider != lastProvider) {
+            if (provider !== lastProvider) {
 
                 if (i > 0) {
                     html += '</div>';
                 }
                 html += '<h1>' + provider + '</h1>';
                 if (layoutManager.tv) {
-                    html += '<div class="paperList clear">';
+                    html += '<div class="paperList paperList-clear">';
                 } else {
                     html += '<div class="paperList">';
                 }
@@ -234,6 +248,9 @@
 
             var tagName = layoutManager.tv ? 'button' : 'div';
             var className = layoutManager.tv ? 'listItem btnOptions' : 'listItem';
+            if (layoutManager.tv) {
+                className += ' listItem-focusscale listItem-button';
+            }
 
             html += '<' + tagName + ' class="' + className + '" data-subid="' + result.Id + '">';
 
@@ -254,10 +271,10 @@
 
             html += '</div>';
 
-            html += '<div class="secondary">' + /*(result.CommunityRating || 0) + ' / ' +*/ (result.DownloadCount || 0) + '</div>';
+            html += '<div class="secondary listItemAside">' + /*(result.CommunityRating || 0) + ' / ' +*/ (result.DownloadCount || 0) + '</div>';
 
             if (!layoutManager.tv) {
-                html += '<button type="button" is="paper-icon-button-light" data-subid="' + result.Id + '" class="btnOptions"><i class="md-icon">' + moreIcon + '</i></button>';
+                html += '<button type="button" is="paper-icon-button-light" data-subid="' + result.Id + '" class="btnOptions listItemButton"><i class="md-icon">' + moreIcon + '</i></button>';
             }
 
             html += '</' + tagName + '>';
@@ -281,7 +298,7 @@
 
     function searchForSubtitles(context, language) {
 
-        appStorage.setItem('subtitleeditor-language', language);
+        userSettings.set('subtitleeditor-language', language);
 
         loading.show();
 
@@ -320,7 +337,7 @@
             loading.hide();
         }
 
-        if (typeof itemId == 'string') {
+        if (typeof itemId === 'string') {
             apiClient.getItem(apiClient.getCurrentUserId(), itemId).then(onGetItem);
         }
         else {
@@ -333,7 +350,7 @@
 
         var lang = form.querySelector('#selectLanguage', form).value;
 
-        searchForSubtitles(dom.parentWithClass(form, 'dialogContent'), lang);
+        searchForSubtitles(dom.parentWithClass(form, 'formDialogContent'), lang);
 
         e.preventDefault();
         return false;
@@ -420,7 +437,6 @@
             dlg.classList.add('subtitleEditorDialog');
 
             dlg.innerHTML = globalize.translateDocument(template, 'sharedcomponents');
-            document.body.appendChild(dlg);
 
             dlg.querySelector('.originalSubtitleFileLabel').innerHTML = globalize.translate('sharedcomponents#File');
 
@@ -429,17 +445,13 @@
             var btnSubmit = dlg.querySelector('.btnSubmit');
 
             if (layoutManager.tv) {
-                centerFocus(dlg.querySelector('.dialogContent'), false, true);
-            }
-
-            if (layoutManager.tv) {
-                centerFocus(dlg.querySelector('.dialogContent'), false, true);
+                centerFocus(dlg.querySelector('.formDialogContent'), false, true);
                 dlg.querySelector('.btnSearchSubtitles').classList.add('hide');
             } else {
                 btnSubmit.classList.add('hide');
             }
 
-            var editorContent = dlg.querySelector('.dialogContent');
+            var editorContent = dlg.querySelector('.formDialogContent');
 
             dlg.querySelector('.subtitleList').addEventListener('click', onSubtitleListClick);
             dlg.querySelector('.subtitleResults').addEventListener('click', onSubtitleResultsClick);
@@ -459,7 +471,7 @@
                 dlg.addEventListener('close', function () {
 
                     if (layoutManager.tv) {
-                        centerFocus(dlg.querySelector('.dialogContent'), false, false);
+                        centerFocus(dlg.querySelector('.formDialogContent'), false, false);
                     }
 
                     if (hasChanges) {

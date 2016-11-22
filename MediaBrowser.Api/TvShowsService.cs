@@ -69,6 +69,9 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
     }
 
     [Route("/Shows/Upcoming", "GET", Summary = "Gets a list of upcoming episodes")]
@@ -117,6 +120,9 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
     }
 
     [Route("/Shows/{Id}/Similar", "GET", Summary = "Finds tv shows similar to a given one.")]
@@ -184,6 +190,10 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
     }
 
     [Route("/Shows/{Id}/Seasons", "GET", Summary = "Gets seasons for a tv series")]
@@ -226,6 +236,10 @@ namespace MediaBrowser.Api
 
         [ApiMember(Name = "EnableImageTypes", Description = "Optional. The image types to include in the output.", IsRequired = false, DataType = "string", ParameterType = "query", Verb = "GET")]
         public string EnableImageTypes { get; set; }
+
+        [ApiMember(Name = "EnableUserData", Description = "Optional, include user data", IsRequired = false, DataType = "boolean", ParameterType = "query", Verb = "GET")]
+        public bool? EnableUserData { get; set; }
+
     }
 
     /// <summary>
@@ -288,6 +302,8 @@ namespace MediaBrowser.Api
                 (!string.IsNullOrWhiteSpace(request.UserId) ? user.RootFolder :
                 _libraryManager.RootFolder) : _libraryManager.GetItemById(request.Id);
 
+            var dtoOptions = GetDtoOptions(request);
+
             var itemsResult = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 Limit = request.Limit,
@@ -295,11 +311,10 @@ namespace MediaBrowser.Api
                 {
                         typeof(Series).Name
                 },
-                SimilarTo = item
+                SimilarTo = item,
+                DtoOptions = dtoOptions
 
             }).ToList();
-
-            var dtoOptions = GetDtoOptions(request);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -319,6 +334,8 @@ namespace MediaBrowser.Api
 
             var parentIdGuid = string.IsNullOrWhiteSpace(request.ParentId) ? (Guid?)null : new Guid(request.ParentId);
 
+            var options = GetDtoOptions(request);
+
             var itemsResult = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { typeof(Episode).Name },
@@ -328,11 +345,10 @@ namespace MediaBrowser.Api
                 StartIndex = request.StartIndex,
                 Limit = request.Limit,
                 ParentId = parentIdGuid,
-                Recursive = true
+                Recursive = true,
+                DtoOptions = options
 
             }).ToList();
-
-            var options = GetDtoOptions(request);
 
             var returnItems = (await _dtoService.GetBaseItemDtos(itemsResult, options, user).ConfigureAwait(false)).ToArray();
 
@@ -409,23 +425,14 @@ namespace MediaBrowser.Api
                 throw new ResourceNotFoundException("No series exists with Id " + request.Id);
             }
 
-            var seasons = series.GetSeasons(user);
-
-            if (request.IsSpecialSeason.HasValue)
+            var seasons = (await series.GetItems(new InternalItemsQuery(user)
             {
-                var val = request.IsSpecialSeason.Value;
+                IsMissing = request.IsMissing,
+                IsVirtualUnaired = request.IsVirtualUnaired,
+                IsSpecialSeason = request.IsSpecialSeason,
+                AdjacentTo = request.AdjacentTo
 
-                seasons = seasons.Where(i => i.IsSpecialSeason == val);
-            }
-
-            seasons = FilterVirtualSeasons(request, seasons);
-
-            // This must be the last filter
-            if (!string.IsNullOrEmpty(request.AdjacentTo))
-            {
-                seasons = UserViewBuilder.FilterForAdjacency(seasons, request.AdjacentTo)
-                    .Cast<Season>();
-            }
+            }).ConfigureAwait(false)).Items.OfType<Season>();
 
             var dtoOptions = GetDtoOptions(request);
 
@@ -437,23 +444,6 @@ namespace MediaBrowser.Api
                 TotalRecordCount = returnItems.Length,
                 Items = returnItems
             };
-        }
-
-        private IEnumerable<Season> FilterVirtualSeasons(GetSeasons request, IEnumerable<Season> items)
-        {
-            if (request.IsMissing.HasValue)
-            {
-                var val = request.IsMissing.Value;
-                items = items.Where(i => (i.IsMissingSeason) == val);
-            }
-
-            if (request.IsVirtualUnaired.HasValue)
-            {
-                var val = request.IsVirtualUnaired.Value;
-                items = items.Where(i => i.IsVirtualUnaired == val);
-            }
-
-            return items;
         }
 
         public async Task<object> Get(GetEpisodes request)
@@ -490,7 +480,7 @@ namespace MediaBrowser.Api
                 }
                 else
                 {
-                    episodes = series.GetEpisodes(user, season);
+                    episodes = series.GetSeasonEpisodes(season, user);
                 }
             }
             else

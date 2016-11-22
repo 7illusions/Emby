@@ -81,46 +81,25 @@ namespace MediaBrowser.Providers.Music
 
         private IEnumerable<RemoteSearchResult> GetResultsFromResponse(XmlDocument doc)
         {
-            var ns = new XmlNamespaceManager(doc.NameTable);
-            ns.AddNamespace("mb", MusicBrainzBaseUrl + "/ns/mmd-2.0#");
-
-            var list = new List<RemoteSearchResult>();
-
-            var nodes = doc.SelectNodes("//mb:release-list/mb:release", ns);
-
-            if (nodes != null)
+            return ReleaseResult.Parse(doc).Select(i =>
             {
-                foreach (var node in nodes.Cast<XmlNode>())
+                var result = new RemoteSearchResult
                 {
-                    if (node.Attributes != null)
-                    {
-                        string name = null;
+                    Name = i.Title,
+                    ProductionYear = i.Year
+                };
 
-                        string mbzId = node.Attributes["id"].Value;
-
-                        var nameNode = node.SelectSingleNode("//mb:title", ns);
-
-                        if (nameNode != null)
-                        {
-                            name = nameNode.InnerText;
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(mbzId) && !string.IsNullOrWhiteSpace(name))
-                        {
-                            var result = new RemoteSearchResult
-                            {
-                                Name = name
-                            };
-
-                            result.SetProviderId(MetadataProviders.MusicBrainzAlbum, mbzId);
-
-                            list.Add(result);
-                        }
-                    }
+                if (!string.IsNullOrWhiteSpace(i.ReleaseId))
+                {
+                    result.SetProviderId(MetadataProviders.MusicBrainzAlbum, i.ReleaseId);
                 }
-            }
+                if (!string.IsNullOrWhiteSpace(i.ReleaseGroupId))
+                {
+                    result.SetProviderId(MetadataProviders.MusicBrainzReleaseGroup, i.ReleaseGroupId);
+                }
 
-            return list;
+                return result;
+            });
         }
 
         public async Task<MetadataResult<MusicAlbum>> GetMetadata(AlbumInfo id, CancellationToken cancellationToken)
@@ -139,16 +118,22 @@ namespace MediaBrowser.Providers.Music
 
                 var releaseResult = await GetReleaseResult(artistMusicBrainzId, id.GetAlbumArtist(), id.Name, cancellationToken).ConfigureAwait(false);
 
-                if (!string.IsNullOrEmpty(releaseResult.ReleaseId))
+                if (releaseResult != null)
                 {
-                    releaseId = releaseResult.ReleaseId;
-                    result.HasMetadata = true;
-                }
+                    if (!string.IsNullOrEmpty(releaseResult.ReleaseId))
+                    {
+                        releaseId = releaseResult.ReleaseId;
+                        result.HasMetadata = true;
+                    }
 
-                if (!string.IsNullOrEmpty(releaseResult.ReleaseGroupId))
-                {
-                    releaseGroupId = releaseResult.ReleaseGroupId;
-                    result.HasMetadata = true;
+                    if (!string.IsNullOrEmpty(releaseResult.ReleaseGroupId))
+                    {
+                        releaseGroupId = releaseResult.ReleaseGroupId;
+                        result.HasMetadata = true;
+                    }
+
+                    result.Item.ProductionYear = releaseResult.Year;
+                    result.Item.Overview = releaseResult.Overview;
                 }
             }
 
@@ -208,7 +193,7 @@ namespace MediaBrowser.Providers.Music
 
             var doc = await GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false);
 
-            return ReleaseResult.Parse(doc);
+            return ReleaseResult.Parse(doc, 1).FirstOrDefault();
         }
 
         private async Task<ReleaseResult> GetReleaseResultByArtistName(string albumName, string artistName, CancellationToken cancellationToken)
@@ -219,32 +204,34 @@ namespace MediaBrowser.Providers.Music
 
             var doc = await GetMusicBrainzResponse(url, true, cancellationToken).ConfigureAwait(false);
 
-            return ReleaseResult.Parse(doc);
+            return ReleaseResult.Parse(doc, 1).FirstOrDefault();
         }
 
         private class ReleaseResult
         {
             public string ReleaseId;
             public string ReleaseGroupId;
+            public string Title;
+            public string Overview;
+            public int? Year;
 
-            public static ReleaseResult Parse(XmlDocument doc)
+            public static List<ReleaseResult> Parse(XmlDocument doc, int? limit = null)
             {
                 var docElem = doc.DocumentElement;
+                var list = new List<ReleaseResult>();
 
                 if (docElem == null)
                 {
-                    return new ReleaseResult();
+                    return list;
                 }
 
                 var releaseList = docElem.FirstChild;
                 if (releaseList == null)
                 {
-                    return new ReleaseResult();
+                    return list;
                 }
 
                 var nodes = releaseList.ChildNodes;
-                string releaseId = null;
-                string releaseGroupId = null;
 
                 if (nodes != null)
                 {
@@ -252,18 +239,67 @@ namespace MediaBrowser.Providers.Music
                     {
                         if (string.Equals(node.Name, "release", StringComparison.OrdinalIgnoreCase))
                         {
-                            releaseId = node.Attributes["id"].Value;
-                            releaseGroupId = GetReleaseGroupIdFromReleaseNode(node);
-                            break;
+                            var releaseId = node.Attributes["id"].Value;
+                            var releaseGroupId = GetReleaseGroupIdFromReleaseNode(node);
+
+                            list.Add(new ReleaseResult
+                            {
+                                ReleaseId = releaseId,
+                                ReleaseGroupId = releaseGroupId,
+                                Title = GetValueFromReleaseNode(node, "title"),
+                                Overview = GetValueFromReleaseNode(node, "annotation"),
+                                Year = GetYearFromReleaseNode(node, "date")
+                            });
+
+                            if (limit.HasValue && list.Count >= limit.Value)
+                            {
+                                break;
+                            }
                         }
                     }
                 }
 
-                return new ReleaseResult
+                return list;
+            }
+
+            private static int? GetYearFromReleaseNode(XmlNode node, string name)
+            {
+                var subNodes = node.ChildNodes;
+                if (subNodes != null)
                 {
-                    ReleaseId = releaseId,
-                    ReleaseGroupId = releaseGroupId
-                };
+                    foreach (var subNode in subNodes.Cast<XmlNode>())
+                    {
+                        if (string.Equals(subNode.Name, name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            DateTime date;
+                            if (DateTime.TryParse(subNode.InnerText, out date))
+                            {
+                                return date.Year;
+                            }
+
+                            return null;
+                        }
+                    }
+                }
+
+                return null;
+            }
+
+            private static string GetValueFromReleaseNode(XmlNode node, string name)
+            {
+                var subNodes = node.ChildNodes;
+                if (subNodes != null)
+                {
+                    foreach (var subNode in subNodes.Cast<XmlNode>())
+                    {
+                        if (string.Equals(subNode.Name, name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return subNode.InnerText;
+                        }
+                    }
+                }
+
+                return null;
             }
 
             private static string GetReleaseGroupIdFromReleaseNode(XmlNode node)

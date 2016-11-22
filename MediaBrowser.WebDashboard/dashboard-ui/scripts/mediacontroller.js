@@ -1,4 +1,4 @@
-﻿define(['appStorage', 'events'], function (appStorage, events) {
+﻿define(['appStorage', 'events', 'browser'], function (appStorage, events, browser) {
 
     var currentDisplayInfo;
     var datetime;
@@ -99,21 +99,31 @@
 
                 Dashboard.hideLoadingMsg();
 
-                actionsheet.show({
+                var menuOptions = {
                     title: Globalize.translate('HeaderSelectPlayer'),
                     items: menuItems,
                     positionTo: button,
-                    enableHistory: enableHistory !== false,
-                    callback: function (id) {
 
-                        var target = targets.filter(function (t) {
-                            return t.id == id;
-                        })[0];
+                    resolveOnClick: true
 
-                        MediaController.trySetActivePlayer(target.playerName, target);
+                };
 
-                        mirrorIfEnabled();
-                    }
+                // Unfortunately we can't allow the url to change or chromecast will throw a security error
+                // Might be able to solve this in the future by moving the dialogs to hashbangs
+                if (!((enableHistory !== false && !browser.chrome) || AppInfo.isNativeApp)) {
+                    menuOptions.enableHistory = false;
+                }
+
+                actionsheet.show(menuOptions).then(function (id) {
+
+                    var target = targets.filter(function (t) {
+                        return t.id == id;
+                    })[0];
+
+                    MediaController.trySetActivePlayer(target.playerName, target);
+
+                    mirrorIfEnabled();
+
                 });
             });
         });
@@ -121,7 +131,7 @@
 
     function showActivePlayerMenu(playerInfo) {
 
-        require(['dialogHelper', 'emby-checkbox', 'emby-button'], function (dialogHelper) {
+        require(['dialogHelper', 'dialog', 'emby-checkbox', 'emby-button'], function (dialogHelper) {
             showActivePlayerMenuInternal(dialogHelper, playerInfo);
         });
     }
@@ -141,15 +151,18 @@
 
         var dlg = dialogHelper.createDialog(dialogOptions);
 
-        html += '<h2>';
+        dlg.classList.add('promptDialog');
+
+        html += '<div class="promptDialogContent" style="padding:1.5em;">';
+        html += '<h2 style="margin-top:.5em;">';
         html += (playerInfo.deviceName || playerInfo.name);
         html += '</h2>';
 
-        html += '<div style="padding:0 2em;">';
+        html += '<div>';
 
         if (playerInfo.supportedCommands.indexOf('DisplayContent') != -1) {
 
-            html += '<label class="checkboxContainer" style="margin-bottom:0;">';
+            html += '<label class="checkboxContainer">';
             var checkedHtml = MediaController.enableDisplayMirroring() ? ' checked' : '';
             html += '<input type="checkbox" is="emby-checkbox" class="chkMirror"' + checkedHtml + '/>';
             html += '<span>' + Globalize.translate('OptionEnableDisplayMirroring') + '</span>';
@@ -158,20 +171,15 @@
 
         html += '</div>';
 
-        html += '<div class="buttons">';
+        html += '<div style="margin-top:1em;display:flex;justify-content: flex-end;">';
 
-        // On small layouts papepr dialog doesn't respond very well. this button isn't that important here anyway.
-        if (screen.availWidth >= 600) {
-            html += '<button is="emby-button" type="button" class="btnRemoteControl">' + Globalize.translate('ButtonRemoteControl') + '</button>';
-        }
-
-        html += '<button is="emby-button" type="button" class="btnDisconnect">' + Globalize.translate('ButtonDisconnect') + '</button>';
-        html += '<button is="emby-button" type="button" class="btnCancel">' + Globalize.translate('ButtonCancel') + '</button>';
+        html += '<button is="emby-button" type="button" class="button-flat button-accent-flat btnRemoteControl promptDialogButton">' + Globalize.translate('ButtonRemoteControl') + '</button>';
+        html += '<button is="emby-button" type="button" class="button-flat button-accent-flat btnDisconnect promptDialogButton ">' + Globalize.translate('ButtonDisconnect') + '</button>';
+        html += '<button is="emby-button" type="button" class="button-flat button-accent-flat btnCancel promptDialogButton">' + Globalize.translate('ButtonCancel') + '</button>';
         html += '</div>';
 
+        html += '</div>';
         dlg.innerHTML = html;
-
-        document.body.appendChild(dlg);
 
         var chkMirror = dlg.querySelector('.chkMirror');
 
@@ -209,72 +217,12 @@
         MediaController.enableDisplayMirroring(this.checked);
     }
 
-    function bindKeys(controller) {
-
-        var self = this;
-        var keyResult = {};
-
-        self.keyBinding = function (e) {
-
-            if (bypass()) return;
-
-            console.log("keyCode", e.keyCode);
-
-            if (keyResult[e.keyCode]) {
-                e.preventDefault();
-                keyResult[e.keyCode](e);
-            }
-        };
-
-        self.keyPrevent = function (e) {
-
-            if (bypass()) return;
-
-            var codes = [32, 38, 40, 37, 39, 81, 77, 65, 84, 83, 70];
-
-            if (codes.indexOf(e.keyCode) != -1) {
-                e.preventDefault();
-            }
-        };
-
-        keyResult[32] = function () { // spacebar
-
-            var player = controller.getCurrentPlayer();
-
-            player.getPlayerState().then(function (result) {
-
-                var state = result;
-
-                if (state.NowPlayingItem && state.PlayState) {
-                    if (state.PlayState.IsPaused) {
-                        player.unpause();
-                    } else {
-                        player.pause();
-                    }
-                }
-            });
-        };
-
-        var bypass = function () {
-            // Get active elem to see what type it is
-            var active = document.activeElement;
-            var type = active.type || active.tagName.toLowerCase();
-            return (type === "text" || type === "select" || type === "textarea" || type == "password");
-        };
-    }
-
     function mediaController() {
 
         var self = this;
         var currentPlayer;
         var currentTargetInfo;
         var players = [];
-
-        var keys = new bindKeys(self);
-
-        window.addEventListener('keydown', keys.keyBinding);
-        window.addEventListener('keypress', keys.keyPrevent);
-        window.addEventListener('keyup', keys.keyPrevent);
 
         self.registerPlayer = function (player) {
 
@@ -369,6 +317,11 @@
                 console.log('Active player: ' + JSON.stringify(currentTargetInfo));
 
                 triggerPlayerChange(player, targetInfo, previousPlayer);
+            }, function () {
+
+                if (currentPairingId == targetInfo.id) {
+                    currentPairingId = null;
+                }
             });
         };
 
@@ -424,41 +377,36 @@
 
             if (playerInfo.supportedCommands.indexOf('EndSession') != -1) {
 
-                var menuItems = [];
+                require(['dialog'], function (dialog) {
 
-                menuItems.push({
-                    name: Globalize.translate('ButtonYes'),
-                    id: 'yes'
-                });
-                menuItems.push({
-                    name: Globalize.translate('ButtonNo'),
-                    id: 'no'
-                });
-                menuItems.push({
-                    name: Globalize.translate('ButtonCancel'),
-                    id: 'cancel'
-                });
+                    var menuItems = [];
 
-                require(['actionsheet'], function (actionsheet) {
+                    menuItems.push({
+                        name: Globalize.translate('ButtonYes'),
+                        id: 'yes'
+                    });
+                    menuItems.push({
+                        name: Globalize.translate('ButtonNo'),
+                        id: 'no'
+                    });
 
-                    actionsheet.show({
-                        items: menuItems,
+                    dialog({
+                        buttons: menuItems,
                         //positionTo: positionTo,
-                        title: Globalize.translate('ConfirmEndPlayerSession'),
-                        callback: function (id) {
+                        text: Globalize.translate('ConfirmEndPlayerSession')
 
-                            switch (id) {
+                    }).then(function (id) {
+                        switch (id) {
 
-                                case 'yes':
-                                    MediaController.getCurrentPlayer().endSession();
-                                    self.setDefaultPlayerActive();
-                                    break;
-                                case 'no':
-                                    self.setDefaultPlayerActive();
-                                    break;
-                                default:
-                                    break;
-                            }
+                            case 'yes':
+                                MediaController.getCurrentPlayer().endSession();
+                                self.setDefaultPlayerActive();
+                                break;
+                            case 'no':
+                                self.setDefaultPlayerActive();
+                                break;
+                            default:
+                                break;
                         }
                     });
 
@@ -518,11 +466,11 @@
                 return;
             }
 
-            requirejs(["registrationservices"], function () {
+            requirejs(["registrationServices"], function (registrationServices) {
 
                 self.playbackTimeLimitMs = null;
 
-                RegistrationServices.validateFeature('playback').then(fn, function () {
+                registrationServices.validateFeature('playback').then(fn, function () {
 
                     self.playbackTimeLimitMs = lockedTimeLimitMs;
                     startAutoStopTimer();
@@ -573,6 +521,12 @@
         };
 
         self.play = function (options) {
+
+            if (options.enableRemotePlayers === false) {
+                if (!currentPlayer.isLocalPlayer) {
+                    return;
+                }
+            }
 
             doWithPlaybackValidation(currentPlayer, function () {
                 if (typeof (options) === 'string') {
@@ -932,7 +886,7 @@
 
             return new Promise(function (resolve, reject) {
 
-                require(['localassetmanager'], function () {
+                require(['localassetmanager'], function (LocalAssetManager) {
 
                     var serverInfo = ApiClient.serverInfo();
 
@@ -1045,7 +999,7 @@
 
                     if (mediaSource.Protocol == 'File') {
 
-                        require(['localassetmanager'], function () {
+                        require(['localassetmanager'], function (LocalAssetManager) {
 
                             LocalAssetManager.fileExists(mediaSource.Path).then(function (exists) {
                                 console.log('LocalAssetManager.fileExists: path: ' + mediaSource.Path + ' result: ' + exists);

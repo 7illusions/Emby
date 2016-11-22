@@ -43,6 +43,7 @@ using MediaBrowser.Server.Implementations.Library.Resolvers;
 using MoreLinq;
 using SortOrder = MediaBrowser.Model.Entities.SortOrder;
 using VideoResolver = MediaBrowser.Naming.Video.VideoResolver;
+using MediaBrowser.Common.Configuration;
 
 namespace MediaBrowser.Server.Implementations.Library
 {
@@ -334,15 +335,6 @@ namespace MediaBrowser.Server.Implementations.Library
             }
         }
 
-        /// <summary>
-        /// Updates the item in library cache.
-        /// </summary>
-        /// <param name="item">The item.</param>
-        private void UpdateItemInLibraryCache(BaseItem item)
-        {
-            RegisterItem(item);
-        }
-
         public void RegisterItem(BaseItem item)
         {
             if (item == null)
@@ -364,7 +356,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
             if (item.IsFolder)
             {
-                if (!(item is ICollectionFolder) && !(item is UserView) && !(item is Channel))
+                if (!(item is ICollectionFolder) && !(item is UserView) && !(item is Channel) && !(item is AggregateFolder))
                 {
                     if (item.SourceType != SourceType.Library)
                     {
@@ -401,7 +393,7 @@ namespace MediaBrowser.Server.Implementations.Library
             var locationType = item.LocationType;
 
             var children = item.IsFolder
-                ? ((Folder)item).GetRecursiveChildren().ToList()
+                ? ((Folder)item).GetRecursiveChildren(false).ToList()
                 : new List<BaseItem>();
 
             foreach (var metadataPath in GetMetadataPaths(item, children))
@@ -556,7 +548,12 @@ namespace MediaBrowser.Server.Implementations.Library
             return ResolvePath(fileInfo, new DirectoryService(_logger, _fileSystem), null, parent);
         }
 
-        private BaseItem ResolvePath(FileSystemMetadata fileInfo, IDirectoryService directoryService, IItemResolver[] resolvers, Folder parent = null, string collectionType = null)
+        private BaseItem ResolvePath(FileSystemMetadata fileInfo,
+            IDirectoryService directoryService,
+            IItemResolver[] resolvers,
+            Folder parent = null,
+            string collectionType = null,
+            LibraryOptions libraryOptions = null)
         {
             if (fileInfo == null)
             {
@@ -575,7 +572,8 @@ namespace MediaBrowser.Server.Implementations.Library
                 Parent = parent,
                 Path = fullPath,
                 FileInfo = fileInfo,
-                CollectionType = collectionType
+                CollectionType = collectionType,
+                LibraryOptions = libraryOptions
             };
 
             // Return null if ignore rules deem that we should do so
@@ -615,9 +613,38 @@ namespace MediaBrowser.Server.Implementations.Library
             return ResolveItem(args, resolvers);
         }
 
+        private readonly List<string> _ignoredPaths = new List<string>();
+
+        public void RegisterIgnoredPath(string path)
+        {
+            lock (_ignoredPaths)
+            {
+                _ignoredPaths.Add(path);
+            }
+        }
+        public void UnRegisterIgnoredPath(string path)
+        {
+            lock (_ignoredPaths)
+            {
+                _ignoredPaths.Remove(path);
+            }
+        }
+
         public bool IgnoreFile(FileSystemMetadata file, BaseItem parent)
         {
-            return EntityResolutionIgnoreRules.Any(r => r.ShouldIgnore(file, parent));
+            if (EntityResolutionIgnoreRules.Any(r => r.ShouldIgnore(file, parent)))
+            {
+                return true;
+            }
+
+            //lock (_ignoredPaths)
+            {
+                if (_ignoredPaths.Contains(file.FullName, StringComparer.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public IEnumerable<FileSystemMetadata> NormalizeRootPathList(IEnumerable<FileSystemMetadata> paths)
@@ -653,12 +680,17 @@ namespace MediaBrowser.Server.Implementations.Library
             return !args.ContainsFileSystemEntryByName(".ignore");
         }
 
-        public IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemMetadata> files, IDirectoryService directoryService, Folder parent, string collectionType)
+        public IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemMetadata> files, IDirectoryService directoryService, Folder parent, LibraryOptions libraryOptions, string collectionType)
         {
-            return ResolvePaths(files, directoryService, parent, collectionType, EntityResolvers);
+            return ResolvePaths(files, directoryService, parent, libraryOptions, collectionType, EntityResolvers);
         }
 
-        public IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemMetadata> files, IDirectoryService directoryService, Folder parent, string collectionType, IItemResolver[] resolvers)
+        public IEnumerable<BaseItem> ResolvePaths(IEnumerable<FileSystemMetadata> files,
+            IDirectoryService directoryService,
+            Folder parent,
+            LibraryOptions libraryOptions,
+            string collectionType,
+            IItemResolver[] resolvers)
         {
             var fileList = files.Where(i => !IgnoreFile(i, parent)).ToList();
 
@@ -679,22 +711,27 @@ namespace MediaBrowser.Server.Implementations.Library
                         {
                             ResolverHelper.SetInitialItemValues(item, parent, _fileSystem, this, directoryService);
                         }
-                        items.AddRange(ResolveFileList(result.ExtraFiles, directoryService, parent, collectionType, resolvers));
+                        items.AddRange(ResolveFileList(result.ExtraFiles, directoryService, parent, collectionType, resolvers, libraryOptions));
                         return items;
                     }
                 }
             }
 
-            return ResolveFileList(fileList, directoryService, parent, collectionType, resolvers);
+            return ResolveFileList(fileList, directoryService, parent, collectionType, resolvers, libraryOptions);
         }
 
-        private IEnumerable<BaseItem> ResolveFileList(IEnumerable<FileSystemMetadata> fileList, IDirectoryService directoryService, Folder parent, string collectionType, IItemResolver[] resolvers)
+        private IEnumerable<BaseItem> ResolveFileList(IEnumerable<FileSystemMetadata> fileList,
+            IDirectoryService directoryService,
+            Folder parent,
+            string collectionType,
+            IItemResolver[] resolvers,
+            LibraryOptions libraryOptions)
         {
             return fileList.Select(f =>
             {
                 try
                 {
-                    return ResolvePath(f, directoryService, resolvers, parent, collectionType);
+                    return ResolvePath(f, directoryService, resolvers, parent, collectionType, libraryOptions);
                 }
                 catch (Exception ex)
                 {
@@ -813,7 +850,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task{Person}.</returns>
         public Person GetPerson(string name)
         {
-            return GetItemByName<Person>(ConfigurationManager.ApplicationPaths.PeoplePath, name);
+            return CreateItemByName<Person>(Person.GetPath(name), name);
         }
 
         /// <summary>
@@ -823,7 +860,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task{Studio}.</returns>
         public Studio GetStudio(string name)
         {
-            return GetItemByName<Studio>(ConfigurationManager.ApplicationPaths.StudioPath, name);
+            return CreateItemByName<Studio>(Studio.GetPath(name), name);
         }
 
         /// <summary>
@@ -833,7 +870,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task{Genre}.</returns>
         public Genre GetGenre(string name)
         {
-            return GetItemByName<Genre>(ConfigurationManager.ApplicationPaths.GenrePath, name);
+            return CreateItemByName<Genre>(Genre.GetPath(name), name);
         }
 
         /// <summary>
@@ -843,7 +880,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task{MusicGenre}.</returns>
         public MusicGenre GetMusicGenre(string name)
         {
-            return GetItemByName<MusicGenre>(ConfigurationManager.ApplicationPaths.MusicGenrePath, name);
+            return CreateItemByName<MusicGenre>(MusicGenre.GetPath(name), name);
         }
 
         /// <summary>
@@ -853,13 +890,8 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task{GameGenre}.</returns>
         public GameGenre GetGameGenre(string name)
         {
-            return GetItemByName<GameGenre>(ConfigurationManager.ApplicationPaths.GameGenrePath, name);
+            return CreateItemByName<GameGenre>(GameGenre.GetPath(name), name);
         }
-
-        /// <summary>
-        /// The us culture
-        /// </summary>
-        private static readonly CultureInfo UsCulture = new CultureInfo("en-US");
 
         /// <summary>
         /// Gets a Year
@@ -874,19 +906,9 @@ namespace MediaBrowser.Server.Implementations.Library
                 throw new ArgumentOutOfRangeException("Years less than or equal to 0 are invalid.");
             }
 
-            return GetItemByName<Year>(ConfigurationManager.ApplicationPaths.YearPath, value.ToString(UsCulture));
-        }
+            var name = value.ToString(CultureInfo.InvariantCulture);
 
-        /// <summary>
-        /// Gets the artists path.
-        /// </summary>
-        /// <value>The artists path.</value>
-        public string ArtistsPath
-        {
-            get
-            {
-                return Path.Combine(ConfigurationManager.ApplicationPaths.ItemsByNamePath, "artists");
-            }
+            return CreateItemByName<Year>(Year.GetPath(name), name);
         }
 
         /// <summary>
@@ -896,48 +918,7 @@ namespace MediaBrowser.Server.Implementations.Library
         /// <returns>Task{Genre}.</returns>
         public MusicArtist GetArtist(string name)
         {
-            return GetItemByName<MusicArtist>(ArtistsPath, name);
-        }
-
-        private T GetItemByName<T>(string path, string name)
-            where T : BaseItem, new()
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new ArgumentNullException("path");
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                throw new ArgumentNullException("name");
-            }
-
-            // Trim the period at the end because windows will have a hard time with that
-            var validFilename = _fileSystem.GetValidFilename(name)
-                .Trim()
-                .TrimEnd('.');
-
-            string subFolderPrefix = null;
-
-            var type = typeof(T);
-
-            if (type == typeof(Person))
-            {
-                foreach (char c in validFilename)
-                {
-                    if (char.IsLetterOrDigit(c))
-                    {
-                        subFolderPrefix = c.ToString();
-                        break;
-                    }
-                }
-            }
-
-            var fullPath = string.IsNullOrEmpty(subFolderPrefix) ?
-                Path.Combine(path, validFilename) :
-                Path.Combine(path, subFolderPrefix, validFilename);
-
-            return CreateItemByName<T>(fullPath, name);
+            return CreateItemByName<MusicArtist>(MusicArtist.GetPath(name), name);
         }
 
         private T CreateItemByName<T>(string path, string name)
@@ -1128,10 +1109,6 @@ namespace MediaBrowser.Server.Implementations.Library
             await RunPostScanTasks(innerProgress, cancellationToken).ConfigureAwait(false);
 
             progress.Report(100);
-
-            // Bad practice, i know. But we keep a lot in memory, unfortunately.
-            GC.Collect(2, GCCollectionMode.Forced, true);
-            GC.Collect(2, GCCollectionMode.Forced, true);
         }
 
         /// <summary>
@@ -1207,7 +1184,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 .Select(dir => GetVirtualFolderInfo(dir, topLibraryFolders));
         }
 
-        private VirtualFolderInfo GetVirtualFolderInfo(string dir, List<BaseItem> collectionFolders)
+        private VirtualFolderInfo GetVirtualFolderInfo(string dir, List<BaseItem> allCollectionFolders)
         {
             var info = new VirtualFolderInfo
             {
@@ -1221,7 +1198,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 CollectionType = GetCollectionType(dir)
             };
 
-            var libraryFolder = collectionFolders.FirstOrDefault(i => string.Equals(i.Path, dir, StringComparison.OrdinalIgnoreCase));
+            var libraryFolder = allCollectionFolders.FirstOrDefault(i => string.Equals(i.Path, dir, StringComparison.OrdinalIgnoreCase));
 
             if (libraryFolder != null && libraryFolder.HasImage(ImageType.Primary))
             {
@@ -1231,6 +1208,7 @@ namespace MediaBrowser.Server.Implementations.Library
             if (libraryFolder != null)
             {
                 info.ItemId = libraryFolder.Id.ToString("N");
+                info.LibraryOptions = GetLibraryOptions(libraryFolder);
             }
 
             return info;
@@ -1385,6 +1363,17 @@ namespace MediaBrowser.Server.Implementations.Library
             return ItemRepository.GetMusicGenres(query);
         }
 
+        public QueryResult<Tuple<BaseItem, ItemCounts>> GetAllArtists(InternalItemsQuery query)
+        {
+            if (query.User != null)
+            {
+                AddUserToQuery(query, query.User);
+            }
+
+            SetTopParentOrAncestorIds(query);
+            return ItemRepository.GetAllArtists(query);
+        }
+
         public QueryResult<Tuple<BaseItem, ItemCounts>> GetArtists(InternalItemsQuery query)
         {
             if (query.User != null)
@@ -1488,7 +1477,12 @@ namespace MediaBrowser.Server.Implementations.Library
 
         private void AddUserToQuery(InternalItemsQuery query, User user)
         {
-            if (query.AncestorIds.Length == 0 && !query.ParentId.HasValue && query.ChannelIds.Length == 0 && query.TopParentIds.Length == 0 && string.IsNullOrWhiteSpace(query.AncestorWithPresentationUniqueKey))
+            if (query.AncestorIds.Length == 0 &&
+                !query.ParentId.HasValue &&
+                query.ChannelIds.Length == 0 &&
+                query.TopParentIds.Length == 0 &&
+                string.IsNullOrWhiteSpace(query.AncestorWithPresentationUniqueKey)
+                && query.ItemIds.Length == 0)
             {
                 var userViews = _userviewManager().GetUserViews(new UserViewQuery
                 {
@@ -1774,7 +1768,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
             foreach (var item in list)
             {
-                UpdateItemInLibraryCache(item);
+                RegisterItem(item);
             }
 
             if (ItemAdded != null)
@@ -1815,7 +1809,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
             await ItemRepository.SaveItem(item, cancellationToken).ConfigureAwait(false);
 
-            UpdateItemInLibraryCache(item);
+            RegisterItem(item);
 
             if (ItemUpdated != null)
             {
@@ -1878,6 +1872,45 @@ namespace MediaBrowser.Server.Implementations.Library
             return GetUserRootFolder().Children
                 .OfType<Folder>()
                 .Where(i => string.Equals(i.Path, item.Path, StringComparison.OrdinalIgnoreCase) || i.PhysicalLocations.Contains(item.Path, StringComparer.OrdinalIgnoreCase));
+        }
+
+        public LibraryOptions GetLibraryOptions(BaseItem item)
+        {
+            var collectionFolder = item as CollectionFolder;
+            if (collectionFolder == null)
+            {
+                collectionFolder = GetCollectionFolders(item)
+                   .OfType<CollectionFolder>()
+                   .FirstOrDefault();
+            }
+
+            var options = collectionFolder == null ? new LibraryOptions() : collectionFolder.GetLibraryOptions();
+
+            if (options.SchemaVersion < 3)
+            {
+                options.SaveLocalMetadata = ConfigurationManager.Configuration.SaveLocalMeta;
+                options.EnableInternetProviders = ConfigurationManager.Configuration.EnableInternetProviders;
+            }
+
+            if (options.SchemaVersion < 2)
+            {
+                var chapterOptions = ConfigurationManager.GetConfiguration<ChapterOptions>("chapters");
+                options.ExtractChapterImagesDuringLibraryScan = chapterOptions.ExtractDuringLibraryScan;
+
+                if (collectionFolder != null)
+                {
+                    if (string.Equals(collectionFolder.CollectionType, "movies", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.EnableChapterImageExtraction = chapterOptions.EnableMovieChapterImageExtraction;
+                    }
+                    else if (string.Equals(collectionFolder.CollectionType, CollectionType.TvShows, StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.EnableChapterImageExtraction = chapterOptions.EnableEpisodeChapterImageExtraction;
+                    }
+                }
+            }
+
+            return options;
         }
 
         public string GetContentType(BaseItem item)
@@ -2231,16 +2264,26 @@ namespace MediaBrowser.Server.Implementations.Library
             return item;
         }
 
+        public bool IsVideoFile(string path, LibraryOptions libraryOptions)
+        {
+            var resolver = new VideoResolver(GetNamingOptions(libraryOptions), new PatternsLogger());
+            return resolver.IsVideoFile(path);
+        }
+
         public bool IsVideoFile(string path)
         {
-            var resolver = new VideoResolver(GetNamingOptions(), new PatternsLogger());
-            return resolver.IsVideoFile(path);
+            return IsVideoFile(path, new LibraryOptions());
+        }
+
+        public bool IsAudioFile(string path, LibraryOptions libraryOptions)
+        {
+            var parser = new AudioFileParser(GetNamingOptions(libraryOptions));
+            return parser.IsAudioFile(path);
         }
 
         public bool IsAudioFile(string path)
         {
-            var parser = new AudioFileParser(GetNamingOptions());
-            return parser.IsAudioFile(path);
+            return IsAudioFile(path, new LibraryOptions());
         }
 
         public int? GetSeasonNumberFromPath(string path)
@@ -2369,19 +2412,24 @@ namespace MediaBrowser.Server.Implementations.Library
 
         public NamingOptions GetNamingOptions()
         {
+            return GetNamingOptions(new LibraryOptions());
+        }
+
+        public NamingOptions GetNamingOptions(LibraryOptions libraryOptions)
+        {
             var options = new ExtendedNamingOptions();
 
             // These cause apps to have problems
             options.AudioFileExtensions.Remove(".m3u");
             options.AudioFileExtensions.Remove(".wpl");
 
-            if (!ConfigurationManager.Configuration.EnableAudioArchiveFiles)
+            if (!libraryOptions.EnableArchiveMediaFiles)
             {
                 options.AudioFileExtensions.Remove(".rar");
                 options.AudioFileExtensions.Remove(".zip");
             }
 
-            if (!ConfigurationManager.Configuration.EnableVideoArchiveFiles)
+            if (!libraryOptions.EnableArchiveMediaFiles)
             {
                 options.VideoFileExtensions.Remove(".rar");
                 options.VideoFileExtensions.Remove(".zip");
@@ -2406,7 +2454,7 @@ namespace MediaBrowser.Server.Implementations.Library
 
         public IEnumerable<Video> FindTrailers(BaseItem owner, List<FileSystemMetadata> fileSystemChildren, IDirectoryService directoryService)
         {
-            var files = owner.IsInMixedFolder ? new List<FileSystemMetadata>() : fileSystemChildren.Where(i => i.IsDirectory)
+            var files = owner.DetectIsInMixedFolder() ? new List<FileSystemMetadata>() : fileSystemChildren.Where(i => i.IsDirectory)
                 .Where(i => string.Equals(i.Name, BaseItem.TrailerFolderName, StringComparison.OrdinalIgnoreCase))
                 .SelectMany(i => _fileSystem.GetFiles(i.FullName, false))
                 .ToList();
@@ -2432,7 +2480,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 new GenericVideoResolver<Trailer>(this)
             };
 
-            return ResolvePaths(files, directoryService, null, null, resolvers)
+            return ResolvePaths(files, directoryService, null, new LibraryOptions(), null, resolvers)
                 .OfType<Trailer>()
                 .Select(video =>
                 {
@@ -2476,7 +2524,7 @@ namespace MediaBrowser.Server.Implementations.Library
                 files.AddRange(currentVideo.Extras.Where(i => !string.Equals(i.ExtraType, "trailer", StringComparison.OrdinalIgnoreCase)).Select(i => _fileSystem.GetFileInfo(i.Path)));
             }
 
-            return ResolvePaths(files, directoryService, null, null)
+            return ResolvePaths(files, directoryService, null, new LibraryOptions(), null)
                 .OfType<Video>()
                 .Select(video =>
                 {
@@ -2496,7 +2544,59 @@ namespace MediaBrowser.Server.Implementations.Library
                 }).OrderBy(i => i.Path).ToList();
         }
 
+        public string GetPathAfterNetworkSubstitution(string path, BaseItem ownerItem)
+        {
+            if (ownerItem != null)
+            {
+                var libraryOptions = GetLibraryOptions(ownerItem);
+                if (libraryOptions != null)
+                {
+                    foreach (var pathInfo in libraryOptions.PathInfos)
+                    {
+                        if (string.IsNullOrWhiteSpace(pathInfo.NetworkPath))
+                        {
+                            continue;
+                        }
+
+                        var substitutionResult = SubstitutePathInternal(path, pathInfo.Path, pathInfo.NetworkPath);
+                        if (substitutionResult.Item2)
+                        {
+                            return substitutionResult.Item1;
+                        }
+                    }
+                }
+            }
+
+            var metadataPath = ConfigurationManager.Configuration.MetadataPath;
+            var metadataNetworkPath = ConfigurationManager.Configuration.MetadataNetworkPath;
+
+            if (!string.IsNullOrWhiteSpace(metadataPath) && !string.IsNullOrWhiteSpace(metadataNetworkPath))
+            {
+                var metadataSubstitutionResult = SubstitutePathInternal(path, metadataPath, metadataNetworkPath);
+                if (metadataSubstitutionResult.Item2)
+                {
+                    return metadataSubstitutionResult.Item1;
+                }
+            }
+
+            foreach (var map in ConfigurationManager.Configuration.PathSubstitutions)
+            {
+                var substitutionResult = SubstitutePathInternal(path, map.From, map.To);
+                if (substitutionResult.Item2)
+                {
+                    return substitutionResult.Item1;
+                }
+            }
+
+            return path;
+        }
+
         public string SubstitutePath(string path, string from, string to)
+        {
+            return SubstitutePathInternal(path, from, to).Item1;
+        }
+
+        private Tuple<string, bool> SubstitutePathInternal(string path, string from, string to)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -2511,7 +2611,11 @@ namespace MediaBrowser.Server.Implementations.Library
                 throw new ArgumentNullException("to");
             }
 
+            from = from.Trim();
+            to = to.Trim();
+
             var newPath = path.Replace(from, to, StringComparison.OrdinalIgnoreCase);
+            var changed = false;
 
             if (!string.Equals(newPath, path))
             {
@@ -2523,9 +2627,11 @@ namespace MediaBrowser.Server.Implementations.Library
                 {
                     newPath = newPath.Replace('/', '\\');
                 }
+
+                changed = true;
             }
 
-            return newPath;
+            return new Tuple<string, bool>(newPath, changed);
         }
 
         private void SetExtraTypeFromFilename(Video item)
@@ -2654,7 +2760,7 @@ namespace MediaBrowser.Server.Implementations.Library
             throw new InvalidOperationException();
         }
 
-        public void AddVirtualFolder(string name, string collectionType, string[] mediaPaths, bool refreshLibrary)
+        public void AddVirtualFolder(string name, string collectionType, LibraryOptions options, bool refreshLibrary)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -2672,12 +2778,13 @@ namespace MediaBrowser.Server.Implementations.Library
                 virtualFolderPath = Path.Combine(rootFolderPath, name);
             }
 
-            if (mediaPaths != null)
+            var mediaPathInfos = options.PathInfos;
+            if (mediaPathInfos != null)
             {
-                var invalidpath = mediaPaths.FirstOrDefault(i => !_fileSystem.DirectoryExists(i));
+                var invalidpath = mediaPathInfos.FirstOrDefault(i => !_fileSystem.DirectoryExists(i.Path));
                 if (invalidpath != null)
                 {
-                    throw new ArgumentException("The specified path does not exist: " + invalidpath + ".");
+                    throw new ArgumentException("The specified path does not exist: " + invalidpath.Path + ".");
                 }
             }
 
@@ -2697,11 +2804,13 @@ namespace MediaBrowser.Server.Implementations.Library
                     }
                 }
 
-                if (mediaPaths != null)
+                CollectionFolder.SaveLibraryOptions(virtualFolderPath, options);
+
+                if (mediaPathInfos != null)
                 {
-                    foreach (var path in mediaPaths)
+                    foreach (var path in mediaPathInfos)
                     {
-                        AddMediaPath(name, path);
+                        AddMediaPathInternal(name, path, false);
                     }
                 }
             }
@@ -2724,6 +2833,141 @@ namespace MediaBrowser.Server.Implementations.Library
                         _libraryMonitorFactory().Start();
                     }
                 });
+            }
+        }
+
+        private bool ValidateNetworkPath(string path)
+        {
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            {
+                // We can't validate protocol-based paths, so just allow them
+                if (path.IndexOf("://", StringComparison.OrdinalIgnoreCase) == -1)
+                {
+                    return Directory.Exists(path);
+                }
+            }
+
+            // Without native support for unc, we cannot validate this when running under mono
+            return true;
+        }
+
+        private const string ShortcutFileExtension = ".mblink";
+        private const string ShortcutFileSearch = "*" + ShortcutFileExtension;
+        public void AddMediaPath(string virtualFolderName, MediaPathInfo pathInfo)
+        {
+            AddMediaPathInternal(virtualFolderName, pathInfo, true);
+        }
+
+        private void AddMediaPathInternal(string virtualFolderName, MediaPathInfo pathInfo, bool saveLibraryOptions)
+        {
+            if (pathInfo == null)
+            {
+                throw new ArgumentNullException("path");
+            }
+
+            var path = pathInfo.Path;
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentNullException("path");
+            }
+
+            if (!_fileSystem.DirectoryExists(path))
+            {
+                throw new DirectoryNotFoundException("The path does not exist.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(pathInfo.NetworkPath) && !ValidateNetworkPath(pathInfo.NetworkPath))
+            {
+                throw new DirectoryNotFoundException("The network path does not exist.");
+            }
+
+            var rootFolderPath = ConfigurationManager.ApplicationPaths.DefaultUserViewsPath;
+            var virtualFolderPath = Path.Combine(rootFolderPath, virtualFolderName);
+
+            var shortcutFilename = _fileSystem.GetFileNameWithoutExtension(path);
+
+            var lnk = Path.Combine(virtualFolderPath, shortcutFilename + ShortcutFileExtension);
+
+            while (_fileSystem.FileExists(lnk))
+            {
+                shortcutFilename += "1";
+                lnk = Path.Combine(virtualFolderPath, shortcutFilename + ShortcutFileExtension);
+            }
+
+            _fileSystem.CreateShortcut(lnk, path);
+
+            RemoveContentTypeOverrides(path);
+
+            if (saveLibraryOptions)
+            {
+                var libraryOptions = CollectionFolder.GetLibraryOptions(virtualFolderPath);
+
+                var list = libraryOptions.PathInfos.ToList();
+                list.Add(pathInfo);
+                libraryOptions.PathInfos = list.ToArray();
+
+                SyncLibraryOptionsToLocations(virtualFolderPath, libraryOptions);
+
+                CollectionFolder.SaveLibraryOptions(virtualFolderPath, libraryOptions);
+            }
+        }
+
+        public void UpdateMediaPath(string virtualFolderName, MediaPathInfo pathInfo)
+        {
+            if (pathInfo == null)
+            {
+                throw new ArgumentNullException("path");
+            }
+
+            if (!string.IsNullOrWhiteSpace(pathInfo.NetworkPath) && !ValidateNetworkPath(pathInfo.NetworkPath))
+            {
+                throw new DirectoryNotFoundException("The network path does not exist.");
+            }
+
+            var rootFolderPath = ConfigurationManager.ApplicationPaths.DefaultUserViewsPath;
+            var virtualFolderPath = Path.Combine(rootFolderPath, virtualFolderName);
+
+            var libraryOptions = CollectionFolder.GetLibraryOptions(virtualFolderPath);
+
+            SyncLibraryOptionsToLocations(virtualFolderPath, libraryOptions);
+
+            var list = libraryOptions.PathInfos.ToList();
+            foreach (var originalPathInfo in list)
+            {
+                if (string.Equals(pathInfo.Path, originalPathInfo.Path, StringComparison.Ordinal))
+                {
+                    originalPathInfo.NetworkPath = pathInfo.NetworkPath;
+                    break;
+                }
+            }
+
+            libraryOptions.PathInfos = list.ToArray();
+
+            CollectionFolder.SaveLibraryOptions(virtualFolderPath, libraryOptions);
+        }
+
+        private void SyncLibraryOptionsToLocations(string virtualFolderPath, LibraryOptions options)
+        {
+            var topLibraryFolders = GetUserRootFolder().Children.ToList();
+            var info = GetVirtualFolderInfo(virtualFolderPath, topLibraryFolders);
+
+            if (info.Locations.Count > 0 && info.Locations.Count != options.PathInfos.Length)
+            {
+                var list = options.PathInfos.ToList();
+
+                foreach (var location in info.Locations)
+                {
+                    if (!list.Any(i => string.Equals(i.Path, location, StringComparison.Ordinal)))
+                    {
+                        list.Add(new MediaPathInfo
+                        {
+                            Path = location
+                        });
+                    }
+                }
+
+                options.PathInfos = list.ToArray();
             }
         }
 
@@ -2771,38 +3015,6 @@ namespace MediaBrowser.Server.Implementations.Library
             }
         }
 
-        private const string ShortcutFileExtension = ".mblink";
-        private const string ShortcutFileSearch = "*" + ShortcutFileExtension;
-        public void AddMediaPath(string virtualFolderName, string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new ArgumentNullException("path");
-            }
-
-            if (!_fileSystem.DirectoryExists(path))
-            {
-                throw new DirectoryNotFoundException("The path does not exist.");
-            }
-
-            var rootFolderPath = ConfigurationManager.ApplicationPaths.DefaultUserViewsPath;
-            var virtualFolderPath = Path.Combine(rootFolderPath, virtualFolderName);
-
-            var shortcutFilename = _fileSystem.GetFileNameWithoutExtension(path);
-
-            var lnk = Path.Combine(virtualFolderPath, shortcutFilename + ShortcutFileExtension);
-
-            while (_fileSystem.FileExists(lnk))
-            {
-                shortcutFilename += "1";
-                lnk = Path.Combine(virtualFolderPath, shortcutFilename + ShortcutFileExtension);
-            }
-
-            _fileSystem.CreateShortcut(lnk, path);
-
-            RemoveContentTypeOverrides(path);
-        }
-
         private void RemoveContentTypeOverrides(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -2839,19 +3051,28 @@ namespace MediaBrowser.Server.Implementations.Library
             }
 
             var rootFolderPath = ConfigurationManager.ApplicationPaths.DefaultUserViewsPath;
-            var path = Path.Combine(rootFolderPath, virtualFolderName);
+            var virtualFolderPath = Path.Combine(rootFolderPath, virtualFolderName);
 
-            if (!_fileSystem.DirectoryExists(path))
+            if (!_fileSystem.DirectoryExists(virtualFolderPath))
             {
                 throw new DirectoryNotFoundException(string.Format("The media collection {0} does not exist", virtualFolderName));
             }
 
-            var shortcut = Directory.EnumerateFiles(path, ShortcutFileSearch, SearchOption.AllDirectories).FirstOrDefault(f => _fileSystem.ResolveShortcut(f).Equals(mediaPath, StringComparison.OrdinalIgnoreCase));
+            var shortcut = Directory.EnumerateFiles(virtualFolderPath, ShortcutFileSearch, SearchOption.AllDirectories).FirstOrDefault(f => _fileSystem.ResolveShortcut(f).Equals(mediaPath, StringComparison.OrdinalIgnoreCase));
 
             if (!string.IsNullOrEmpty(shortcut))
             {
                 _fileSystem.DeleteFile(shortcut);
             }
+
+            var libraryOptions = CollectionFolder.GetLibraryOptions(virtualFolderPath);
+
+            libraryOptions.PathInfos = libraryOptions
+                .PathInfos
+                .Where(i => !string.Equals(i.Path, mediaPath, StringComparison.Ordinal))
+                .ToArray();
+
+            CollectionFolder.SaveLibraryOptions(virtualFolderPath, libraryOptions);
         }
     }
 }

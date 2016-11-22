@@ -1,4 +1,5 @@
 ﻿define(['connectionManager', 'itemHelper', 'mediaInfo', 'userdataButtons', 'playbackManager', 'globalize', 'dom', 'apphost', 'css!./itemhovermenu', 'emby-button'], function (connectionManager, itemHelper, mediaInfo, userdataButtons, playbackManager, globalize, dom, appHost) {
+    'use strict';
 
     var preventHover = false;
     var showOverlayTimeout;
@@ -59,7 +60,7 @@
             var keyframes = [
               { transform: 'translateY(100%)', offset: 0 },
               { transform: 'none', offset: 1 }];
-            var timing = { duration: 180, iterations: 1, fill: 'forwards', easing: 'ease-out' };
+            var timing = { duration: 200, iterations: 1, fill: 'forwards', easing: 'ease-out' };
             elem.animate(keyframes, timing);
         });
     }
@@ -72,12 +73,12 @@
 
         var className = card.className.toLowerCase();
 
-        var isMiniItem = className.indexOf('mini') != -1;
-        var isSmallItem = isMiniItem || className.indexOf('small') != -1;
-        var isPortrait = className.indexOf('portrait') != -1;
+        var isMiniItem = className.indexOf('mini') !== -1;
+        var isSmallItem = isMiniItem || className.indexOf('small') !== -1;
+        var isPortrait = className.indexOf('portrait') !== -1;
 
         var parentName = isSmallItem || isMiniItem || isPortrait ? null : item.SeriesName;
-        var name = itemHelper.getDisplayName(item);
+        var name = item.EpisodeTitle ? item.Name : itemHelper.getDisplayName(item);
 
         html += '<div>';
         var logoHeight = 26;
@@ -136,16 +137,9 @@
             buttonCount++;
         }
 
-        var moreIcon = appHost.moreIcon == 'dots-horiz' ? '&#xE5D3;' : '&#xE5D4;';
+        var moreIcon = appHost.moreIcon === 'dots-horiz' ? '&#xE5D3;' : '&#xE5D4;';
         html += '<button is="emby-button" class="itemAction autoSize fab cardOverlayFab mini" data-action="menu" data-playoptions="false"><i class="md-icon cardOverlayFab-md-icon">' + moreIcon + '</i></button>';
         buttonCount++;
-
-        html += userdataButtons.getIconsHtml({
-            item: item,
-            style: 'fab-mini',
-            cssClass: 'cardOverlayFab',
-            iconCssClass: 'cardOverlayFab-md-icon'
-        });
 
         html += '</div>';
 
@@ -154,6 +148,13 @@
         return html;
     }
 
+    function onCardOverlayButtonsClick(e) {
+
+        var button = dom.parentWithClass(e.target, 'btnUserData');
+        if (button) {
+            e.stopPropagation();
+        }
+    }
 
     function onShowTimerExpired(elem) {
 
@@ -163,6 +164,10 @@
             innerElem = document.createElement('div');
             innerElem.classList.add('hide');
             innerElem.classList.add('cardOverlayTarget');
+
+            // allow the overlay to be clicked to view the item
+            innerElem.classList.add('itemAction');
+            innerElem.setAttribute('data-action', 'link');
 
             var appendTo = elem.querySelector('div.cardContent') || elem.querySelector('.cardScalable') || elem.querySelector('.cardBox');
 
@@ -187,7 +192,7 @@
         var id = dataElement.getAttribute('data-id');
         var type = dataElement.getAttribute('data-type');
 
-        if (type == 'Timer') {
+        if (type === 'Timer' || type === 'SeriesTimer') {
             return;
         }
 
@@ -203,6 +208,18 @@
             var user = responses[1];
 
             innerElem.innerHTML = getOverlayHtml(apiClient, item, user, dataElement);
+
+            userdataButtons.fill({
+                item: item,
+                style: 'fab-mini',
+                cssClass: 'cardOverlayFab',
+                iconCssClass: 'cardOverlayFab-md-icon',
+                element: innerElem.querySelector('.cardOverlayButtons'),
+                fillMode: 'insertAdjacent',
+                insertLocation: 'beforeend'
+            });
+
+            innerElem.querySelector('.cardOverlayButtons').addEventListener('click', onCardOverlayButtonsClick);
         });
 
         slideUpToShow(innerElem);
@@ -230,7 +247,7 @@
         showOverlayTimeout = setTimeout(function () {
             onShowTimerExpired(card);
 
-        }, 1000);
+        }, 1400);
     }
 
     function preventTouchHover() {
@@ -243,19 +260,23 @@
 
         this.parent.addEventListener('mouseenter', onHoverIn, true);
         this.parent.addEventListener('mouseleave', onHoverOut, true);
-        this.parent.addEventListener("touchstart", preventTouchHover);
+        dom.addEventListener(this.parent, "touchstart", preventTouchHover, {
+            passive: true
+        });
     }
 
     ItemHoverMenu.prototype = {
-
         constructor: ItemHoverMenu,
 
         destroy: function () {
             this.parent.removeEventListener('mouseenter', onHoverIn, true);
             this.parent.removeEventListener('mouseleave', onHoverOut, true);
-            this.parent.removeEventListener("touchstart", preventTouchHover);
+
+            dom.removeEventListener(this.parent, "touchstart", preventTouchHover, {
+                passive: true
+            });
         }
-    }
+    };
 
     return ItemHoverMenu;
 });

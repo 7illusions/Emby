@@ -11,7 +11,6 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
         self.currentItem = null;
         self.currentMediaSource = null;
 
-        self.currentDurationTicks = null;
         self.startTimeTicksOffset = null;
 
         self.playlist = [];
@@ -62,9 +61,7 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
             var currentSrc = (self.getCurrentSrc(mediaRenderer) || '').toLowerCase();
 
             if (currentSrc.indexOf('.m3u8') != -1) {
-                if (currentSrc.indexOf('forcelivestream=true') == -1) {
-                    return true;
-                }
+                return true;
             } else {
                 var duration = mediaRenderer.duration();
                 return duration && !isNaN(duration) && duration != Number.POSITIVE_INFINITY && duration != Number.NEGATIVE_INFINITY;
@@ -146,10 +143,28 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
                 return true;
             }
 
-            // viblast can help us here
-            //return true;
-            return window.MediaSource && !browserInfo.firefox;
+            return window.MediaSource != null;
         };
+
+        function getProfileOptions(item) {
+
+            var options = {};
+
+            if (!AppInfo.isNativeApp) {
+                var disableHlsVideoAudioCodecs = [];
+
+                if (!self.canPlayNativeHls() || (browserInfo.edge && !item.RunTimeTicks)) {
+                    // hls.js does not support these
+                    disableHlsVideoAudioCodecs.push('mp3');
+                    disableHlsVideoAudioCodecs.push('ac3');
+                }
+
+                options.enableMkvProgressive = false;
+                options.disableHlsVideoAudioCodecs = disableHlsVideoAudioCodecs;
+            }
+
+            return options;
+        }
 
         self.changeStream = function (ticks, params) {
 
@@ -168,7 +183,7 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
             var playSessionId = getParameterByName('PlaySessionId', currentSrc);
             var liveStreamId = getParameterByName('LiveStreamId', currentSrc);
 
-            Dashboard.getDeviceProfile().then(function (deviceProfile) {
+            Dashboard.getDeviceProfile(null, getProfileOptions(self.currentMediaSource)).then(function (deviceProfile) {
 
                 var audioStreamIndex = params.AudioStreamIndex == null ? (getParameterByName('AudioStreamIndex', currentSrc) || null) : params.AudioStreamIndex;
                 if (typeof (audioStreamIndex) == 'string') {
@@ -266,6 +281,22 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
             //self.updateTextStreamUrls(streamInfo.startTimeTicksOffset || 0);
         };
 
+        self.getSeekableDurationTicks = function () {
+
+            if (self.currentMediaSource && self.currentMediaSource.RunTimeTicks) {
+                return self.currentMediaSource.RunTimeTicks;
+            }
+
+            if (self.currentMediaRenderer) {
+                var duration = self.currentMediaRenderer.duration();
+                if (duration) {
+                    return duration * 10000;
+                }
+            }
+
+            return null;
+        };
+
         self.setCurrentTime = function (ticks, positionSlider, currentTimeElement) {
 
             // Convert to ticks
@@ -274,13 +305,15 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
             var timeText = datetime.getDisplayRunningTime(ticks);
             var mediaRenderer = self.currentMediaRenderer;
 
-            if (self.currentDurationTicks) {
+            var seekableDurationTicks = self.getSeekableDurationTicks();
 
-                timeText += " / " + datetime.getDisplayRunningTime(self.currentDurationTicks);
+            if (seekableDurationTicks) {
+
+                timeText += " / " + datetime.getDisplayRunningTime(seekableDurationTicks);
 
                 if (positionSlider) {
 
-                    var percent = ticks / self.currentDurationTicks;
+                    var percent = ticks / seekableDurationTicks;
                     percent *= 100;
 
                     positionSlider.value = percent;
@@ -289,7 +322,7 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
 
             if (positionSlider) {
 
-                positionSlider.disabled = !((self.currentDurationTicks || 0) > 0 || canPlayerSeek());
+                positionSlider.disabled = !((seekableDurationTicks || 0) > 0 || canPlayerSeek());
             }
 
             if (currentTimeElement) {
@@ -520,6 +553,10 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
                                 api_key: ApiClient.accessToken()
                             };
 
+                            if (mediaSource.ETag) {
+                                directOptions.Tag = mediaSource.ETag;
+                            }
+
                             if (mediaSource.LiveStreamId) {
                                 directOptions.LiveStreamId = mediaSource.LiveStreamId;
                             }
@@ -533,11 +570,6 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
                             mediaUrl = ApiClient.getUrl(mediaSource.TranscodingUrl);
 
                             if (mediaSource.TranscodingSubProtocol == 'hls') {
-
-                                if (mediaUrl.toLowerCase().indexOf('forcelivestream=true') != -1) {
-                                    startPositionInSeekParam = 0;
-                                    startTimeTicksOffset = startPosition || 0;
-                                }
 
                                 contentType = 'application/x-mpegURL';
 
@@ -578,6 +610,10 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
                                 api_key: ApiClient.accessToken()
                             };
 
+                            if (mediaSource.ETag) {
+                                directOptions.Tag = mediaSource.ETag;
+                            }
+
                             if (mediaSource.LiveStreamId) {
                                 directOptions.LiveStreamId = mediaSource.LiveStreamId;
                             }
@@ -614,7 +650,7 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
 
                 if (playMethod == 'DirectPlay' && mediaSource.Protocol == 'File') {
 
-                    require(['localassetmanager'], function () {
+                    require(['localassetmanager'], function (LocalAssetManager) {
 
                         LocalAssetManager.translateFilePath(resultInfo.url).then(function (path) {
 
@@ -654,7 +690,8 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
             }
 
             var onBitrateDetected = function () {
-                Dashboard.getDeviceProfile().then(function (deviceProfile) {
+
+                Dashboard.getDeviceProfile(null, getProfileOptions(item)).then(function (deviceProfile) {
                     playOnDeviceProfileCreated(deviceProfile, item, startPosition, callback);
                 });
             };
@@ -1515,7 +1552,6 @@ define(['appSettings', 'userSettings', 'appStorage', 'datetime'], function (appS
                 Events.on(mediaRenderer, "timeupdate", onTimeUpdate);
 
                 self.currentMediaRenderer = mediaRenderer;
-                self.currentDurationTicks = self.currentMediaSource.RunTimeTicks;
 
                 mediaRenderer.init().then(function () {
 

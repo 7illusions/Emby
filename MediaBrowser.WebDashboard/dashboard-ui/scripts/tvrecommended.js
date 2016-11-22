@@ -1,4 +1,4 @@
-﻿define(['libraryBrowser', 'components/categorysyncbuttons', 'cardBuilder', 'scrollStyles', 'emby-itemscontainer'], function (libraryBrowser, categorysyncbuttons, cardBuilder) {
+﻿define(['libraryBrowser', 'dom', 'components/categorysyncbuttons', 'cardBuilder', 'apphost', 'scrollStyles', 'emby-itemscontainer', 'emby-tabs', 'emby-button'], function (libraryBrowser, dom, categorysyncbuttons, cardBuilder, appHost) {
 
     return function (view, params) {
 
@@ -34,6 +34,9 @@
                 }
 
                 var container = view.querySelector('#nextUpItems');
+
+                var supportsImageAnalysis = appHost.supports('imageanalysis');
+
                 cardBuilder.buildCards(result.Items, {
                     itemsContainer: container,
                     preferThumb: true,
@@ -42,8 +45,10 @@
                     showTitle: true,
                     showParentTitle: true,
                     overlayText: false,
-                    centerText: true,
-                    overlayPlayButton: AppInfo.enableAppLayouts
+                    centerText: !supportsImageAnalysis,
+                    overlayPlayButton: true,
+                    cardLayout: supportsImageAnalysis,
+                    vibrant: supportsImageAnalysis
                 });
 
                 Dashboard.hideLoadingMsg();
@@ -62,7 +67,8 @@
 
             var parentId = LibraryMenu.getTopParentId();
 
-            var limit = 6;
+            var screenWidth = dom.getWindowSize().innerWidth;
+            var limit = screenWidth >= 1600 ? 5 : 6;
 
             var options = {
 
@@ -88,7 +94,12 @@
                     view.querySelector('#resumableSection').classList.add('hide');
                 }
 
+                var allowBottomPadding = !enableScrollX();
+
                 var container = view.querySelector('#resumableItems');
+
+                var cardLayout = appHost.preferVisualCards;
+
                 cardBuilder.buildCards(result.Items, {
                     itemsContainer: container,
                     preferThumb: true,
@@ -97,8 +108,10 @@
                     showTitle: true,
                     showParentTitle: true,
                     overlayText: false,
-                    centerText: true,
-                    overlayPlayButton: true
+                    centerText: !cardLayout,
+                    overlayPlayButton: true,
+                    allowBottomPadding: allowBottomPadding,
+                    cardLayout: cardLayout
                 });
             });
         }
@@ -199,25 +212,15 @@
             });
         }
 
-        var mdlTabs = view.querySelector('.libraryViewNav');
+        var viewTabs = view.querySelector('.libraryViewNav');
 
         function onPlaybackStop(e, state) {
 
             if (state.NowPlayingItem && state.NowPlayingItem.MediaType == 'Video') {
 
                 renderedTabs = [];
-                mdlTabs.dispatchEvent(new CustomEvent("tabchange", {
-                    detail: {
-                        selectedTabIndex: libraryBrowser.selectedTab(mdlTabs)
-                    }
-                }));
+                viewTabs.triggerTabChange();
             }
-        }
-
-        var baseUrl = 'tv.html';
-        var topParentId = params.topParentId;
-        if (topParentId) {
-            baseUrl += '?topParentId=' + topParentId;
         }
 
         if (enableScrollX()) {
@@ -225,12 +228,12 @@
         } else {
             view.querySelector('#resumableItems').classList.remove('hiddenScrollX');
         }
-        libraryBrowser.configurePaperLibraryTabs(view, mdlTabs, view.querySelectorAll('.pageTabContent'), [0, 1, 2, 4, 5, 6]);
+        libraryBrowser.configurePaperLibraryTabs(view, viewTabs, view.querySelectorAll('.pageTabContent'), [0, 1, 2, 4, 5, 6]);
 
-        mdlTabs.addEventListener('beforetabchange', function (e) {
+        viewTabs.addEventListener('beforetabchange', function (e) {
             preLoadTab(view, parseInt(e.detail.selectedTabIndex));
         });
-        mdlTabs.addEventListener('tabchange', function (e) {
+        viewTabs.addEventListener('tabchange', function (e) {
             loadTab(view, parseInt(e.detail.selectedTabIndex));
         });
 
@@ -279,8 +282,16 @@
             Events.off(ApiClient, "websocketmessage", onWebSocketMessage);
         });
 
+        require(["headroom-window"], function (headroom) {
+            headroom.add(viewTabs);
+            self.headroom = headroom;
+        });
+
         view.addEventListener('viewdestroy', function (e) {
 
+            if (self.headroom) {
+                self.headroom.remove(viewTabs);
+            }
             tabControllers.forEach(function (t) {
                 if (t.destroy) {
                     t.destroy();

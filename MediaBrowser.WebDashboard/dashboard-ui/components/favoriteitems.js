@@ -1,4 +1,4 @@
-﻿define(['libraryBrowser', 'cardBuilder', 'scrollStyles', 'emby-itemscontainer'], function (libraryBrowser, cardBuilder) {
+﻿define(['libraryBrowser', 'cardBuilder', 'dom', 'apphost', 'scrollStyles', 'emby-itemscontainer'], function (libraryBrowser, cardBuilder, dom, appHost) {
 
     function enableScrollX() {
         return browserInfo.mobile && AppInfo.enableAppLayouts;
@@ -21,7 +21,7 @@
         return [
             { name: 'HeaderFavoriteMovies', types: "Movie", id: "favoriteMovies", shape: getPosterShape(), showTitle: false, overlayPlayButton: true },
             { name: 'HeaderFavoriteShows', types: "Series", id: "favoriteShows", shape: getPosterShape(), showTitle: false, overlayPlayButton: true },
-            { name: 'HeaderFavoriteEpisodes', types: "Episode", id: "favoriteEpisode", shape: getThumbShape(), preferThumb: false, showTitle: true, showParentTitle: true, overlayPlayButton: true },
+            { name: 'HeaderFavoriteEpisodes', types: "Episode", id: "favoriteEpisode", shape: getThumbShape(), preferThumb: false, showTitle: true, showParentTitle: true, overlayPlayButton: true, overlayText: false, centerText: true },
             { name: 'HeaderFavoriteGames', types: "Game", id: "favoriteGames", shape: getSquareShape(), preferThumb: false, showTitle: true },
             { name: 'HeaderFavoriteArtists', types: "MusicArtist", id: "favoriteArtists", shape: getSquareShape(), preferThumb: false, showTitle: true, overlayText: false, showParentTitle: true, centerText: true, overlayPlayButton: true },
             { name: 'HeaderFavoriteAlbums', types: "MusicAlbum", id: "favoriteAlbums", shape: getSquareShape(), preferThumb: false, showTitle: true, overlayText: false, showParentTitle: true, centerText: true, overlayPlayButton: true },
@@ -31,7 +31,7 @@
 
     function loadSection(elem, userId, topParentId, section, isSingleSection) {
 
-        var screenWidth = window.innerWidth;
+        var screenWidth = dom.getWindowSize().innerWidth;
         var options = {
 
             SortBy: "SortName",
@@ -75,7 +75,7 @@
                 html += '<h1 style="display:inline-block; vertical-align:middle;" class="listHeader">' + Globalize.translate(section.name) + '</h1>';
 
                 if (options.Limit && result.Items.length >= options.Limit) {
-                    var href = "secondaryitems.html?type=" + section.types + "&filters=IsFavorite&titlekey=" + section.name;
+                    var href = "secondaryitems.html?type=" + section.types + "&filters=IsFavorite";
 
                     html += '<a class="clearLink" href="' + href + '" style="margin-left:2em;"><button is="emby-button" type="button" class="raised more mini">' + Globalize.translate('ButtonMore') + '</button></a>';
                 }
@@ -88,17 +88,23 @@
                     html += '<div is="emby-itemscontainer" class="itemsContainer vertical-wrap">';
                 }
 
+                var supportsImageAnalysis = appHost.supports('imageanalysis');
+                var cardLayout = (appHost.preferVisualCards || supportsImageAnalysis) && section.showTitle;
+
                 html += cardBuilder.getCardsHtml(result.Items, {
                     preferThumb: section.preferThumb,
                     shape: section.shape,
-                    centerText: section.centerText,
+                    centerText: section.centerText && !cardLayout,
                     overlayText: section.overlayText !== false,
                     showTitle: section.showTitle,
                     showParentTitle: section.showParentTitle,
                     scalable: true,
                     overlayPlayButton: section.overlayPlayButton,
-                    overlayMoreButton: section.overlayMoreButton,
-                    action: section.action
+                    overlayMoreButton: section.overlayMoreButton && !cardLayout,
+                    action: section.action,
+                    allowBottomPadding: !enableScrollX(),
+                    cardLayout: cardLayout,
+                    vibrant: supportsImageAnalysis && cardLayout
                 });
 
                 html += '</div>';

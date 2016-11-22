@@ -1,4 +1,4 @@
-﻿define(['jQuery', 'paper-icon-button-light', 'cardStyle'], function ($) {
+﻿define(['jQuery', 'humanedate', 'paper-icon-button-light', 'cardStyle'], function ($) {
 
     function deleteUser(page, id) {
 
@@ -6,7 +6,14 @@
 
         require(['confirm'], function (confirm) {
 
-            confirm(msg, Globalize.translate('DeleteUser')).then(function () {
+            confirm({
+                
+                title: Globalize.translate('DeleteUser'),
+                text: msg,
+                confirmText: Globalize.translate('ButtonDelete'),
+                primary: 'cancel'
+
+            }).then(function () {
 
                 Dashboard.showLoadingMsg();
 
@@ -85,7 +92,7 @@
 
         var html = '';
 
-        var cssClass = "card squareCard scalableCard";
+        var cssClass = "card squareCard scalableCard squareCard-scalable";
 
         if (user.Policy.IsDisabled) {
             cssClass += ' grayscale';
@@ -94,9 +101,9 @@
         html += "<div data-userid='" + user.Id + "' class='" + cssClass + "'>";
 
         html += '<div class="cardBox visualCardBox">';
-        html += '<div class="cardScalable">';
+        html += '<div class="cardScalable visualCardBox-cardScalable">';
 
-        html += '<div class="cardPadder"></div>';
+        html += '<div class="cardPadder cardPadder-square"></div>';
 
         var href = "useredit.html?userId=" + user.Id + "";
         html += '<a class="cardContent" href="' + href + '">';
@@ -122,7 +129,9 @@
         html += '<div class="' + imageClass + '" style="background-image:url(\'' + imgUrl + '\');">';
 
         if (user.ConnectUserId && addConnectIndicator) {
-            html += '<div class="playedIndicator" title="' + Globalize.translate('TooltipLinkedToEmbyConnect') + '"><i class="md-icon">cloud</i></div>';
+            html += '<div class="cardIndicators">';
+            html += '<div class="playedIndicator" title="' + Globalize.translate('TooltipLinkedToEmbyConnect') + '"><i class="md-icon playedIndicatorIcon indicatorIcon">cloud</i></div>';
+            html += "</div>";
         }
 
         html += "</div>";
@@ -133,15 +142,25 @@
         // cardScalable
         html += "</div>";
 
-        html += '<div class="cardFooter">';
+        html += '<div class="cardFooter visualCardBox-cardFooter">';
 
         html += '<div style="text-align:right; float:right;padding:0;">';
-        html += '<button type="button" is="paper-icon-button-light" class="btnUserMenu autoSize"><i class="md-icon">' + AppInfo.moreIcon.replace('-', '_') + '</i></button>';
+        html += '<button type="button" is="paper-icon-button-light" class="btnUserMenu autoSize"><i class="md-icon">more_vert</i></button>';
         html += "</div>";
 
         html += '<div class="cardText" style="padding-top:10px;padding-bottom:10px;">';
         html += user.Name;
         html += "</div>";
+
+        html += '<div class="cardText cardText-secondary">';
+        var lastSeen = getLastSeenText(user.LastActivityDate);
+        if (lastSeen != "") {
+            html += lastSeen;
+        }
+        else {
+            html += "&nbsp;";
+        }
+        html += '</div>';
 
         // cardFooter
         html += "</div>";
@@ -153,6 +172,15 @@
         html += "</div>";
 
         return html;
+    }
+
+    function getLastSeenText(lastActivityDate) {
+
+        if (!lastActivityDate) {
+            return "";
+        }
+
+        return "Last seen " + humane_date(lastActivityDate);
     }
 
     function getUserSectionHtml(users, addConnectIndicator) {
@@ -228,14 +256,14 @@
 
         var html = '';
 
-        var cssClass = "card squareCard bottomPaddedCard";
+        var cssClass = "card squareCard";
 
         html += "<div data-id='" + user.Id + "' class='" + cssClass + "'>";
 
-        html += '<div class="cardBox visualCardBox">';
-        html += '<div class="cardScalable">';
+        html += '<div class="cardBox cardBox-bottompadded visualCardBox">';
+        html += '<div class="cardScalable visualCardBox-cardScalable">';
 
-        html += '<div class="cardPadder"></div>';
+        html += '<div class="cardPadder cardPadder-square"></div>';
 
         var href = "#";
         html += '<a class="cardContent" href="' + href + '">';
@@ -252,10 +280,10 @@
         // cardScalable
         html += "</div>";
 
-        html += '<div class="cardFooter">';
+        html += '<div class="cardFooter visualCardBox-cardFooter">';
 
         html += '<div class="cardText" style="text-align:right; float:right;padding:0;">';
-        html += '<button type="button" is="paper-icon-button-light" class="btnUserMenu"><iron-icon icon="' + AppInfo.moreIcon + '"></iron-icon></button>';
+        html += '<button type="button" is="paper-icon-button-light" class="btnUserMenu"><i class="md-icon">more_vert</i></button>';
         html += "</div>";
 
         html += '<div class="cardText" style="padding-top:10px;padding-bottom:10px;">';

@@ -1,21 +1,32 @@
 ﻿<div id="moviesPage" data-role="page" data-dom-cache="true" class="page libraryPage backdropPage collectionEditorPage pageWithAbsoluteTabs" data-backdroptype="movie">
 
-    <div class="libraryViewNav">
-        <div class="contentScrollSlider">
-            <button class="pageTabButton is-active" data-index="0">${TabSuggestions}</button>
-            <button class="pageTabButton" data-index="1">${TabMovies}</button>
-            <button class="pageTabButton movieTrailersTab" data-index="2">${TabTrailers}</button>
-            <button class="pageTabButton" data-index="3">${TabCollections}</button>
-            <button class="pageTabButton" data-index="4">${TabGenres}</button>
-            <button class="pageTabButton movieStudiosTab" data-index="5">${TabStudios}</button>
+    <div is="emby-tabs" class="libraryViewNav">
+        <div class="emby-tabs-slider">
+            <button is="emby-button" class="emby-tab-button emby-tab-button-active" data-index="0">
+                <div class="emby-button-foreground">${TabSuggestions}</div>
+            </button>
+            <button is="emby-button" class="emby-tab-button" data-index="1">
+                <div class="emby-button-foreground">${TabMovies}</div>
+            </button>
+            <button is="emby-button" class="emby-tab-button" data-index="2">
+                <div class="emby-button-foreground">${TabTrailers}</div>
+            </button>
+            <button is="emby-button" class="emby-tab-button" data-index="3">
+                <div class="emby-button-foreground">${TabCollections}</div>
+            </button>
+            <button is="emby-button" class="emby-tab-button" data-index="4">
+                <div class="emby-button-foreground">${TabGenres}</div>
+            </button>
+            <button is="emby-button" class="emby-tab-button" data-index="5">
+                <div class="emby-button-foreground">${TabStudios}</div>
+            </button>
         </div>
     </div>
-    <div class="is-active pageTabContent ehsContent" id="suggestionsTab" data-index="0">
+    <div class="is-active pageTabContent ehsContent fullWidth" id="suggestionsTab" data-index="0">
         <div id="resumableSection" class="homePageSection hide">
             <div>
                 <h1 class="listHeader" style="display:inline-block;vertical-align:middle;">${HeaderResume}</h1>
-                <button is="emby-button" type="button" class="raised submit mini categorySyncButton" data-category="Resume">
-                    <i class="md-icon">sync</i>
+                <button is="emby-button" type="button" class="raised submit mini categorySyncButton button-accent" data-category="Resume">
                     <span>${ButtonSync}</span>
                 </button>
             </div>
@@ -27,8 +38,7 @@
         <div class="homePageSection">
             <div>
                 <h1 class="listHeader" style="display:inline-block;vertical-align:middle;">${HeaderLatestMovies}</h1>
-                <button is="emby-button" type="button" class="raised submit mini categorySyncButton" data-category="Latest">
-                    <i class="md-icon">sync</i>
+                <button is="emby-button" type="button" class="raised submit mini categorySyncButton button-accent" data-category="Latest">
                     <span>${ButtonSync}</span>
                 </button>
             </div>
